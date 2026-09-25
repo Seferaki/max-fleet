@@ -1,0 +1,21 @@
+# Go
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Frontend dependencies/build output
+node_modules/
+coverage/
