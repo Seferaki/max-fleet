@@ -107,6 +107,11 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			_, err := s.client.Vehicles(s.ctx, "9000000000000000001", dataapi.VehicleFilter{})
 			return err
 		},
+		"identity.wrong-owner": func(s scenarioContext) error {
+			_, draft := s.readyReturn(false, true)
+			_, err := s.client.Return(s.ctx, "8000000000000000002", draft.ID)
+			return err
+		},
 		"vehicles.free": func(s scenarioContext) error {
 			available := true
 			page, err := s.client.Vehicles(s.ctx, driverID, dataapi.VehicleFilter{Available: &available})
@@ -289,6 +294,45 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 			return err
 		},
+		"return.cancel-new": func(s scenarioContext) error {
+			tripID := "20000000-0000-4000-8000-000000000001"
+			s.mock.trips[tripID] = dataapi.Trip{ID: tripID, VehicleID: firstVehicleID, EmployeeID: s.mock.employees[driverID].ID, Status: "active", Version: 1, UpdatedAt: s.now}
+			firstResult, err := s.client.TripBeginReturn(s.ctx, driverID, tripID, 1, "scenario-begin-one", nil)
+			if err != nil {
+				return err
+			}
+			first, err := dataapi.DecodeAggregate[dataapi.Return](firstResult)
+			if err != nil {
+				return err
+			}
+			if _, err = s.client.ReturnCancel(s.ctx, driverID, first.ID, first.Version, "scenario-cancel-return", nil); err != nil {
+				return err
+			}
+			trip, err := s.client.Trip(s.ctx, driverID, tripID)
+			if err != nil {
+				return err
+			}
+			if trip.Status != "active" || trip.ReturnID != nil {
+				s.t.Fatal("cancel did not restore active trip")
+			}
+			secondResult, err := s.client.TripBeginReturn(s.ctx, driverID, tripID, trip.Version, "scenario-begin-two", nil)
+			if err != nil {
+				return err
+			}
+			second, err := dataapi.DecodeAggregate[dataapi.Return](secondResult)
+			if err == nil && (second.ID == first.ID || second.Inspection.ID == first.Inspection.ID || len(second.Inspection.OccupiedSlots) != 0 || len(second.Inspection.MissingSlots) != 8 || second.ParkingLocation != nil) {
+				s.t.Fatal("new return inherited stale data")
+			}
+			return err
+		},
+		"schema.stale": func(s scenarioContext) error {
+			trip, draft := s.readyReturn(false, true)
+			_, err := s.client.ReturnComplete(s.ctx, driverID, draft.ID, draft.Version+1, "scenario-stale-complete", nil)
+			if s.mock.trips[trip.ID].Status != "returning" {
+				s.t.Fatal("stale return completed trip")
+			}
+			return err
+		},
 		"schema.same-key-different-body": func(s scenarioContext) error {
 			s.hold("scenario-same-key")
 			_, err := s.client.CheckoutCreate(s.ctx, driverID, "10000000-0000-4000-8000-000000000002", 1, "scenario-same-key", nil)
@@ -333,7 +377,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 		})
 	}
-	if len(runs) != 18 {
+	if len(runs) != 21 {
 		t.Fatal("scenario runner count changed")
 	}
 	for id := range runs {
