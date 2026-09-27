@@ -2,7 +2,7 @@
 
 Чат-бот MAX для общего корпоративного автопарка: сотрудник выбирает машину, фиксирует состояние до и после поездки, возвращает её с точкой парковки; администратор управляет доступом и разбирает замечания.
 
-**Статус на 27.09.2026:** в ветке `codex/backend` опубликованы S-01 и контракт S-02: OpenAPI для внутреннего API и карты, синтетические fixtures и проверка схем. Go/Python-сервисы, миграции, Docker Compose и проверки приложения ещё предстоит реализовать. Актуальный checkpoint и очередь — в [прогрессе backend](docs/progress/BACKEND.md).
+**Статус на 27.09.2026:** в ветке `codex/backend` опубликованы S-01, контракт S-02 и каркас S-03: Go gateway/data-mock, React/Vite shell, Dockerfile, приватный bootstrap, локальные проверки и GitHub Actions. Бизнес-маршруты mock, Python-сервис, миграции, Compose и экран карты ещё предстоит реализовать. Актуальный checkpoint и очередь — в [прогрессе backend](docs/progress/BACKEND.md).
 
 ## Начать работу
 
@@ -46,7 +46,7 @@ Mermaid-диаграммы встроены в документы и отобр�
 
 `S-01…S-03: подготовка и контракт → backend с mock / Python и БД / QA отдельно → INT-01…INT-06: соединение, проверка, демонстрация`.
 
-Следующая задача backend — S-03, воспроизводимый каркас. Команды будущего запуска приведены в [OPERATIONS](docs/OPERATIONS.md) и заработают после задач Docker; сейчас запустить приложение из этого репозитория нельзя. Контракт проверяется командами из [CHANGELOG](contracts/CHANGELOG.md), но это не подтверждает работу MAX или Python-сервиса.
+Следующая задача backend — BE-01, HTTP-клиент и управляемый mock. Каркас проверяется `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` при наличии Go 1.27.1, Python 3.12 с зависимостями из `contracts/requirements-dev.txt`, Node 22 и Docker Engine. Подготовка приватных локальных секретов: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap.ps1`. Подробности — в [OPERATIONS](docs/OPERATIONS.md). Каркас пока не выполняет поездки и не доказывает работу MAX или Python-сервиса.
 
 ## Секреты
 
