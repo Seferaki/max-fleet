@@ -142,6 +142,20 @@ func (c *Client) Trip(ctx context.Context, actorMaxID, tripID string) (Trip, err
 	return get[Trip](ctx, c, "/trips/"+tripID, actorMaxID)
 }
 
+func (c *Client) MyTrips(ctx context.Context, actorMaxID string, limit int, cursor string) (Page[Trip], error) {
+	if limit < 0 || limit > 50 || len(cursor) > 2048 {
+		return Page[Trip]{}, errors.New("data-api: invalid trips page")
+	}
+	query := url.Values{"scope": {"mine"}}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	if cursor != "" {
+		query.Set("cursor", cursor)
+	}
+	return get[Page[Trip]](ctx, c, "/trips?"+query.Encode(), actorMaxID)
+}
+
 func (c *Client) Return(ctx context.Context, actorMaxID, returnID string) (Return, error) {
 	if !validUUID(returnID) {
 		return Return{}, errors.New("data-api: invalid return ID")
