@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03 выполнены; бизнес-маршруты ещё не написаны. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03 выполнены; mock содержит чтения и две команды hold, остальные бизнес-маршруты ещё не написаны. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "1e22c0db-a86b-44f0-b2d1-33c197bea3ee"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T14:16:29Z"
+heartbeat_utc: "2026-09-27T14:21:48Z"
 current_task: BE-01
-current_substep: "Mock-чтения проверены; далее идемпотентные команды и snapshot"
-last_verified_code_commit: "7088ce2f7c119b6fcfcf9d48bf571a2b184cf083"
+current_substep: "Mock checkout hold проверен в памяти; далее snapshot и restart"
+last_verified_code_commit: "3bdb0b99b9970b46c0027a84388f467e77e3b878"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: реализовать mock checkout.create/cancel с hold 15 минут, auth/версиями/идемпотентностью; затем атомарный snapshot и restart-тест"
+next_step: "BE-01: атомарный файловый snapshot mock после команд и expiration; restart-тест, failed-save без ложного 200"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `7088ce2f7c119b6fcfcf9d48bf571a2b184cf083` — клиент и mock-чтения; WIP | Mock-команды, scenarios, snapshot |
+| BE-01 | IN_PROGRESS | `3bdb0b99b9970b46c0027a84388f467e77e3b878` — клиент, mock-чтения и in-memory hold; WIP | Snapshot/restart, остальные команды, scenarios |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,10 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `3bdb0b99b9970b46c0027a84388f467e77e3b878`. В mock добавлены in-memory `checkout.create/cancel`, 15-минутный hold, версии, права на выдачу, mutex для гонки, успешные повторы Idempotency-Key и lookup своего результата. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0; `go test -count=20 ./internal/datamock` → exit 0 до финального теста истечения. HTTP-тесты через DataAPI client проверили одного победителя при конкурентной выдаче, отмену, истечение, недопуск blocked driver, чужой key и конфликт key/body. State и idempotency пока только в памяти; перезапуск и failed-save не проверены, readiness остаётся 503. BE-01 WIP.
+
+### Предыдущий BE-01 checkpoint (mock-чтения)
 
 - BE-01 code commit: `7088ce2f7c119b6fcfcf9d48bf571a2b184cf083`. `cmd/data-mock` теперь отдаёт `/meta`, `/me`, `/vehicles`, `/vehicles/{id}` из копии синтетического seed контракта. Проверяет Bearer service token, X-Contract-Version, X-Request-ID и actor; неизвестный actor не получает машины, список имеет cursor с привязкой к фильтру/limit. `APP_ENV=production` запрещает старт; `DATA_API_TOKEN` и `DATA_API_TOKEN_FILE` взаимоисключающие. Исправлен `current_fuel` DTO с `*string` на `*int` по OpenAPI. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` в `services/gateway` → exit 0. HTTP-тесты выполняют чтения через DataAPI client, проверяют неизвестного actor, чужой token, неверную версию, cursor и отсутствие ложного `/health/ready` (503). SHA-256 `services/gateway/internal/datamock/seed.json` совпадает с `contracts/examples/synthetic-seed.json`; `git diff --check` → exit 0. Docker image и restart ещё не проверялись, mock business routes отсутствуют, BE-01 WIP.
 
