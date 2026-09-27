@@ -23,6 +23,8 @@ type stateSnapshot struct {
 	Trips        map[string]dataapi.Trip        `json:"trips"`
 	Returns      map[string]dataapi.Return      `json:"returns"`
 	Issues       map[string]dataapi.Issue       `json:"issues"`
+	IssueAssets  map[string]stagedIssueAsset    `json:"issue_assets"`
+	StageResults map[string]stageAttempt        `json:"stage_results"`
 	Commands     map[string]commandRecord       `json:"commands"`
 	Photos       map[string]map[int]photoRecord `json:"photos"`
 	PhotoResults map[string]photoAttempt        `json:"photo_results"`
@@ -31,7 +33,7 @@ type stateSnapshot struct {
 
 func (s *Server) snapshot() stateSnapshot {
 	state := stateSnapshot{
-		Version:      6,
+		Version:      7,
 		SeedSHA:      fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)),
 		Vehicles:     append([]dataapi.Vehicle(nil), s.vehicles...),
 		Employees:    make(map[string]dataapi.Employee, len(s.employees)),
@@ -39,6 +41,8 @@ func (s *Server) snapshot() stateSnapshot {
 		Trips:        make(map[string]dataapi.Trip, len(s.trips)),
 		Returns:      make(map[string]dataapi.Return, len(s.returns)),
 		Issues:       make(map[string]dataapi.Issue, len(s.issues)),
+		IssueAssets:  make(map[string]stagedIssueAsset, len(s.issueAssets)),
+		StageResults: make(map[string]stageAttempt, len(s.stageResults)),
 		Commands:     make(map[string]commandRecord, len(s.commands)),
 		Photos:       make(map[string]map[int]photoRecord, len(s.photos)),
 		PhotoResults: make(map[string]photoAttempt, len(s.photoResults)),
@@ -61,6 +65,12 @@ func (s *Server) snapshot() stateSnapshot {
 	}
 	for key, value := range s.issues {
 		state.Issues[key] = value
+	}
+	for key, value := range s.issueAssets {
+		state.IssueAssets[key] = value
+	}
+	for key, value := range s.stageResults {
+		state.StageResults[key] = value
 	}
 	for key, value := range s.commands {
 		state.Commands[key] = value
@@ -96,6 +106,12 @@ func (s *Server) restore(state stateSnapshot) {
 	if state.Issues != nil {
 		s.issues = state.Issues
 	}
+	if state.IssueAssets != nil {
+		s.issueAssets = state.IssueAssets
+	}
+	if state.StageResults != nil {
+		s.stageResults = state.StageResults
+	}
 	s.commands = state.Commands
 	s.photos = state.Photos
 	s.photoResults = state.PhotoResults
@@ -124,7 +140,7 @@ func (s *Server) loadSnapshot(path string) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var state stateSnapshot
-	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 6) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version == 6 && state.Issues == nil) {
+	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 7) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version == 7 && (state.IssueAssets == nil || state.StageResults == nil)) {
 		return errors.New("data-mock: invalid snapshot; refusing to reset")
 	}
 	if state.Challenges == nil {
@@ -139,6 +155,12 @@ func (s *Server) loadSnapshot(path string) error {
 	if state.Issues == nil {
 		state.Issues = make(map[string]dataapi.Issue)
 	}
+	if state.IssueAssets == nil {
+		state.IssueAssets = make(map[string]stagedIssueAsset)
+	}
+	if state.StageResults == nil {
+		state.StageResults = make(map[string]stageAttempt)
+	}
 	for _, slots := range state.Photos {
 		for _, photo := range slots {
 			if !validUUID(photo.AssetID) {
@@ -148,6 +170,15 @@ func (s *Server) loadSnapshot(path string) error {
 			if err != nil || len(data) == 0 || len(data) > 10<<20 || fmt.Sprintf("%x", sha256.Sum256(data)) != photo.SHA256 {
 				return errors.New("data-mock: photo asset missing or damaged")
 			}
+		}
+	}
+	for _, asset := range state.IssueAssets {
+		if !validUUID(asset.ID) {
+			return errors.New("data-mock: invalid staged issue asset")
+		}
+		data, err := os.ReadFile(filepath.Join(s.assetDir, asset.ID))
+		if err != nil || len(data) == 0 || len(data) > 10<<20 || fmt.Sprintf("%x", sha256.Sum256(data)) != asset.SHA256 {
+			return errors.New("data-mock: staged issue asset missing or damaged")
 		}
 	}
 	s.restore(state)
