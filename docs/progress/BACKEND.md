@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "e729bd72-cef8-4dae-a0af-ac815fee04a9"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T19:28:14Z"
+heartbeat_utc: "2026-09-27T19:30:25Z"
 current_task: BE-01
-current_substep: "Mock /assets/stage проверен; далее привязка до 3 файлов к issue.create"
-last_verified_code_commit: "d059514d91ab81e3e0b101867c4b58873380d6b0"
+current_substep: "Issue asset attach проверен; далее контрактные сценарии и недостающие BE-01 маршруты"
+last_verified_code_commit: "2fcbef5991bb3ba317dea1331862d5f4b918fc59"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: привязать до 3 staged assets к issue.create с actor/scope/TTL/одноразовостью, проверить rollback и restart"
+next_step: "BE-01: проверить контрактные сценарии mock и реализовать ближайшие недостающие маршруты; сохранить WIP до полной проверки"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `d059514d91ab81e3e0b101867c4b58873380d6b0` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/staging и Compose; WIP | Issue asset attach, scenarios, недостающие маршруты |
+| BE-01 | IN_PROGRESS | `2fcbef5991bb3ba317dea1331862d5f4b918fc59` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets и Compose; WIP | Сценарии контракта, недостающие маршруты |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `2fcbef5991bb3ba317dea1331862d5f4b918fc59`. `issue.create` привязывает до 3 staged assets только того же actor и подходящего vehicle/trip/inspection context до истечения TTL; повторное использование запрещено. Связь и issue сохраняются одной mock snapshot-транзакцией, failed-save откатывает обе записи. Тесты проверили два файла, duplicate ID на клиенте, failed-save и восстановление связи после restart. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Контрактные сценарии целиком и другие маршруты не готовы; BE-01 WIP.
 
 - BE-01 code commit: `d059514d91ab81e3e0b101867c4b58873380d6b0`. Mock `/assets/stage` проверяет владельца живого inspection/trip/vehicle context, один JPEG/PNG/WebP до 10 MiB/25 MP, source event, Idempotency-Key и дубли. Файл и 30-минутный TTL сохраняются в snapshot v7; при failed-save файл удаляется и память откатывается, при restart проверяется SHA. Тесты проверили чужого actor, retry/conflict/duplicate, отсутствие влияния на 8 слотов осмотра, rollback и отказ запуска с повреждённым asset. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Привязка к issue.create и контрактные сценарии ещё не готовы; BE-01 WIP.
 
