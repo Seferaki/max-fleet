@@ -1,6 +1,6 @@
 # Контракт Go ↔ mock ↔ Python
 
-Проектный контракт v1.0, 26.09.2026. В S-02 этот документ превращается в `contracts/data-api.openapi.yaml` и JSON fixtures с зафиксированным commit. **OpenAPI и сервер ещё не реализованы.** Поведение определяется [PRODUCT_SPEC](../PRODUCT_SPEC.md), модель — [DATABASE](DATABASE.md).
+Контракт v1.0, 27.09.2026. Машинная схема и JSON fixtures: [contracts/data-api.openapi.yaml](../contracts/data-api.openapi.yaml), [внешний API карты](../contracts/map-api.openapi.yaml), [CHANGELOG](../contracts/CHANGELOG.md). Сервисы ещё не реализованы; проверка схем не означает проверку mock/Python/MAX. Поведение определяется [PRODUCT_SPEC](../PRODUCT_SPEC.md), модель — [DATABASE](DATABASE.md).
 
 ## 1. Транспорт и доверие
 

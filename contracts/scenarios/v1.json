@@ -1,0 +1,57 @@
+{
+  "contract_version": "1.0",
+  "fake_clock_utc": "2026-09-27T09:00:00Z",
+  "seed": "../examples/synthetic-seed.json",
+  "cases": [
+    {"id":"identity.employee","area":"identity","given":"driver-1 допущен","when":"GET /me","expect":{"http":200,"error":null,"facts":["allowed=true","role=employee"]}},
+    {"id":"identity.admin","area":"identity","given":"admin-1 допущен","when":"GET /admin/summary","expect":{"http":200,"error":null,"facts":["role проверена в данных, не в заголовке"]}},
+    {"id":"identity.blocked-return","area":"identity","given":"blocked-driver имеет active trip","when":"trip.begin_return для собственной trip","expect":{"http":200,"error":null,"facts":["возврат разрешён","новое checkout.create запрещено"]}},
+    {"id":"identity.unknown","area":"identity","given":"actor отсутствует в employees","when":"GET /vehicles","expect":{"http":403,"error":"ACCESS_DENIED","facts":["список машин не раскрыт"]}},
+    {"id":"identity.wrong-owner","area":"identity","given":"driver-2 обращается к return driver-1","when":"GET /returns/{id}","expect":{"http":404,"error":"NOT_FOUND","facts":["чужие данные не раскрыты"]}},
+
+    {"id":"vehicles.free","area":"vehicles","given":"DEMO-001 свободна и карточка полна","when":"GET /vehicles?available=true","expect":{"http":200,"error":null,"facts":["DEMO-001 в списке"]}},
+    {"id":"vehicles.holding","area":"vehicles","given":"DEMO-001 в hold driver-1","when":"GET /vehicles?available=true","expect":{"http":200,"error":null,"facts":["DEMO-001 отсутствует","hold 15 минут"]}},
+    {"id":"vehicles.active-blocked","area":"vehicles","given":"машина в поездке и заблокирована админом","when":"GET /vehicles/{id}","expect":{"http":200,"error":null,"facts":["status=in_trip","manual_blocked=true","следующая выдача запрещена"]}},
+    {"id":"vehicles.incomplete","area":"vehicles","given":"нет места либо инструкции ключей","when":"GET /vehicles?available=true","expect":{"http":200,"error":null,"facts":["машина недоступна"]}},
+    {"id":"vehicles.known-issue","area":"vehicles","given":"только known_nonblocking issue","when":"GET /vehicles/{id}","expect":{"http":200,"error":null,"facts":["issue виден","issue сам по себе не блокирует"]}},
+
+    {"id":"checkout.happy","area":"checkout","given":"свободная машина, math, правила, 8 фото и данные","when":"checkout.start","expect":{"http":200,"error":null,"facts":["ровно один active trip","hold заменён trip без окна доступности"]}},
+    {"id":"checkout.busy","area":"checkout","given":"машина закреплена за другим actor","when":"checkout.create","expect":{"http":409,"error":"VEHICLE_UNAVAILABLE","facts":["новый hold не создан"]}},
+    {"id":"checkout.expired","area":"checkout","given":"fake clock +15 минут 1 секунда","when":"checkout.start","expect":{"http":409,"error":"HOLD_EXPIRED","facts":["trip не создан","фото черновика сохранены"]}},
+    {"id":"checkout.race-loser","area":"checkout","given":"два actor одновременно берут DEMO-001","when":"checkout.create проигравшего","expect":{"http":409,"error":"VEHICLE_UNAVAILABLE","facts":["только один assignment"]}},
+    {"id":"checkout.cancel","area":"checkout","given":"driver-1 держит hold","when":"checkout.cancel","expect":{"http":200,"error":null,"facts":["assignment освобождён","история попытки сохранена"]}},
+    {"id":"checkout.issue-before","area":"checkout","given":"driver-1 заметил проблему до поездки","when":"issue.create","expect":{"http":200,"error":null,"facts":["hold отменён","issue блокирует выдачу"]}},
+
+    {"id":"inspection.zero","area":"inspection","given":"осмотр без фото","when":"inspection.confirm_photos","expect":{"http":422,"error":"PHOTO_SET_INCOMPLETE","facts":["missing_slots=1..8"]}},
+    {"id":"inspection.seven","area":"inspection","given":"сохранено 7 разных фото","when":"inspection.confirm_photos","expect":{"http":422,"error":"PHOTO_SET_INCOMPLETE","facts":["отсутствует ровно один slot","7 фото сохранены"]}},
+    {"id":"inspection.eight","area":"inspection","given":"сохранены 8 разных фото","when":"inspection.confirm_photos","expect":{"http":200,"error":null,"facts":["photos_confirmed_at установлен"]}},
+    {"id":"inspection.duplicate-event","area":"inspection","given":"тот же source_event_key и Idempotency-Key","when":"повтор POST photos/{slot}","expect":{"http":200,"error":null,"facts":["прежний asset_id","версия не увеличена повторно"]}},
+    {"id":"inspection.duplicate-hash","area":"inspection","given":"тот же SHA-256 в другом slot","when":"POST photos/{slot}","expect":{"http":422,"error":"DUPLICATE_PHOTO","facts":["слот не занят"]}},
+    {"id":"inspection.replace","area":"inspection","given":"8 фото подтверждены","when":"замена slot 3","expect":{"http":200,"error":null,"facts":["остальные 7 сохранены","photos_confirmed_at сброшен","inspection.version +1"]}},
+    {"id":"inspection.extra","area":"inspection","given":"8 слотов заняты","when":"девятое фото без выбранного slot","expect":{"http":400,"error":"INVALID_REQUEST","facts":["не распределять автоматически"]}},
+    {"id":"inspection.multi-image","area":"inspection","given":"MAX message с двумя image attachments","when":"нормализация события","expect":{"http":400,"error":"INVALID_REQUEST","facts":["слот не занят","попросить одно фото"]}},
+    {"id":"inspection.storage-error","area":"inspection","given":"S3 запись завершается ошибкой","when":"POST photos/{slot}","expect":{"http":503,"error":"STORAGE_UNAVAILABLE","facts":["слот не занят","остальные фото сохранены"]}},
+
+    {"id":"return.success","area":"return","given":"math, after 8 фото, данные, ключи и точка подтверждены","when":"return.complete","expect":{"http":200,"error":null,"facts":["trip.completed","snapshot обновлён атомарно","assignment освобождён"]}},
+    {"id":"return.damage","area":"return","given":"new_damage=true и issue сохранён","when":"return.complete","expect":{"http":200,"error":null,"facts":["trip.completed","машина недоступна до разбора"]}},
+    {"id":"return.unsafe","area":"return","given":"parking_allowed=false","when":"return.complete","expect":{"http":422,"error":"UNSAFE_RETURN","facts":["trip не завершена","черновик сохранён"]}},
+    {"id":"return.cancel-new","area":"return","given":"return draft отменён","when":"trip.begin_return повторно","expect":{"http":200,"error":null,"facts":["новый return ID","новые пустые фото и точка"]}},
+    {"id":"return.map-failure","area":"return","given":"точка выбрана вручную, data-api временно недоступен","when":"POST /api/v1/returns/{id}/location","expect":{"http":503,"error":"TEMPORARY_FAILURE","facts":["UI удерживает маркер","центр карты не подставляется"]}},
+    {"id":"return.map-forged","area":"return","given":"initData с неверной подписью либо старше 1 часа","when":"GET /api/v1/returns/{id}/context","expect":{"http":401,"error":"INVALID_INIT_DATA","facts":["данные не раскрыты"]}},
+    {"id":"return.admin-close","area":"return","given":"admin причина и math proof, обычный возврат невозможен","when":"trip.admin_close","expect":{"http":200,"error":null,"facts":["closed_by_admin","missing_data без фиктивных значений","needs_review=true"]}},
+
+    {"id":"delivery.db-before-ack","area":"delivery","given":"inbox недоступен","when":"webhook MAX","expect":{"http":503,"error":"DATABASE_UNAVAILABLE","facts":["MAX 200 не отправлен"]}},
+    {"id":"delivery.timeout-after-commit","area":"delivery","given":"команда зафиксирована, HTTP ответ потерян","when":"retry с тем же Idempotency-Key","expect":{"http":200,"error":null,"facts":["прежний результат","второй trip не создан"]}},
+    {"id":"delivery.lease-expired","area":"delivery","given":"lease token старого worker просрочен","when":"inbox ack или доменная команда","expect":{"http":409,"error":"LEASE_EXPIRED","facts":["состояние не изменено"]}},
+    {"id":"delivery.max-429","area":"delivery","given":"MAX ответил 429","when":"notification retry","expect":{"http":200,"error":null,"facts":["учтён Retry-After","trip не откатывается"]}},
+    {"id":"delivery.max-5xx","area":"delivery","given":"MAX ответил 5xx","when":"notification retry","expect":{"http":200,"error":null,"facts":["bounded backoff","trip не откатывается"]}},
+    {"id":"delivery.recipient-blocked","area":"delivery","given":"получатель заблокировал бота","when":"notification retry/dead","expect":{"http":200,"error":null,"facts":["dead или retry зафиксирован","trip не откатывается"]}},
+
+    {"id":"schema.malformed-uuid","area":"schema","given":"target_id не UUID","when":"POST /commands","expect":{"http":400,"error":"INVALID_REQUEST","facts":["команда не выполняется"]}},
+    {"id":"schema.unknown-enum","area":"schema","given":"fuel_level=37","when":"inspection.update","expect":{"http":400,"error":"INVALID_REQUEST","facts":["draft не изменён"]}},
+    {"id":"schema.null-omitted","area":"schema","given":"обязательное поле пропущено вместо null","when":"POST /commands","expect":{"http":400,"error":"INVALID_REQUEST","facts":["null и omission различаются"]}},
+    {"id":"schema.limit","area":"schema","given":"limit=51","when":"GET /vehicles","expect":{"http":400,"error":"INVALID_REQUEST","facts":["максимум 50"]}},
+    {"id":"schema.stale","area":"schema","given":"expected_version от старой кнопки","when":"return.complete","expect":{"http":409,"error":"STALE_VERSION","facts":["показать текущую сводку","не завершать"]}},
+    {"id":"schema.same-key-different-body","area":"schema","given":"Idempotency-Key использован для другого payload","when":"POST /commands","expect":{"http":409,"error":"IDEMPOTENCY_CONFLICT","facts":["первый результат не раскрыт другому actor"]}}
+  ]
+}

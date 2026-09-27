@@ -159,9 +159,14 @@ schemas = {
         "status": string(enum=["active", "returning", "completed", "closed_by_admin"]),
         "started_at": ref("Timestamp"), "ended_at": nullable(ref("Timestamp")),
         "return_id": nullable(ref("UUID")), "missing_data": array(string(80)),
+        "before_inspection": ref("Inspection"),
+        "after_inspection": nullable(ref("Inspection")),
+        "parking_location": nullable(ref("ParkingLocation")),
+        "issues": array(ref("Issue")),
         "version": ref("Version"), "updated_at": ref("Timestamp"),
     }, ("id", "vehicle_id", "employee_id", "checkout_id", "status",
-        "started_at", "ended_at", "return_id", "missing_data", "version", "updated_at")),
+        "started_at", "ended_at", "return_id", "missing_data", "before_inspection",
+        "after_inspection", "parking_location", "issues", "version", "updated_at")),
     "Issue": obj({
         "id": ref("UUID"), "vehicle_id": ref("UUID"), "author_id": ref("UUID"),
         "stage": string(enum=["before", "during", "return", "after"]),
@@ -176,10 +181,17 @@ schemas = {
         "blocks_issuance",
         "trip_id", "inspection_id", "asset_ids", "version", "updated_at")),
     "Challenge": obj({
-        "id": ref("UUID"), "purpose": string(enum=["checkout", "return", "admin"]),
-        "question": string(200), "options": array(string(100), 4),
+        "id": ref("UUID"), "purpose": ref("ChallengePurpose"),
+        "question": string(200), "options": {"type": "array", "items": integer(0, 18),
+                                               "minItems": 4, "maxItems": 4,
+                                               "uniqueItems": True},
         "expires_at": ref("Timestamp"), "attempts_remaining": integer(0, 3),
-    }, ("id", "purpose", "question", "options", "expires_at", "attempts_remaining")),
+        "version": ref("Version"), "updated_at": ref("Timestamp"),
+    }, ("id", "purpose", "question", "options", "expires_at",
+        "attempts_remaining", "version", "updated_at")),
+    "ChallengePurpose": string(enum=["take", "return", "vehicle_block",
+                                     "vehicle_unblock", "employee_grant",
+                                     "employee_access", "admin_close"]),
     "Rules": obj({
         "id": ref("UUID"), "version_label": string(50), "body": string(10000),
     }, ("id", "version_label", "body")),
@@ -194,8 +206,9 @@ schemas = {
     }, ("contract_version", "build_sha", "mode", "capabilities")),
     "AdminSummary": obj({
         "available": integer(), "holding": integer(), "active_trips": integer(),
-        "returning": integer(), "needs_review": integer(),
-    }, ("available", "holding", "active_trips", "returning", "needs_review")),
+        "returning": integer(), "needs_review": integer(), "open_issues": integer(),
+    }, ("available", "holding", "active_trips", "returning", "needs_review",
+        "open_issues")),
     "PhotoUploadResult": obj({
         "asset_id": ref("UUID"), "sha256": string(pattern="^[a-f0-9]{64}$"),
         "inspection": ref("Inspection"),
@@ -221,7 +234,7 @@ def envelope(name, data_schema):
 
 for name in ("Meta", "Me", "CurrentState", "Checkout", "Return", "Rules",
              "Vehicle", "Inspection", "Trip", "Issue", "Employee", "AdminSummary",
-             "PhotoUploadResult", "StagedAsset", "Challenge"):
+             "PhotoUploadResult", "StagedAsset"):
     envelope(name, ref(name))
 for name in ("Vehicle", "Trip", "Issue", "Employee"):
     envelope(name + "Page", ref(name + "Page"))
@@ -232,7 +245,15 @@ spec = {
     "info": {"title": "MAX Fleet Data API", "version": "1.0",
              "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.0 заморожена после contract gate."},
     "servers": [{"url": "http://data-api:8000"}, {"url": "http://data-mock:8000"}],
-    "tags": [{"name": name} for name in ("read", "commands", "photos", "inbox", "integration", "notifications", "health")],
+    "tags": [{"name": name, "description": description} for name, description in (
+        ("read", "Чтение доменных данных с проверкой actor и прав"),
+        ("commands", "Идемпотентные бизнес-команды"),
+        ("photos", "Приватное хранение и чтение фотографий"),
+        ("inbox", "Надёжный приём и обработка MAX событий"),
+        ("integration", "Lease и marker режима polling"),
+        ("notifications", "Очередь доставки уведомлений"),
+        ("health", "Проверки процесса и готовности"),
+    )],
     "components": {
         "securitySchemes": {
             "DataBearer": {"type": "http", "scheme": "bearer", "description": "DATA_API_TOKEN; только Go."},
@@ -294,7 +315,7 @@ def query(name, schema, required=False):
 def read(path, operation_id, data_name, *, actor=True, id_path=False,
          slot_path=False, extra=(), description=""):
     spec["paths"][path] = {"get": {
-        "tags": ["read"], "operationId": operation_id,
+        "tags": ["read"], "operationId": operation_id, "summary": operation_id,
         "description": description,
         "security": [{"DataBearer": []}],
         "parameters": parameters(actor, id_path, slot_path, extra),
@@ -345,7 +366,14 @@ read(P + "/admin/employees/{id}", "getAdminEmployee", "Employee", id_path=True)
 schemas["Conversation"] = obj({
     "flow": string(80), "step": string(80),
     "context": obj({"target_id": nullable(ref("UUID")),
-                    "selected_slot": nullable(ref("PhotoSlot"))}),
+                    "selected_slot": nullable(ref("PhotoSlot")),
+                    "challenge_id": nullable(ref("UUID")),
+                    "vehicle_id": nullable(ref("UUID")),
+                    "trip_id": nullable(ref("UUID")),
+                    "return_id": nullable(ref("UUID")),
+                    "issue_id": nullable(ref("UUID")),
+                    "cursor": nullable(string(2048)),
+                    "draft_text": nullable(string(1000))}),
     "pending_input_kind": nullable(string(enum=["text", "photo", "geo", "none"])),
     "version": ref("Version"), "updated_at": ref("Timestamp"),
 }, ("flow", "step", "context", "pending_input_kind", "version", "updated_at"))
@@ -387,7 +415,7 @@ command_specs = [
     ("checkout.create", "existing", payload({}), "Checkout"),
     ("checkout.cancel", "existing", payload({}), "Checkout"),
     ("challenge.create", "optional", payload({
-        "purpose": string(enum=["checkout", "return", "admin"]),
+        "purpose": ref("ChallengePurpose"),
         "intent_payload": ref("ChallengeIntent"),
     }, ("purpose", "intent_payload")), "Challenge"),
     ("challenge.answer", "existing", payload({
@@ -504,7 +532,7 @@ schemas["CommandResult"] = obj({
 envelope("Command", ref("CommandResult"))
 
 spec["paths"][P + "/commands"] = {"post": {
-    "tags": ["commands"], "operationId": "executeCommand",
+    "tags": ["commands"], "operationId": "executeCommand", "summary": "Выполнить бизнес-команду",
     "description": "Idempotency-Key scoped by actor, reused after timeout. Same key/different operation, target, version or payload → IDEMPOTENCY_CONFLICT. Domain, audit, outbox and result commit atomically. X-Inbox-* pair required for inbox-driven commands; lease fencing checked by Python. Map request uses trusted Go path after initData validation.",
     "security": [{"DataBearer": []}],
     "parameters": parameters(extra=[
@@ -518,7 +546,7 @@ spec["paths"][P + "/commands"] = {"post": {
 }}
 
 spec["paths"][P + "/commands/{idempotency_key}"] = {"get": {
-    "tags": ["commands"], "operationId": "getOwnCommandResult",
+    "tags": ["commands"], "operationId": "getOwnCommandResult", "summary": "Получить результат своей команды",
     "description": "Только результат своей команды; всегда повторно проверить текущие права. Чужой ключ → NOT_FOUND.",
     "security": [{"DataBearer": []}],
     "parameters": parameters(extra=[
@@ -544,7 +572,7 @@ schemas["StagePhotoUpload"] = obj({
 
 def upload(path, operation_id, body_name, result_name, *, id_path=False, slot_path=False):
     spec["paths"][path] = {"post": {
-        "tags": ["photos"], "operationId": operation_id,
+        "tags": ["photos"], "operationId": operation_id, "summary": operation_id,
         "security": [{"DataBearer": []}],
         "parameters": parameters(id_path=id_path, slot_path=slot_path,
                                  extra=[{"$ref": "#/components/parameters/IdempotencyKey"}]),
@@ -561,7 +589,7 @@ upload(P + "/assets/stage", "stageIssueAsset", "StagePhotoUpload", "StagedAsset"
 
 def binary_read(path, operation_id, *, slot_path=False, description=""):
     spec["paths"][path] = {"get": {
-        "tags": ["photos"], "operationId": operation_id,
+        "tags": ["photos"], "operationId": operation_id, "summary": operation_id,
         "description": description,
         "security": [{"DataBearer": []}],
         "parameters": parameters(id_path=True, slot_path=slot_path),
@@ -659,7 +687,8 @@ schemas["NotificationClaimRequest"] = obj({
 }, ("worker_id", "max_items"))
 schemas["NotificationEvent"] = obj({
     "type": string(enum=["trip_started", "trip_completed", "trip_admin_closed",
-                         "issue_created", "issue_resolved", "access_changed"]),
+                         "issue_created", "issue_resolved", "vehicle_blocked",
+                         "access_changed"]),
     "resource_id": ref("UUID"), "vehicle_id": nullable(ref("UUID")),
     "reason": nullable(string(1000)), "occurred_at": ref("Timestamp"),
 }, ("type", "resource_id", "vehicle_id", "reason", "occurred_at"))
@@ -702,7 +731,7 @@ def worker_post(path, operation_id, body_name, result_name, *, path_id=False,
     spec["paths"][path] = {"post": {
         "tags": ["inbox" if "/inbox" in path else
                  "integration" if "/integrations" in path else "notifications"],
-        "operationId": operation_id, "description": description,
+        "operationId": operation_id, "summary": operation_id, "description": description,
         "security": [{"WorkerBearer": []}],
         "parameters": worker_params(path_id=path_id,
                                     integration_key=integration_key, mutation=True),
@@ -722,7 +751,7 @@ worker_post(P + "/inbox/{id}/retry", "retryInbox", "InboxRetry", "QueueTransitio
             path_id=True, description="Просроченный lease не меняет запись; после лимита попыток dead.")
 
 spec["paths"][P + "/integrations/{key}"] = {"get": {
-    "tags": ["integration"], "operationId": "getIntegration",
+    "tags": ["integration"], "operationId": "getIntegration", "summary": "Получить состояние интеграции",
     "security": [{"WorkerBearer": []}],
     "parameters": worker_params(integration_key=True),
     "responses": response(ref("IntegrationResponse")),
@@ -747,6 +776,7 @@ for name in ("live", "ready"):
     path = "/health/" + name
     spec["paths"][path] = {"get": {
         "tags": ["health"], "operationId": "health" + name.capitalize(),
+        "summary": "Проверить " + name,
         "security": [],
         "responses": {"200": {"description": "Без секретов и внутренних адресов",
                               "content": {"application/json": {"schema": obj({

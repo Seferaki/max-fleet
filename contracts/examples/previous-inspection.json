@@ -1,0 +1,20 @@
+{
+  "data": {
+    "id": "40000000-0000-4000-8000-000000000002",
+    "phase": "after",
+    "status": "finalized",
+    "fuel_level": 50,
+    "odometer_km": 12000,
+    "new_damage": false,
+    "cabin_clean": true,
+    "parking_allowed": true,
+    "keys_returned": true,
+    "car_locked": true,
+    "occupied_slots": [1, 2, 3, 4, 5, 6, 7, 8],
+    "missing_slots": [],
+    "photos_confirmed_at": "2026-09-27T09:00:00Z",
+    "version": 10,
+    "updated_at": "2026-09-27T09:00:00Z"
+  },
+  "request_id": "a0000000-0000-4000-8000-000000000003"
+}
