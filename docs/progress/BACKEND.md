@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "cb546f02-a21d-4237-a7fa-726329b9b908"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T19:48:27Z"
+heartbeat_utc: "2026-09-27T19:50:31Z"
 current_task: BE-01
-current_substep: "Новая сессия B: исполнение контрактных сценариев client→mock"
-last_verified_code_commit: "d909cdc2bbf1371413350ec93bb59a6ba1ea3c1f"
+current_substep: "8 из 44 контрактных сценариев исполнены client→mock; далее расширение покрытия"
+last_verified_code_commit: "35d84f5ad7c12c09da74c3ffb9e79ffee51adf94"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: исполнить контрактные сценарии client→mock, затем admin read/inbox маршруты; WIP"
+next_step: "BE-01: расширить исполняемые контрактные сценарии take/inspection/return; затем admin read/inbox маршруты; WIP"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `d909cdc2bbf1371413350ec93bb59a6ba1ea3c1f` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets и Compose; WIP | Сценарии контракта, admin/inbox маршруты |
+| BE-01 | IN_PROGRESS | `35d84f5ad7c12c09da74c3ffb9e79ffee51adf94` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets и Compose; WIP | 8/44 сценариев исполнены; admin/inbox маршруты |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `35d84f5ad7c12c09da74c3ffb9e79ffee51adf94`. Тест читает `contracts/scenarios/v1.json` и исполняет 8 из 44 кейсов через DataAPI HTTP client и mock, сверяя ожидаемые HTTP status/error и ключевые факты: identity.employee/unknown, vehicles.free/holding, checkout.busy/cancel, inspection.zero, schema.same-key-different-body. `go test -run TestContractScenarioSubsetAgainstHTTPMock -v ./internal/datamock` → 8 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Остальные 36 кейсов не исполнены этим runner, BE-01 WIP.
 
 - Передача B → HANDOFF после code commit `d909cdc2bbf1371413350ec93bb59a6ba1ea3c1f`. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` прошли на этом SHA. `.local/contract-venv/Scripts/python.exe contracts/validate.py` → OK: 2 OpenAPI, 36 data routes, 24 command examples, 7 иных examples, 44 сценария (это валидация файлов, не выполнение сценариев). Обычный `py contracts/validate.py` сначала не запустился из-за отсутствия `jsonschema` в системном Python; локальный venv успешно проверил. `docker compose -f deploy/compose.backend.yaml up --build -d` → exit 0, существующий snapshot v6 был принят новым mock v7, оба контейнера healthy; gateway live=200, ready=503. `docker compose ... down` без `-v` → exit 0, контейнеры остановлены, named volume оставлен. Реального MAX consumer не было. Для следующего ноутбука достаточен синтетический seed из Git; `.local/` Go/Python, Compose secret и volume не переносятся. Локальные секреты по имени: `data_api_token` для mock, позже `max_bot_token`; значения не публикуются. H-01 остаётся HUMAN_REQUIRED, проверка `scripts/enter-max-token.ps1 -Check` → False. BE-01 WIP, backend_ready_for_integration=false.
 
