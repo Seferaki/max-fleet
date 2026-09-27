@@ -1,0 +1,60 @@
+name: max-fleet-backend
+
+services:
+  data-mock:
+    build:
+      context: ../services/gateway
+      dockerfile: Dockerfile.data-mock
+    image: max-fleet-data-mock:local
+    container_name: max-fleet-data-mock
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      APP_ENV: development
+      DATA_API_TOKEN_FILE: /run/secrets/data_api_token
+      DATA_MOCK_SNAPSHOT_FILE: /var/lib/max-fleet/snapshot.json
+    secrets: [data_api_token]
+    volumes:
+      - data_mock_state:/var/lib/max-fleet
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8000/health/live]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  gateway:
+    build:
+      context: ../services/gateway
+      dockerfile: Dockerfile.gateway
+    image: max-fleet-gateway:local
+    container_name: max-fleet-gateway
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      APP_ENV: development
+      DATA_API_BASE_URL: http://data-mock:8000/internal/v1
+      DATA_API_TOKEN_FILE: /run/secrets/data_api_token
+    secrets: [data_api_token]
+    ports:
+      - 127.0.0.1:8080:8080
+    depends_on:
+      data-mock:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/health/live]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+secrets:
+  data_api_token:
+    file: ${MAX_FLEET_DATA_API_TOKEN_FILE:?Set MAX_FLEET_DATA_API_TOKEN_FILE to the private local token file}
+
+volumes:
+  data_mock_state:

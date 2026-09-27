@@ -7,8 +7,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/data-mo
 
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 RUN addgroup -S -g 10001 app && adduser -S -D -H -u 10001 -G app app
+RUN mkdir -p /var/lib/max-fleet && chown 10001:10001 /var/lib/max-fleet
 COPY --from=build --chown=10001:10001 /out/data-mock /usr/local/bin/data-mock
 USER 10001:10001
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=3s CMD wget -q -O /dev/null http://127.0.0.1:8000/health/ready || exit 1
+HEALTHCHECK --interval=30s --timeout=3s CMD wget -q -O /dev/null http://127.0.0.1:8000/health/live || exit 1
 ENTRYPOINT ["/usr/local/bin/data-mock"]
