@@ -50,6 +50,24 @@ func (s *Server) completeReturn(w http.ResponseWriter, requestID, actor string, 
 		s.fail(w, requestID, http.StatusUnprocessableEntity, "ODOMETER_ROLLBACK")
 		return dataapi.CommandResult{}, false
 	}
+	if *inspection.NewDamage || !*inspection.CabinClean {
+		damageReported, dirtyReported := false, false
+		for _, issue := range trip.Issues {
+			if issue.Stage != "after" || issue.InspectionID == nil || *issue.InspectionID != inspection.ID {
+				continue
+			}
+			if issue.Category == "body_damage" || issue.Category == "mechanical" {
+				damageReported = true
+			}
+			if issue.Category == "cleanliness" {
+				dirtyReported = true
+			}
+		}
+		if *inspection.NewDamage && !damageReported || !*inspection.CabinClean && !dirtyReported {
+			s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
+			return dataapi.CommandResult{}, false
+		}
+	}
 	vehicleIndex := -1
 	for i := range s.vehicles {
 		if s.vehicles[i].ID == trip.VehicleID {

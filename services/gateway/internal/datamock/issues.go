@@ -36,19 +36,39 @@ func (s *Server) createIssue(w http.ResponseWriter, requestID, actor string, com
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return dataapi.CommandResult{}, false
 	}
-	if input.TripID != nil || !validUUID(*input.InspectionID) {
+	if input.TripID != nil && !validUUID(*input.TripID) || input.InspectionID != nil && !validUUID(*input.InspectionID) {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return dataapi.CommandResult{}, false
 	}
 	checkoutID := ""
 	var checkout dataapi.Checkout
-	for id, candidate := range s.checkouts {
-		if candidate.Inspection.ID == *input.InspectionID {
-			checkout, checkoutID = candidate, id
-			break
+	returnID := ""
+	var draft dataapi.Return
+	tripID := ""
+	var trip dataapi.Trip
+	if input.InspectionID != nil {
+		for id, candidate := range s.checkouts {
+			if candidate.Inspection.ID == *input.InspectionID {
+				checkout, checkoutID = candidate, id
+				break
+			}
 		}
+		if checkoutID == "" {
+			for id, candidate := range s.returns {
+				if candidate.Inspection.ID == *input.InspectionID {
+					draft, returnID = candidate, id
+					tripID = draft.TripID
+					trip = s.trips[tripID]
+					break
+				}
+			}
+		}
+	} else {
+		tripID = *input.TripID
+		trip = s.trips[tripID]
 	}
-	if checkoutID == "" || checkout.EmployeeID != s.employees[actor].ID || checkout.VehicleID != command.TargetID {
+	employee := s.employees[actor]
+	if checkoutID == "" && tripID == "" || checkoutID != "" && (checkout.EmployeeID != employee.ID || checkout.VehicleID != command.TargetID) || tripID != "" && (trip.ID == "" || trip.EmployeeID != employee.ID || trip.VehicleID != command.TargetID) {
 		s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
 		return dataapi.CommandResult{}, false
 	}
@@ -68,22 +88,47 @@ func (s *Server) createIssue(w http.ResponseWriter, requestID, actor string, com
 		s.failVersion(w, requestID, http.StatusConflict, "STALE_VERSION", vehicle.Version)
 		return dataapi.CommandResult{}, false
 	}
-	if checkout.Status != "holding" || checkout.Inspection.Status != "draft" || vehicle.Status != "holding" {
+	if checkoutID != "" && (checkout.Status != "holding" || checkout.Inspection.Status != "draft" || vehicle.Status != "holding") || tripID != "" && (trip.Status != "active" && trip.Status != "returning" || vehicle.Status != "in_trip") || returnID != "" && (draft.Status != "draft" || draft.Inspection.Status != "draft" || draft.IntentConfirmedAt == nil || trip.ReturnID == nil || *trip.ReturnID != draft.ID) {
 		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
 		return dataapi.CommandResult{}, false
 	}
 	now := s.now().UTC()
-	issue := dataapi.Issue{ID: newRequestID(), VehicleID: vehicle.ID, AuthorID: checkout.EmployeeID, Stage: "before", Category: input.Category, Description: input.Description, Status: "open", BlocksIssuance: true, InspectionID: input.InspectionID, AssetIDs: []string{}, Version: 1, UpdatedAt: now}
+	stage := "before"
+	if tripID != "" {
+		stage = "during"
+		if trip.Status == "returning" {
+			stage = "return"
+		}
+		if returnID != "" {
+			stage = "after"
+		}
+	}
+	issue := dataapi.Issue{ID: newRequestID(), VehicleID: vehicle.ID, AuthorID: employee.ID, Stage: stage, Category: input.Category, Description: input.Description, Status: "open", BlocksIssuance: true, InspectionID: input.InspectionID, AssetIDs: []string{}, Version: 1, UpdatedAt: now}
+	if tripID != "" {
+		issue.TripID = &tripID
+	}
 	s.issues[issue.ID] = issue
-	checkout.Status = "rejected"
-	checkout.Step = "issue_reported"
-	checkout.Inspection.Status = "abandoned"
-	checkout.Inspection.Version++
-	checkout.Inspection.UpdatedAt = now
-	checkout.Version++
-	checkout.UpdatedAt = now
-	s.checkouts[checkoutID] = checkout
-	vehicle.Status = "unavailable"
+	if checkoutID != "" {
+		checkout.Status = "rejected"
+		checkout.Step = "issue_reported"
+		checkout.Inspection.Status = "abandoned"
+		checkout.Inspection.Version++
+		checkout.Inspection.UpdatedAt = now
+		checkout.Version++
+		checkout.UpdatedAt = now
+		s.checkouts[checkoutID] = checkout
+		vehicle.Status = "unavailable"
+	} else {
+		trip.Issues = append(trip.Issues, issue)
+		trip.Version++
+		trip.UpdatedAt = now
+		s.trips[tripID] = trip
+		if returnID != "" {
+			draft.Version++
+			draft.UpdatedAt = now
+			s.returns[returnID] = draft
+		}
+	}
 	vehicle.NeedsReview = true
 	vehicle.Version++
 	vehicle.UpdatedAt = now
