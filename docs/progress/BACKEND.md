@@ -6,12 +6,12 @@
 status_schema: 1
 track: backend
 lock_state: ACTIVE
-owner: A
-session_id: "b78b0297-a9fa-4023-a429-3c2df2f65cfe"
+owner: B
+session_id: "1e22c0db-a86b-44f0-b2d1-33c197bea3ee"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T13:26:42Z"
+heartbeat_utc: "2026-09-27T13:53:00Z"
 current_task: BE-01
-current_substep: "Чтения DataAPI client проверены; далее команды и mock"
+current_substep: "Подтверждён takeover от A; добавить типизированные команды BE-01"
 last_verified_code_commit: "fffc54eb257eb29783a0d9d2d57981b6c66595e9"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
@@ -119,3 +119,4 @@ human_required: [H-01]
 | UTC | От → кому | Задача / SHA | Результат |
 |---|---|---|---|
 | 2026-09-27 12:19 | FREE → A | S-01 / `3d53d5a` | Claim опубликован в `codex/backend` |
+| 2026-09-27 13:53 | A → B | BE-01 / `f3e6f49` | Пользователь подтвердил остановку A; takeover через отдельный claim-коммит |
