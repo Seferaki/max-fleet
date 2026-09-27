@@ -5,19 +5,19 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: FREE
-owner: null
-session_id: null
+lock_state: ACTIVE
+owner: A
+session_id: "b78b0297-a9fa-4023-a429-3c2df2f65cfe"
 branch: codex/backend
-heartbeat_utc: null
+heartbeat_utc: "2026-09-27T12:19:14Z"
 current_task: S-01
-current_substep: "Не начато"
+current_substep: "Диагностика Git/Docker и организационных входов; база ff65c94f1c7fcaaf1cae18325cf921b40cd0be01"
 last_verified_code_commit: null
-checkpoint_state: NOT_STARTED
+checkpoint_state: WIP
 contract_commit: null
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "Создать рабочую ветку от main с документацией; захватить очередь; выполнить S-01"
+next_step: "Выполнить S-01: проверить окружение, архитектурные defaults, синтетические fixtures и human gates"
 human_required: []
 ```
 
