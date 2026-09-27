@@ -3,6 +3,7 @@ package datamock
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -67,11 +68,24 @@ func TestEightPhotoSlotsReplaceAndRestart(t *testing.T) {
 	if err != nil || len(before.OccupiedSlots) != 7 || before.Version != version {
 		t.Fatalf("duplicate changed inspection: %+v %v", before, err)
 	}
+	_, err = client.InspectionConfirmPhotos(ctx, driverID, checkout.Inspection.ID, version, "confirm-seven", nil)
+	var incomplete *dataapi.APIError
+	if !errors.As(err, &incomplete) || incomplete.Code != "PHOTO_SET_INCOMPLETE" || len(incomplete.Details.MissingSlots) != 1 || incomplete.Details.MissingSlots[0] != 8 {
+		t.Fatalf("seven-photo confirmation: %v", err)
+	}
 	eighth, err := client.UploadInspectionPhoto(ctx, driverID, dataapi.InspectionPhotoInput{InspectionID: checkout.Inspection.ID, Slot: 8, Version: version, SourceEventKey: "message-8-new", IdempotencyKey: "photo-key-8-new", ContentType: "image/png", Image: syntheticPNG(t, 8)})
 	if err != nil || len(eighth.Inspection.OccupiedSlots) != 8 || len(eighth.Inspection.MissingSlots) != 0 {
 		t.Fatalf("eight slots: %+v %v", eighth, err)
 	}
-	replacement, err := client.UploadInspectionPhoto(ctx, driverID, dataapi.InspectionPhotoInput{InspectionID: checkout.Inspection.ID, Slot: 3, Version: eighth.Inspection.Version, SourceEventKey: "replace-slot-3", IdempotencyKey: "photo-replace-3", ContentType: "image/png", Image: syntheticPNG(t, 99)})
+	confirmedResult, err := client.InspectionConfirmPhotos(ctx, driverID, checkout.Inspection.ID, eighth.Inspection.Version, "confirm-eight", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmed, err := dataapi.DecodeAggregate[dataapi.Inspection](confirmedResult)
+	if err != nil || confirmed.PhotosConfirmedAt == nil {
+		t.Fatalf("confirmation absent: %+v %v", confirmed, err)
+	}
+	replacement, err := client.UploadInspectionPhoto(ctx, driverID, dataapi.InspectionPhotoInput{InspectionID: checkout.Inspection.ID, Slot: 3, Version: confirmed.Version, SourceEventKey: "replace-slot-3", IdempotencyKey: "photo-replace-3", ContentType: "image/png", Image: syntheticPNG(t, 99)})
 	if err != nil || len(replacement.Inspection.OccupiedSlots) != 8 || replacement.Inspection.PhotosConfirmedAt != nil {
 		t.Fatalf("replace: %+v %v", replacement, err)
 	}
@@ -84,7 +98,7 @@ func TestEightPhotoSlotsReplaceAndRestart(t *testing.T) {
 	if err != nil || len(restored.OccupiedSlots) != 8 || restored.Version != replacement.Inspection.Version {
 		t.Fatalf("photo slots lost on restart: %+v %v", restored, err)
 	}
-	replay, err := restoredClient.UploadInspectionPhoto(ctx, driverID, dataapi.InspectionPhotoInput{InspectionID: checkout.Inspection.ID, Slot: 3, Version: eighth.Inspection.Version, SourceEventKey: "replace-slot-3", IdempotencyKey: "photo-replace-3", ContentType: "image/png", Image: syntheticPNG(t, 99)})
+	replay, err := restoredClient.UploadInspectionPhoto(ctx, driverID, dataapi.InspectionPhotoInput{InspectionID: checkout.Inspection.ID, Slot: 3, Version: confirmed.Version, SourceEventKey: "replace-slot-3", IdempotencyKey: "photo-replace-3", ContentType: "image/png", Image: syntheticPNG(t, 99)})
 	if err != nil || replay.AssetID != replacement.AssetID {
 		t.Fatalf("photo idempotency lost: %+v %v", replay, err)
 	}

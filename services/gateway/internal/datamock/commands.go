@@ -56,7 +56,7 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		return
 	}
 	command, ok := parseCommand(body)
-	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel") {
+	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos") {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
@@ -80,8 +80,10 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 	var result dataapi.CommandResult
 	if command.Operation == "checkout.create" {
 		result, ok = s.createCheckout(w, requestID, actor, command)
-	} else {
+	} else if command.Operation == "checkout.cancel" {
 		result, ok = s.cancelCheckout(w, requestID, actor, command)
+	} else {
+		result, ok = s.confirmPhotos(w, requestID, actor, command)
 	}
 	if !ok {
 		return
@@ -168,6 +170,45 @@ func (s *Server) cancelCheckout(w http.ResponseWriter, requestID, actor string, 
 	return commandResult("checkout.cancel", checkout), true
 }
 
+func (s *Server) confirmPhotos(w http.ResponseWriter, requestID, actor string, command mockCommand) (dataapi.CommandResult, bool) {
+	var checkout dataapi.Checkout
+	var checkoutID string
+	for id, candidate := range s.checkouts {
+		if candidate.Inspection.ID == command.TargetID {
+			checkout, checkoutID = candidate, id
+			break
+		}
+	}
+	if checkoutID == "" || checkout.EmployeeID != s.employees[actor].ID {
+		s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
+		return dataapi.CommandResult{}, false
+	}
+	if checkout.Status == "expired" {
+		s.failVersion(w, requestID, http.StatusConflict, "HOLD_EXPIRED", checkout.Inspection.Version)
+		return dataapi.CommandResult{}, false
+	}
+	if checkout.Status != "holding" || checkout.Inspection.Status != "draft" {
+		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
+		return dataapi.CommandResult{}, false
+	}
+	if checkout.Inspection.Version != command.Version {
+		s.failVersion(w, requestID, http.StatusConflict, "STALE_VERSION", checkout.Inspection.Version)
+		return dataapi.CommandResult{}, false
+	}
+	if len(checkout.Inspection.MissingSlots) != 0 {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]any{"code": "PHOTO_SET_INCOMPLETE", "message": "PHOTO_SET_INCOMPLETE", "retryable": false, "details": map[string]any{"missing_slots": checkout.Inspection.MissingSlots}}, "request_id": requestID})
+		return dataapi.CommandResult{}, false
+	}
+	now := s.now().UTC()
+	checkout.Inspection.PhotosConfirmedAt = &now
+	checkout.Inspection.Version++
+	checkout.Inspection.UpdatedAt = now
+	checkout.Version++
+	checkout.UpdatedAt = now
+	s.checkouts[checkoutID] = checkout
+	return commandResult("inspection.confirm_photos", checkout.Inspection), true
+}
+
 func (s *Server) commandResult(w http.ResponseWriter, r *http.Request, requestID string) {
 	key, operation := r.PathValue("key"), r.URL.Query().Get("operation")
 	if len(key) < 8 || len(key) > 200 || operation == "" {
@@ -208,8 +249,8 @@ func (s *Server) expireHolds() bool {
 	return changed
 }
 
-func commandResult(operation string, checkout dataapi.Checkout) dataapi.CommandResult {
-	encoded, _ := json.Marshal(checkout)
+func commandResult(operation string, aggregate any) dataapi.CommandResult {
+	encoded, _ := json.Marshal(aggregate)
 	return dataapi.CommandResult{Operation: operation, Aggregate: encoded}
 }
 
