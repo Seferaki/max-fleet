@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -41,6 +42,25 @@ func (s scenarioContext) hold(key string) dataapi.Checkout {
 	if err != nil {
 		s.t.Fatal(err)
 	}
+	return hold
+}
+
+func (s scenarioContext) upload(inspectionID string, slot int, version int64, tone uint8, event string) (dataapi.PhotoUploadResult, error) {
+	return s.client.UploadInspectionPhoto(s.ctx, driverID, dataapi.InspectionPhotoInput{InspectionID: inspectionID, Slot: slot, Version: version, SourceEventKey: event, IdempotencyKey: "scenario-photo-" + event, ContentType: "image/png", Image: syntheticPNG(s.t, tone)})
+}
+
+func (s scenarioContext) photoSet(count int) dataapi.Checkout {
+	s.t.Helper()
+	hold := s.hold("scenario-photo-hold")
+	version := hold.Inspection.Version
+	for slot := 1; slot <= count; slot++ {
+		result, err := s.upload(hold.Inspection.ID, slot, version, uint8(slot), fmt.Sprintf("slot-%d", slot))
+		if err != nil {
+			s.t.Fatal(err)
+		}
+		version = result.Inspection.Version
+	}
+	hold.Inspection.Version = version
 	return hold
 }
 
@@ -122,6 +142,56 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 			return err
 		},
+		"inspection.seven": func(s scenarioContext) error {
+			hold := s.photoSet(7)
+			_, err := s.client.InspectionConfirmPhotos(s.ctx, driverID, hold.Inspection.ID, hold.Inspection.Version, "scenario-confirm-seven", nil)
+			var apiErr *dataapi.APIError
+			if errors.As(err, &apiErr) && (len(apiErr.Details.MissingSlots) != 1 || apiErr.Details.MissingSlots[0] != 8) {
+				s.t.Fatal("seven photos did not report slot 8")
+			}
+			inspection, readErr := s.client.Inspection(s.ctx, driverID, hold.Inspection.ID)
+			if readErr != nil || len(inspection.OccupiedSlots) != 7 {
+				s.t.Fatal("seven photos were lost")
+			}
+			return err
+		},
+		"inspection.eight": func(s scenarioContext) error {
+			hold := s.photoSet(8)
+			result, err := s.client.InspectionConfirmPhotos(s.ctx, driverID, hold.Inspection.ID, hold.Inspection.Version, "scenario-confirm-eight", nil)
+			if err != nil {
+				return err
+			}
+			inspection, err := dataapi.DecodeAggregate[dataapi.Inspection](result)
+			if err == nil && (inspection.PhotosConfirmedAt == nil || len(inspection.OccupiedSlots) != 8) {
+				s.t.Fatal("eight photos not confirmed")
+			}
+			return err
+		},
+		"inspection.duplicate-event": func(s scenarioContext) error {
+			hold := s.hold("scenario-duplicate-event-hold")
+			first, err := s.upload(hold.Inspection.ID, 1, hold.Inspection.Version, 31, "repeat-event")
+			if err != nil {
+				return err
+			}
+			again, err := s.upload(hold.Inspection.ID, 1, hold.Inspection.Version, 31, "repeat-event")
+			if err == nil && (again.AssetID != first.AssetID || again.Inspection.Version != first.Inspection.Version) {
+				s.t.Fatal("photo retry changed asset or version")
+			}
+			return err
+		},
+		"inspection.duplicate-hash": func(s scenarioContext) error {
+			hold := s.hold("scenario-duplicate-hash-hold")
+			first, err := s.upload(hold.Inspection.ID, 1, hold.Inspection.Version, 32, "hash-first")
+			if err != nil {
+				return err
+			}
+			_, err = s.upload(hold.Inspection.ID, 2, first.Inspection.Version, 32, "hash-second")
+			inspection, readErr := s.client.Inspection(s.ctx, driverID, hold.Inspection.ID)
+			if readErr != nil || len(inspection.OccupiedSlots) != 1 {
+				s.t.Fatal("duplicate hash occupied second slot")
+			}
+			return err
+		},
 		"schema.same-key-different-body": func(s scenarioContext) error {
 			s.hold("scenario-same-key")
 			_, err := s.client.CheckoutCreate(s.ctx, driverID, "10000000-0000-4000-8000-000000000002", 1, "scenario-same-key", nil)
@@ -143,7 +213,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 		}
 		t.Run(item.ID, func(t *testing.T) {
 			now := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
-			mock, err := NewWithClock("test-service-token", func() time.Time { return now })
+			mock, err := NewWithSnapshot("test-service-token", filepath.Join(t.TempDir(), "state.json"), func() time.Time { return now })
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -166,7 +236,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 		})
 	}
-	if len(runs) != 8 {
+	if len(runs) != 12 {
 		t.Fatal("scenario runner count changed")
 	}
 	for id := range runs {
