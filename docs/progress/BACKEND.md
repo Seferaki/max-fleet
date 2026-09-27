@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "e729bd72-cef8-4dae-a0af-ac815fee04a9"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T15:11:42Z"
+heartbeat_utc: "2026-09-27T15:15:04Z"
 current_task: BE-01
-current_substep: "checkout.start создаёт одну active trip после полного before; далее fresh return draft"
-last_verified_code_commit: "457686ac99659b670c05c5d30df33b637633b618"
+current_substep: "Fresh return draft/cancel и восстановление; далее after-фото и безопасное завершение"
+last_verified_code_commit: "7685ff726f3608da6ca7c7f80767060ad07c1288"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: добавить trip.begin_return и return.cancel с новым пустым after-осмотром; затем after-фото, location и безопасный return.complete"
+next_step: "BE-01: добавить return math, after inspection/photo support, подтверждённую location и безопасный return.complete; затем contract scenarios и Compose"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `457686ac99659b670c05c5d30df33b637633b618` — клиент, mock-чтения/recovery, hold/snapshot, before-фото, math take, правила, данные и start; WIP | Return/after, scenarios, Compose |
+| BE-01 | IN_PROGRESS | `7685ff726f3608da6ca7c7f80767060ad07c1288` — клиент, mock-чтения/recovery, hold/snapshot, before-фото, math take, правила, start и fresh return draft; WIP | Return math/after/complete, scenarios, Compose |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `7685ff726f3608da6ca7c7f80767060ad07c1288`. Client/mock поддерживают `trip.begin_return`, `return.cancel`, own/admin GET `/returns/{id}` и state с draft. Begin переводит trip в returning и создаёт новый return и after-inspection с 8 пустыми слотами; повтор ключа даёт тот же ID, второй независимый begin блокируется. Cancel помечает draft/inspection cancelled/abandoned, возвращает trip в active; следующий begin создаёт новые IDs и пустые фото/место. Snapshot v5 сохраняет returns и читает предыдущие версии. Тесты проверили owner ACL, повтор, новый черновик и восстановление после restart. `go test -count=3 ./internal/datamock`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Math/after/photo/location/complete ещё нет; BE-01 WIP.
 
 - BE-01 code commit: `457686ac99659b670c05c5d30df33b637633b618`. Client/mock поддерживают `checkout.start` и own/admin GET `/trips/{id}`. Start сверяет owner/version, действующий hold, право водителя, math intent, принятую текущую версию правил, 8 подтверждённых фото, fuel/odometer, явное отсутствие новых замечаний и доступность машины; одной сохранённой мутацией переводит checkout/inspection/vehicle/employee и создаёт active trip. Snapshot v4 хранит trips/employees, читает v2/v3. Тест полного потока: 7/8 и 8 неподтверждённых фото блокируют start, успешный start даёт одну trip, повтор с тем же ключом и restart восстанавливают trip/active employee, чужой actor получает 404, второй hold запрещён. Injected failed save возвращает 503 и сохраняет holding без trip. `go test -count=3 ./internal/datamock`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Return ещё отсутствует; BE-01 WIP.
 
