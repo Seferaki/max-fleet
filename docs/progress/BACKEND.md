@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "e729bd72-cef8-4dae-a0af-ac815fee04a9"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T14:57:41Z"
+heartbeat_utc: "2026-09-27T14:59:47Z"
 current_task: BE-01
-current_substep: "Текущие правила через DataAPI client и mock; далее math challenge take"
-last_verified_code_commit: "93ede96e0e9a97fe166ea372b0e031ea60fcb44b"
+current_substep: "Клиент challenge take/answer и принятия правил; далее mock-команды"
+last_verified_code_commit: "13f241db846cdf95b64d5b65f0109c36aab3758c"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: добавить challenge.create/answer take с TTL, тремя ошибками, auth, idempotency и snapshot; затем принять версию правил и блокировать checkout.start до полного before-осмотра"
+next_step: "BE-01: реализовать challenge.create/answer take в mock с TTL, тремя ошибками, auth, idempotency и snapshot; затем принять версию правил и блокировать checkout.start до полного before-осмотра"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `93ede96e0e9a97fe166ea372b0e031ea60fcb44b` — клиент, mock-чтения/recovery, hold/snapshot, before-фото и текущие правила; WIP | Math/rules/start, trip/after/return, scenarios, Compose |
+| BE-01 | IN_PROGRESS | `13f241db846cdf95b64d5b65f0109c36aab3758c` — клиент, mock-чтения/recovery, hold/snapshot, before-фото и текущие правила; WIP | Math/rules/start, trip/after/return, scenarios, Compose |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `13f241db846cdf95b64d5b65f0109c36aab3758c`. DataAPI client отправляет typed `challenge.create` для take с привязкой к hold/vehicle intent, `challenge.answer` с option 0…3 и `checkout.accept_rules` с конкретным rules version ID. Добавлен DTO публичного challenge без правильного ответа. HTTP-тест проверяет payload и отказ option 4 до отправки. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` в `services/gateway` → exit 0. Mock math-команды ещё не реализованы, BE-01 WIP.
 
 - BE-01 code commit: `93ede96e0e9a97fe166ea372b0e031ea60fcb44b`. DataAPI client читает `/rules/current`; mock возвращает версию `demo-v1` и текст правил из `demo_only` seed после проверки service token и actor. Неизвестный сотрудник получает 403. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` в `services/gateway` → exit 0; после последней проверки seed повторный `go test ./...` → exit 0. Math и принятие правил ещё не реализованы; BE-01 WIP.
 
