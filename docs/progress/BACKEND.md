@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03 выполнены; mock покрывает основные сценарии поездки и возврата, но технические очереди и часть команд ещё отсутствуют. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03 выполнены; mock покрывает основные сценарии поездки и возврата, durable inbox ingest, но lease-маршруты очередей и часть команд ещё отсутствуют. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "de2e37a7-1a31-4a70-81c1-a9988c8c22bf"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T22:47:03Z"
+heartbeat_utc: "2026-09-27T22:54:12Z"
 current_task: BE-01
-current_substep: "Takeover подтверждён владельцем; далее durable inbox ingest"
-last_verified_code_commit: "47209359eb677a0bce509174c053c80630e8248d"
+current_substep: "Durable POST /inbox проверен; далее claim/ack/retry с fencing lease"
+last_verified_code_commit: "537d3ddbef1396a6bf3096b7045dc9e23b19e7fc"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: реализовать inbox durable ingest с WorkerBearer, idempotency и restart; затем claim/ack/retry, notifications/integrations; WIP"
+next_step: "BE-01: реализовать inbox claim/ack/retry с lease fencing и restart; затем worker client, notifications/integrations; WIP"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `47209359eb677a0bce509174c053c80630e8248d` — отдельный WorkerBearer для mock/Compose; клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets, admin reads; WIP | 22/44 сценария исполнены; inbox/notification/integration маршруты |
+| BE-01 | IN_PROGRESS | `537d3ddbef1396a6bf3096b7045dc9e23b19e7fc` — durable POST /inbox; прежние клиент/mock-сценарии; WIP | 22/44 runner-сценария; lease/notification/integration маршруты |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `537d3ddbef1396a6bf3096b7045dc9e23b19e7fc`. Mock `POST /internal/v1/inbox` принимает отдельный WorkerBearer, нормализованный private-chat event и Idempotency-Key; duplicate возвращает прежний ID, изменённое тело/ключ — 409. Новый event подтверждается только после атомарного snapshot; при сбое записи — 503 `DATABASE_UNAVAILABLE` и откат памяти. Snapshot v8 хранит inbox и ключи; v7 загружается с пустыми очередями. `go test ./internal/datamock -run '^TestInbox' -count=1 -v` → 4 теста PASS (auth/версия, duplicate/restart, failed save, malformed/multi-photo, v7 migration). `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `docker build -f services/gateway/Dockerfile.data-mock -t max-fleet-data-mock:inbox services/gateway` → exit 0. Первый тестовый прогон выявил пустые map с `omitempty` и binary SHA в JSON; оба исправлены, повтор зелёный. Удалённый CI после этого коммита ещё не проверен. Claim/ack/retry и webhook не реализованы; 22/44 runner-сценария не переобъявлены.
 
 - BE-01 code commit: `47209359eb677a0bce509174c053c80630e8248d`. Data mock теперь требует отдельный WorkerBearer при запуске, отвергает совпадающие Data/Worker токены; bootstrap и Compose монтируют оба приватных файла. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock`, `docker compose -f deploy/compose.backend.yaml config --quiet` → exit 0. `docker compose -f deploy/compose.backend.yaml up --build -d` → оба контейнера запущены, data-mock healthy, gateway `/health/live`=200. Токены не выводились; staged secret scan и diff check прошли. Inbox route и восстановление inbox пока отсутствуют. Следующий шаг: durable `POST /inbox` с WorkerBearer, idempotency и restart; BE-01 WIP.
 
