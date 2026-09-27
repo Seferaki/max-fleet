@@ -164,13 +164,16 @@ schemas = {
         "started_at", "ended_at", "return_id", "missing_data", "version", "updated_at")),
     "Issue": obj({
         "id": ref("UUID"), "vehicle_id": ref("UUID"), "author_id": ref("UUID"),
-        "category": string(enum=["body_damage", "mechanical", "dirty", "keys", "other"]),
+        "stage": string(enum=["before", "during", "return", "after"]),
+        "category": ref("IssueCategory"),
         "description": string(1000),
-        "status": string(enum=["new", "in_progress", "resolved", "known_nonblocking"]),
+        "status": string(enum=["open", "in_progress", "resolved", "known_nonblocking"]),
+        "blocks_issuance": {"type": "boolean"},
         "trip_id": nullable(ref("UUID")), "inspection_id": nullable(ref("UUID")),
         "asset_ids": array(ref("UUID"), 3), "version": ref("Version"),
         "updated_at": ref("Timestamp"),
-    }, ("id", "vehicle_id", "author_id", "category", "description", "status",
+    }, ("id", "vehicle_id", "author_id", "stage", "category", "description", "status",
+        "blocks_issuance",
         "trip_id", "inspection_id", "asset_ids", "version", "updated_at")),
     "Challenge": obj({
         "id": ref("UUID"), "purpose": string(enum=["checkout", "return", "admin"]),
@@ -331,12 +334,427 @@ read(P + "/admin/employees", "listAdminEmployees", "EmployeePage", extra=(
     query("limit", integer(1, 50)), query("cursor", string(2048)),
 ))
 read(P + "/admin/issues", "listAdminIssues", "IssuePage", extra=(
-    query("status", string(enum=["new", "in_progress", "resolved", "known_nonblocking"])),
+    query("status", string(enum=["open", "in_progress", "resolved", "known_nonblocking"])),
     query("vehicle_id", ref("UUID")), query("limit", integer(1, 50)),
     query("cursor", string(2048)),
 ))
 read(P + "/issues/{id}", "getIssue", "Issue", id_path=True)
 read(P + "/admin/employees/{id}", "getAdminEmployee", "Employee", id_path=True)
+
+
+schemas["Conversation"] = obj({
+    "flow": string(80), "step": string(80),
+    "context": obj({"target_id": nullable(ref("UUID")),
+                    "selected_slot": nullable(ref("PhotoSlot"))}),
+    "pending_input_kind": nullable(string(enum=["text", "photo", "geo", "none"])),
+    "version": ref("Version"), "updated_at": ref("Timestamp"),
+}, ("flow", "step", "context", "pending_input_kind", "version", "updated_at"))
+
+schemas["LocationInput"] = obj({
+    "latitude": {"type": "number", "minimum": -90, "maximum": 90},
+    "longitude": {"type": "number", "minimum": -180, "maximum": 180},
+    "source": string(enum=["max_geo", "manual_map", "admin"]),
+    "landmark": nullable(string(500)), "confirmed": {"const": True},
+}, ("latitude", "longitude", "source", "confirmed"))
+
+schemas["ChallengeIntent"] = obj({
+    "operation": string(enum=["checkout.create", "trip.begin_return", "vehicle.block",
+                              "vehicle.unblock", "employee.grant", "employee.access",
+                              "trip.admin_close"]),
+    "target_id": nullable(ref("UUID")), "expected_version": nullable(ref("Version")),
+    "reason": string(1000), "max_user_id": ref("MaxID"),
+    "display_name": string(200), "can_start_trip": {"type": "boolean"},
+    "review_completed": {"type": "boolean"},
+}, ("operation", "target_id", "expected_version"))
+
+schemas["AdminCloseData"] = obj({
+    "fuel_level": ref("FuelLevel"), "odometer_km": integer(),
+    "latitude": {"type": "number", "minimum": -90, "maximum": 90},
+    "longitude": {"type": "number", "minimum": -180, "maximum": 180},
+    "landmark": string(500), "keys_returned": {"type": "boolean"},
+    "car_locked": {"type": "boolean"},
+})
+
+
+def payload(fields, required=(), min_properties=None):
+    value = obj(fields, required)
+    if min_properties is not None:
+        value["minProperties"] = min_properties
+    return value
+
+
+command_specs = [
+    ("checkout.create", "existing", payload({}), "Checkout"),
+    ("checkout.cancel", "existing", payload({}), "Checkout"),
+    ("challenge.create", "optional", payload({
+        "purpose": string(enum=["checkout", "return", "admin"]),
+        "intent_payload": ref("ChallengeIntent"),
+    }, ("purpose", "intent_payload")), "Challenge"),
+    ("challenge.answer", "existing", payload({
+        "selected_option": integer(0, 3),
+    }, ("selected_option",)), "Challenge"),
+    ("checkout.accept_rules", "existing", payload({
+        "rules_version_id": ref("UUID"),
+    }, ("rules_version_id",)), "Checkout"),
+    ("inspection.update", "existing", payload({
+        "fuel_level": ref("FuelLevel"), "odometer_km": integer(),
+        "new_damage": {"type": "boolean"}, "cabin_clean": {"type": "boolean"},
+        "parking_allowed": {"type": "boolean"}, "keys_returned": {"type": "boolean"},
+        "car_locked": {"type": "boolean"},
+    }, min_properties=1), "Inspection"),
+    ("inspection.confirm_photos", "existing", payload({}), "Inspection"),
+    ("checkout.set_no_new_issues", "existing", payload({
+        "value": {"const": True},
+    }, ("value",)), "Checkout"),
+    ("checkout.start", "existing", payload({
+        "attestation": {"const": True},
+    }, ("attestation",)), "Trip"),
+    ("trip.begin_return", "existing", payload({}), "Return"),
+    ("return.cancel", "existing", payload({}), "Return"),
+    ("return.set_location", "existing", ref("LocationInput"), "Return"),
+    ("return.complete", "existing", payload({
+        "attestation": {"const": True},
+    }, ("attestation",)), "Trip"),
+    ("issue.create", "existing", payload({
+        "category": ref("IssueCategory"), "description": string(1000),
+        "trip_id": nullable(ref("UUID")),
+        "inspection_id": nullable(ref("UUID")),
+        "asset_ids": array(ref("UUID"), 3),
+    }, ("category", "description", "asset_ids")), "Issue"),
+    ("vehicle.block", "existing", payload({
+        "reason": string(1000), "challenge_id": ref("UUID"),
+    }, ("reason", "challenge_id")), "Vehicle"),
+    ("vehicle.unblock", "existing", payload({
+        "reason": string(1000), "review_completed": {"const": True},
+        "challenge_id": ref("UUID"),
+    }, ("reason", "review_completed", "challenge_id")), "Vehicle"),
+    ("vehicle.edit", "existing", payload({
+        "description": string(1000), "key_instructions": string(1000),
+        "confirmation": {"const": True},
+    }, ("confirmation",)), "Vehicle"),
+    ("vehicle.correct_snapshot", "existing", payload({
+        "reason": string(1000), "fuel_level": ref("FuelLevel"),
+        "odometer_km": integer(), "location": ref("LocationInput"),
+        "confirmation": {"const": True},
+    }, ("reason", "confirmation")), "Vehicle"),
+    ("vehicle.annotate", "existing", payload({
+        "reason": string(1000), "text": string(1000),
+        "confirmation": {"const": True},
+    }, ("reason", "text", "confirmation")), "Vehicle"),
+    ("employee.grant", "new", payload({
+        "max_user_id": ref("MaxID"), "display_name": string(200),
+        "challenge_id": ref("UUID"),
+    }, ("max_user_id", "display_name", "challenge_id")), "Employee"),
+    ("employee.access", "existing", payload({
+        "can_start_trip": {"type": "boolean"}, "reason": string(1000),
+        "challenge_id": ref("UUID"),
+    }, ("can_start_trip", "reason", "challenge_id")), "Employee"),
+    ("issue.resolve", "existing", payload({
+        "status": string(enum=["in_progress", "resolved", "known_nonblocking"]),
+        "comment": string(1000), "confirmation": {"const": True},
+    }, ("status", "comment", "confirmation")), "Issue"),
+    ("trip.admin_close", "existing", payload({
+        "reason": string(1000), "challenge_id": ref("UUID"),
+        "available_data": ref("AdminCloseData"),
+    }, ("reason", "challenge_id")), "Trip"),
+    ("conversation.save", "existing", payload({
+        "flow": string(80), "step": string(80),
+        "context": schemas["Conversation"]["properties"]["context"],
+        "pending_input_kind": nullable(string(enum=["text", "photo", "geo", "none"])),
+    }, ("flow", "step", "context")), "Conversation"),
+]
+
+schemas["IssueCategory"] = string(enum=["body_damage", "mechanical", "cleanliness", "keys", "other"])
+command_refs = []
+for operation, target_kind, body, result_name in command_specs:
+    name = "".join(part.capitalize() for part in operation.replace(".", "_").split("_")) + "Command"
+    if isinstance(body, dict) and "$ref" in body:
+        payload_schema = body
+    else:
+        payload_schema = body
+    target_schema = ref("UUID") if target_kind == "existing" else {"type": "null"}
+    version_schema = ref("Version") if target_kind == "existing" else {"type": "null"}
+    if target_kind == "optional":
+        target_schema = nullable(ref("UUID"))
+        version_schema = nullable(ref("Version"))
+    schemas[name] = obj({
+        "operation": {"const": operation}, "target_id": target_schema,
+        "expected_version": version_schema, "payload": payload_schema,
+    }, ("operation", "target_id", "expected_version", "payload"))
+    command_refs.append(ref(name))
+
+schemas["Command"] = {
+    "oneOf": command_refs,
+    "discriminator": {"propertyName": "operation", "mapping": {
+        operation: REF + "".join(part.capitalize() for part in operation.replace(".", "_").split("_")) + "Command"
+        for operation, _, _, _ in command_specs
+    }},
+    "description": "Каждая операция имеет собственный payload. expected_version относится к target_id; чужой/устаревший объект не изменяется.",
+}
+schemas["CommandResult"] = obj({
+    "operation": string(enum=[entry[0] for entry in command_specs]),
+    "aggregate": {"oneOf": [ref(name) for name in (
+        "Checkout", "Return", "Trip", "Inspection", "Issue", "Vehicle", "Employee",
+        "Challenge", "Conversation")],
+        "description": "Полное подтверждённое состояние объекта, соответствующего операции."},
+    "correct": nullable({"type": "boolean"}),
+    "attempts_remaining": nullable(integer(0, 3)),
+    "challenge_proof_id": nullable(ref("UUID")),
+}, ("operation", "aggregate", "correct", "attempts_remaining", "challenge_proof_id"))
+envelope("Command", ref("CommandResult"))
+
+spec["paths"][P + "/commands"] = {"post": {
+    "tags": ["commands"], "operationId": "executeCommand",
+    "description": "Idempotency-Key scoped by actor, reused after timeout. Same key/different operation, target, version or payload → IDEMPOTENCY_CONFLICT. Domain, audit, outbox and result commit atomically. X-Inbox-* pair required for inbox-driven commands; lease fencing checked by Python. Map request uses trusted Go path after initData validation.",
+    "security": [{"DataBearer": []}],
+    "parameters": parameters(extra=[
+        {"$ref": "#/components/parameters/IdempotencyKey"},
+        {"name": "X-Inbox-Event-ID", "in": "header", "required": False, "schema": ref("UUID")},
+        {"name": "X-Inbox-Lease", "in": "header", "required": False,
+         "schema": string(200), "description": "Opaque fencing token; never log."},
+    ]),
+    "requestBody": {"required": True, "content": {"application/json": {"schema": ref("Command")}}},
+    "responses": response(ref("CommandResponse")),
+}}
+
+spec["paths"][P + "/commands/{idempotency_key}"] = {"get": {
+    "tags": ["commands"], "operationId": "getOwnCommandResult",
+    "description": "Только результат своей команды; всегда повторно проверить текущие права. Чужой ключ → NOT_FOUND.",
+    "security": [{"DataBearer": []}],
+    "parameters": parameters(extra=[
+        {"name": "idempotency_key", "in": "path", "required": True,
+         "schema": string(200)},
+        query("operation", string(enum=[entry[0] for entry in command_specs]), True),
+    ]),
+    "responses": response(ref("CommandResponse")),
+}}
+
+schemas["InspectionPhotoUpload"] = obj({
+    "image": {"type": "string", "format": "binary"},
+    "expected_version": ref("Version"), "source_event_key": string(200),
+}, ("image", "expected_version", "source_event_key"),
+    "Single JPEG/PNG/WebP, максимум 10 MiB и 25 MP. MIME, сигнатура, декодирование и SHA-256 проверяются Python. Один slot 1…8; duplicate SHA в том же осмотре отклоняется; замена не стирает остальные 7.")
+schemas["StagePhotoUpload"] = obj({
+    "image": {"type": "string", "format": "binary"},
+    "purpose": {"const": "issue"},
+    "scope_type": string(enum=["vehicle", "trip", "inspection"]),
+    "scope_id": ref("UUID"), "source_event_key": string(200),
+}, ("image", "purpose", "scope_type", "scope_id", "source_event_key"))
+
+
+def upload(path, operation_id, body_name, result_name, *, id_path=False, slot_path=False):
+    spec["paths"][path] = {"post": {
+        "tags": ["photos"], "operationId": operation_id,
+        "security": [{"DataBearer": []}],
+        "parameters": parameters(id_path=id_path, slot_path=slot_path,
+                                 extra=[{"$ref": "#/components/parameters/IdempotencyKey"}]),
+        "requestBody": {"required": True, "content": {
+            "multipart/form-data": {"schema": ref(body_name)}}},
+        "responses": response(ref(result_name + "Response")),
+    }}
+
+
+upload(P + "/inspections/{id}/photos/{slot}", "uploadInspectionPhoto",
+       "InspectionPhotoUpload", "PhotoUploadResult", id_path=True, slot_path=True)
+upload(P + "/assets/stage", "stageIssueAsset", "StagePhotoUpload", "StagedAsset")
+
+
+def binary_read(path, operation_id, *, slot_path=False, description=""):
+    spec["paths"][path] = {"get": {
+        "tags": ["photos"], "operationId": operation_id,
+        "description": description,
+        "security": [{"DataBearer": []}],
+        "parameters": parameters(id_path=True, slot_path=slot_path),
+        "responses": {**response(ref("ErrorResponse")),
+                      "200": {"description": "Авторизованный поток, без публичного URL",
+                              "content": {"image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+                                          "image/png": {"schema": {"type": "string", "format": "binary"}},
+                                          "image/webp": {"schema": {"type": "string", "format": "binary"}}}}},
+    }}
+
+
+binary_read(P + "/assets/{id}/content", "getAuthorizedAsset",
+            description="Владелец/admin и контекст доступа проверяются для каждого запроса; чужой asset → NOT_FOUND.")
+binary_read(P + "/vehicles/{id}/previous-inspection/photos/{slot}",
+            "getAnonymizedPreviousPhoto", slot_path=True,
+            description="Только последний finalized after-осмотр машины; этот маршрут не открывает чужую поездку или произвольный asset.")
+
+
+spec["info"]["description"] += (
+    " Версии: vehicle растёт при смене доступности, блокировке, issue и коррекции; "
+    "checkout при изменении оформления; inspection при ответе, фото и подтверждении; "
+    "return при месте/отмене/завершении; trip при начале возврата, отмене, завершении и admin close; "
+    "conversation только при save. Фото не повышает checkout/return version. "
+    "Перед start/complete Go читает актуальный агрегат. Hold равен 15 минутам серверного времени. "
+    "Finalized inspection неизменяем, admin close не подставляет отсутствующие данные."
+)
+
+
+schemas["NormalizedEvent"] = obj({
+    "integration_key": string(100), "event_key": string(200),
+    "event_type": string(enum=["bot_started", "message_created", "message_callback"]),
+    "actor_max_user_id": ref("MaxID"), "chat_id": ref("MaxID"),
+    "message_id": nullable(string(200)), "callback_id": nullable(string(200)),
+    "occurred_at": ref("Timestamp"),
+    "payload": obj({
+        "kind": string(enum=["start", "text", "photo", "geo", "callback"]),
+        "text": nullable(string(1000)), "callback_data": nullable(string(200)),
+        "photo_source_key": nullable(string(500)),
+        "latitude": nullable({"type": "number", "minimum": -90, "maximum": 90}),
+        "longitude": nullable({"type": "number", "minimum": -180, "maximum": 180}),
+        "attachment_count": integer(0, 100),
+    }, ("kind", "text", "callback_data", "photo_source_key", "latitude",
+        "longitude", "attachment_count")),
+}, ("integration_key", "event_key", "event_type", "actor_max_user_id",
+    "chat_id", "message_id", "callback_id", "occurred_at", "payload"),
+    "Go нормализует только личный чат и поддержанные события. event_key = message:<id>:<type> либо callback:<id>:<type>; для остальных — SHA-256 канонических нормализованных полей. Уникальность по integration_key+event_key. Содержимое фото в очередь не кладётся.")
+
+schemas["InboxStored"] = obj({
+    "id": ref("UUID"), "duplicate": {"type": "boolean"},
+    "stored_at": ref("Timestamp"),
+}, ("id", "duplicate", "stored_at"))
+schemas["InboxClaimRequest"] = obj({
+    "worker_id": string(100), "max_items": integer(1, 50),
+}, ("worker_id", "max_items"))
+schemas["InboxLease"] = obj({
+    "id": ref("UUID"), "event": ref("NormalizedEvent"),
+    "lease_token": string(200), "lease_expires_at": ref("Timestamp"),
+    "attempt": integer(1),
+}, ("id", "event", "lease_token", "lease_expires_at", "attempt"),
+    "Один actor обрабатывается последовательно. Истёкший lease/token не даёт выполнить бизнес-команду.")
+schemas["InboxClaim"] = obj({
+    "items": array(ref("InboxLease"), 50),
+}, ("items",))
+schemas["LeaseAck"] = obj({
+    "lease_token": string(200),
+}, ("lease_token",))
+schemas["InboxRetry"] = obj({
+    "lease_token": string(200), "error_code": string(80),
+    "next_attempt_at": ref("Timestamp"),
+}, ("lease_token", "error_code", "next_attempt_at"))
+schemas["QueueTransition"] = obj({
+    "id": ref("UUID"), "state": string(enum=["done", "retry", "dead", "sent"]),
+    "updated_at": ref("Timestamp"),
+}, ("id", "state", "updated_at"))
+schemas["Integration"] = obj({
+    "key": string(100), "mode": string(enum=["webhook", "polling"]),
+    "marker": nullable(string(500)), "lease_expires_at": nullable(ref("Timestamp")),
+    "version": ref("Version"), "updated_at": ref("Timestamp"),
+}, ("key", "mode", "marker", "lease_expires_at", "version", "updated_at"))
+schemas["IntegrationLeaseRequest"] = obj({
+    "worker_id": string(100), "expected_version": ref("Version"),
+}, ("worker_id", "expected_version"))
+schemas["IntegrationLease"] = obj({
+    "lease_token": string(200), "lease_expires_at": ref("Timestamp"),
+    "integration": ref("Integration"),
+}, ("lease_token", "lease_expires_at", "integration"))
+schemas["IntegrationCheckpoint"] = obj({
+    "lease_token": string(200), "expected_version": ref("Version"),
+    "previous_marker": nullable(string(500)), "new_marker": string(500),
+    "stored_event_ids": array(ref("UUID"), 50),
+}, ("lease_token", "expected_version", "previous_marker", "new_marker", "stored_event_ids"),
+    "Marker продвигается CAS только после durable записи всей пачки событий.")
+schemas["NotificationClaimRequest"] = obj({
+    "worker_id": string(100), "max_items": integer(1, 50),
+}, ("worker_id", "max_items"))
+schemas["NotificationEvent"] = obj({
+    "type": string(enum=["trip_started", "trip_completed", "trip_admin_closed",
+                         "issue_created", "issue_resolved", "access_changed"]),
+    "resource_id": ref("UUID"), "vehicle_id": nullable(ref("UUID")),
+    "reason": nullable(string(1000)), "occurred_at": ref("Timestamp"),
+}, ("type", "resource_id", "vehicle_id", "reason", "occurred_at"))
+schemas["NotificationLease"] = obj({
+    "delivery_id": ref("UUID"), "event": ref("NotificationEvent"),
+    "recipient_max_user_id": ref("MaxID"),
+    "lease_token": string(200), "lease_expires_at": ref("Timestamp"),
+    "attempt": integer(1),
+}, ("delivery_id", "event", "recipient_max_user_id", "lease_token",
+    "lease_expires_at", "attempt"))
+schemas["NotificationClaim"] = obj({
+    "items": array(ref("NotificationLease"), 50),
+}, ("items",))
+schemas["NotificationAck"] = obj({
+    "lease_token": string(200), "provider_message_id": string(200),
+}, ("lease_token", "provider_message_id"))
+schemas["NotificationRetry"] = obj({
+    "lease_token": string(200), "error_code": string(80),
+    "retry_after": nullable(ref("Timestamp")),
+    "dead": {"type": "boolean"},
+}, ("lease_token", "error_code", "retry_after", "dead"))
+
+for name in ("InboxStored", "InboxClaim", "QueueTransition", "Integration",
+             "IntegrationLease", "NotificationClaim"):
+    envelope(name, ref(name))
+
+
+def worker_params(*, path_id=False, integration_key=False, mutation=False):
+    result = parameters(actor=False, id_path=path_id)
+    if integration_key:
+        result.append({"name": "key", "in": "path", "required": True,
+                       "schema": string(100)})
+    if mutation:
+        result.append({"$ref": "#/components/parameters/IdempotencyKey"})
+    return result
+
+
+def worker_post(path, operation_id, body_name, result_name, *, path_id=False,
+                integration_key=False, description=""):
+    spec["paths"][path] = {"post": {
+        "tags": ["inbox" if "/inbox" in path else
+                 "integration" if "/integrations" in path else "notifications"],
+        "operationId": operation_id, "description": description,
+        "security": [{"WorkerBearer": []}],
+        "parameters": worker_params(path_id=path_id,
+                                    integration_key=integration_key, mutation=True),
+        "requestBody": {"required": True, "content": {
+            "application/json": {"schema": ref(body_name)}}},
+        "responses": response(ref(result_name + "Response")),
+    }}
+
+
+worker_post(P + "/inbox", "storeInboxEvent", "NormalizedEvent", "InboxStored",
+            description="Durable commit до HTTP 200 MAX. Дубликат integration_key+event_key возвращает прежний ID. Если БД недоступна, 503.")
+worker_post(P + "/inbox/claim", "claimInbox", "InboxClaimRequest", "InboxClaim",
+            description="Повтор с тем же ключом возвращает ту же аренду, пока она действительна; другой actor может обрабатываться параллельно.")
+worker_post(P + "/inbox/{id}/ack", "ackInbox", "LeaseAck", "QueueTransition",
+            path_id=True, description="Только текущий lease_token переводит событие в done.")
+worker_post(P + "/inbox/{id}/retry", "retryInbox", "InboxRetry", "QueueTransition",
+            path_id=True, description="Просроченный lease не меняет запись; после лимита попыток dead.")
+
+spec["paths"][P + "/integrations/{key}"] = {"get": {
+    "tags": ["integration"], "operationId": "getIntegration",
+    "security": [{"WorkerBearer": []}],
+    "parameters": worker_params(integration_key=True),
+    "responses": response(ref("IntegrationResponse")),
+}}
+worker_post(P + "/integrations/{key}/lease", "leaseIntegration",
+            "IntegrationLeaseRequest", "IntegrationLease", integration_key=True,
+            description="Единственный poller на integration_key. Выдача/продление lease атомарна.")
+worker_post(P + "/integrations/{key}/checkpoint", "checkpointIntegration",
+            "IntegrationCheckpoint", "Integration", integration_key=True,
+            description="Проверить lease, previous_marker и expected_version; marker только после сохранения всей пачки.")
+worker_post(P + "/notifications/claim", "claimNotifications",
+            "NotificationClaimRequest", "NotificationClaim",
+            description="At-least-once внешняя доставка. Повтор после потери ответа MAX может дать дубль сообщения, но не доменную команду.")
+worker_post(P + "/notifications/{id}/ack", "ackNotification",
+            "NotificationAck", "QueueTransition", path_id=True,
+            description="sent только с текущим lease и provider_message_id.")
+worker_post(P + "/notifications/{id}/retry", "retryNotification",
+            "NotificationRetry", "QueueTransition", path_id=True,
+            description="429/5xx/backoff или dead; бизнес-транзакция не откатывается.")
+
+for name in ("live", "ready"):
+    path = "/health/" + name
+    spec["paths"][path] = {"get": {
+        "tags": ["health"], "operationId": "health" + name.capitalize(),
+        "security": [],
+        "responses": {"200": {"description": "Без секретов и внутренних адресов",
+                              "content": {"application/json": {"schema": obj({
+                                  "status": {"const": "ok"}}, ("status",))}}},
+                      "503": {"description": "Не готов", "content": {
+                          "application/json": {"schema": obj({
+                              "status": {"const": "unavailable"}}, ("status",))}}}},
+    }}
 
 
 ROOT.joinpath("data-api.openapi.yaml").write_text(
