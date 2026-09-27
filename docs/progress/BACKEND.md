@@ -1,23 +1,23 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03 выполнены; бизнес-маршруты ещё не написаны. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03 выполнены; mock содержит чтения и две команды hold, остальные бизнес-маршруты ещё не написаны. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
 track: backend
-lock_state: ACTIVE
-owner: A
-session_id: "b78b0297-a9fa-4023-a429-3c2df2f65cfe"
+lock_state: HANDOFF
+owner: B
+session_id: "1e22c0db-a86b-44f0-b2d1-33c197bea3ee"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T13:26:42Z"
+heartbeat_utc: "2026-09-27T14:47:43Z"
 current_task: BE-01
-current_substep: "Чтения DataAPI client проверены; далее команды и mock"
-last_verified_code_commit: "fffc54eb257eb29783a0d9d2d57981b6c66595e9"
+current_substep: "Подтверждение 8 before-фото и Docker build проверены; плановый handoff"
+last_verified_code_commit: "058a6f7de34ca474ac6748a454702e7315845688"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: добавить типизированные команды и отдельный mock с auth/версиями; проверить контракты и восстановление"
+next_step: "BE-01: проверить contract requirements math/rules, добавить checkout.start и trip.begin_return с новым after-осмотром; затем безопасный return и Compose"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `fffc54eb257eb29783a0d9d2d57981b6c66595e9` — чтения DataAPI client; WIP | Команды, mock, scenarios |
+| BE-01 | IN_PROGRESS | `058a6f7de34ca474ac6748a454702e7315845688` — клиент, mock-чтения/recovery, hold/snapshot и подтверждение before-фото; WIP | Trip/after/return, остальные команды, scenarios, Compose |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,42 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- Плановая передача B: `docker build -f Dockerfile.data-mock -t max-fleet-data-mock:be01 .` из `services/gateway` повторно на code commit `058a6f7` → exit 0, image digest manifest list `sha256:b73fc8f74cae6e636f18e9144e91ee08737961345414f45771bb12ff8e188ee9`. Это только сборка mock image; runtime container и MAX не проверены. Рабочее дерево чистое на момент передачи. Реальный MAX consumer здесь не запущен. Для продолжения достаточно синтетического seed из Git; локальные `.local/` Go/Python и тестовые snapshot/assets между ноутбуками не переносятся. Из секретов будущему запуску нужны локальные `DATA_API_TOKEN_FILE` и позднее `MAX_BOT_TOKEN_FILE`; значения не публикуются. H-01 остаётся HUMAN_REQUIRED, MAX token на этом ноутбуке отсутствует.
+
+### Предыдущий BE-01 checkpoint (8 фото)
+
+- BE-01 code commit: `058a6f7de34ca474ac6748a454702e7315845688`. Добавлен `inspection.confirm_photos` в DataAPI client и mock. При 7/8 возвращает 422 `PHOTO_SET_INCOMPLETE` с `missing_slots=[8]` без потери семи файлов; при 8/8 выставляет `photos_confirmed_at` и версию. Замена slot 3 после подтверждения сохраняет 8 слотов, сбрасывает подтверждение. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Тесты через HTTP client прошли. Docker build ещё выполняется, результат не заявлен. Math/правила/start/after/return не готовы, BE-01 WIP.
+
+### Предыдущий BE-01 checkpoint (before-фото)
+
+- BE-01 code commit: `10453ec578050242c1acc71513385c5d19d1a473`. Mock принимает один multipart JPEG/PNG/WebP для before-inspection: проверяет MIME, декодирование, до 10 MiB/25 MP, slot 1…8, actor, версию, SHA-256 и дубли event/hash; сохраняет asset файлом и метаданные в атомарном snapshot перед HTTP 200. Ошибка записи откатывает новый слот и не стирает предыдущие. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Тесты: 7/8/замена slot 3, 422 duplicate hash, 413 oversized, 415 MIME, чужой actor, idempotent retry после restart, failed save 503 и отказ старта при отсутствующем asset. Docker build запущен, результата на момент status commit нет. WebP decoder подключён из pinned `golang.org/x/image v0.46.0`, отдельный WebP fixture пока не проверен. After-фото и остальные команды отсутствуют; BE-01 WIP.
+
+### Предыдущий BE-01 checkpoint (photo client)
+
+- BE-01 code commit: `6992ea8fb992f48b3742ee5444d38711503b480e`. DataAPI client отправляет один multipart photo upload для явного слота 1…8, ограничивает вход 10 MiB, использует 60-секундный HTTP timeout и повторяет 503 с тем же body, X-Request-ID и Idempotency-Key. Проверяет типизированный ответ и не повторяет 422 `DUPLICATE_PHOTO`. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0; HTTP-тесты multipart, 503 retry, 422 и некорректного ввода прошли. Серверный mock-маршрут фото ещё не реализован, BE-01 WIP.
+
+### Предыдущий BE-01 checkpoint (recovery reads)
+
+- BE-01 code commit: `81a17c9055ede231f55a61fcd75209699d69d977`. Добавлены DataAPI client и mock-чтения `/state`, `/checkouts/{id}`, `/inspections/{id}`. Owner/admin доступ проверяется по синтетической роли в данных; чужой сотрудник получает 404, неизвестный actor — 403. `/state` возвращает восстановленный после restart hold и `next_step`, а после cancel не показывает его. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. HTTP-тесты проходят через DataAPI client. Фотографии/остальные команды не реализованы, BE-01 WIP.
+
+### Предыдущий BE-01 checkpoint (snapshot)
+
+- BE-01 code commit: `9c706e4ad4011802237955997c6768c246bddd07`. Mock сохраняет vehicles, checkouts и результаты команд через temp-file + sync + rename в `DATA_MOCK_SNAPSHOT_FILE` после успешной мутации и истечения hold. При ошибке записи откатывает память и возвращает 503 без ложного 200; повреждённый snapshot не сбрасывается к seed. `cmd/data-mock` требует путь snapshot, который должен лежать на постоянном томе. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0; `go test -count=3 ./internal/datamock` → exit 0. Тесты перезапуска подтвердили hold, idempotency, отмену и expiration; injected failed-save подтвердил откат и 503. Бизнес-команды кроме `checkout.create/cancel`, фото 8+8 и Compose ещё отсутствуют; mock readiness 503, BE-01 WIP.
+
+### Предыдущий BE-01 checkpoint (hold в памяти)
+
+- BE-01 code commit: `3bdb0b99b9970b46c0027a84388f467e77e3b878`. В mock добавлены in-memory `checkout.create/cancel`, 15-минутный hold, версии, права на выдачу, mutex для гонки, успешные повторы Idempotency-Key и lookup своего результата. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0; `go test -count=20 ./internal/datamock` → exit 0 до финального теста истечения. HTTP-тесты через DataAPI client проверили одного победителя при конкурентной выдаче, отмену, истечение, недопуск blocked driver, чужой key и конфликт key/body. State и idempotency пока только в памяти; перезапуск и failed-save не проверены, readiness остаётся 503. BE-01 WIP.
+
+### Предыдущий BE-01 checkpoint (mock-чтения)
+
+- BE-01 code commit: `7088ce2f7c119b6fcfcf9d48bf571a2b184cf083`. `cmd/data-mock` теперь отдаёт `/meta`, `/me`, `/vehicles`, `/vehicles/{id}` из копии синтетического seed контракта. Проверяет Bearer service token, X-Contract-Version, X-Request-ID и actor; неизвестный actor не получает машины, список имеет cursor с привязкой к фильтру/limit. `APP_ENV=production` запрещает старт; `DATA_API_TOKEN` и `DATA_API_TOKEN_FILE` взаимоисключающие. Исправлен `current_fuel` DTO с `*string` на `*int` по OpenAPI. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` в `services/gateway` → exit 0. HTTP-тесты выполняют чтения через DataAPI client, проверяют неизвестного actor, чужой token, неверную версию, cursor и отсутствие ложного `/health/ready` (503). SHA-256 `services/gateway/internal/datamock/seed.json` совпадает с `contracts/examples/synthetic-seed.json`; `git diff --check` → exit 0. Docker image и restart ещё не проверялись, mock business routes отсутствуют, BE-01 WIP.
+
+### Предыдущий BE-01 checkpoint (клиент команд)
+
+- BE-01 code commit: `24fc8339ae0b986afebab50a4c9bf3b98fb88ae2`. Добавлены типизированные вызовы `checkout.create`, `checkout.cancel`, `return.set_location`, `return.complete` и lookup результата своей команды. POST повторяет 503 с тем же Idempotency-Key, body, X-Request-ID и inbox lease; 409 не повторяется; неподтверждённая точка карты не отправляется. На этом ноутбуке официальный Go 1.27.1 сверен по SHA-256, затем `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` в `services/gateway` → exit 0. `go test ./internal/dataapi` и `go vet ./internal/dataapi` → exit 0. `contracts/validate.py` → 2 OpenAPI, 36 routes, 24 command examples, 44 scenarios; локальный Python 3.14 использовал PyYAML 6.0.3 в игнорируемом venv, поскольку pinned 6.0.1 не импортировалась здесь. Это проверка клиента на `httptest`, отдельный mock и сценарии против него ещё не готовы. BE-01 остаётся WIP. Приватный prompt MAX подготовлен; `-Check` → token отсутствует.
+
+### Предыдущий BE-01 checkpoint
 
 - BE-01 code commit: `fffc54eb257eb29783a0d9d2d57981b6c66595e9`. `services/gateway/internal/dataapi` содержит типизированные DTO `/meta`, `/me`, `/vehicles`, `/vehicles/{id}`, проверку URL/actor/UUID/версии метаданных, обязательных служебных заголовков, ограничение ответа 2 MiB, строгий JSON, ошибку с кодом/версией и повтор 429/503/transport с тем же X-Request-ID. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; тесты неизвестного actor, 503 retry, 409 без retry, недопустимого ввода/лишнего поля и несовместимого контракта прошли. Команды, mock, сохранение состояния и проверка сценариев ещё не реализованы; BE-01 WIP.
 
@@ -119,3 +155,5 @@ human_required: [H-01]
 | UTC | От → кому | Задача / SHA | Результат |
 |---|---|---|---|
 | 2026-09-27 12:19 | FREE → A | S-01 / `3d53d5a` | Claim опубликован в `codex/backend` |
+| 2026-09-27 13:53 | A → B | BE-01 / `f3e6f49` | Пользователь подтвердил остановку A; takeover через отдельный claim-коммит |
+| 2026-09-27 14:47 | B → HANDOFF | BE-01 / `058a6f7` | Проверены Go test/vet/build и Docker image; следующему исполнителю захватить очередь claim-коммитом |

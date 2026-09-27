@@ -29,10 +29,11 @@ type Config struct {
 }
 
 type Client struct {
-	baseURL    *url.URL
-	token      string
-	httpClient *http.Client
-	wait       func(context.Context, time.Duration) error
+	baseURL      *url.URL
+	token        string
+	httpClient   *http.Client
+	uploadClient *http.Client
+	wait         func(context.Context, time.Duration) error
 }
 
 func New(cfg Config) (*Client, error) {
@@ -51,7 +52,9 @@ func New(cfg Config) (*Client, error) {
 		}
 	}
 	u.Path = strings.TrimSuffix(u.Path, "/")
-	return &Client{baseURL: u, token: cfg.Token, httpClient: httpClient, wait: waitContext}, nil
+	uploadClient := *httpClient
+	uploadClient.Timeout = 60 * time.Second
+	return &Client{baseURL: u, token: cfg.Token, httpClient: httpClient, uploadClient: &uploadClient, wait: waitContext}, nil
 }
 
 func (c *Client) Meta(ctx context.Context) (Meta, error) {
@@ -103,8 +106,33 @@ func (c *Client) Vehicle(ctx context.Context, actorMaxID, vehicleID string) (Veh
 	return get[Vehicle](ctx, c, "/vehicles/"+vehicleID, actorMaxID)
 }
 
+func (c *Client) State(ctx context.Context, actorMaxID string) (CurrentState, error) {
+	return get[CurrentState](ctx, c, "/state", actorMaxID)
+}
+
+func (c *Client) Checkout(ctx context.Context, actorMaxID, checkoutID string) (Checkout, error) {
+	if !validUUID(checkoutID) {
+		return Checkout{}, errors.New("data-api: invalid checkout ID")
+	}
+	return get[Checkout](ctx, c, "/checkouts/"+checkoutID, actorMaxID)
+}
+
+func (c *Client) Inspection(ctx context.Context, actorMaxID, inspectionID string) (Inspection, error) {
+	if !validUUID(inspectionID) {
+		return Inspection{}, errors.New("data-api: invalid inspection ID")
+	}
+	return get[Inspection](ctx, c, "/inspections/"+inspectionID, actorMaxID)
+}
+
 func get[T any](ctx context.Context, c *Client, path, actorMaxID string) (T, error) {
+	return request[T](ctx, c, http.MethodGet, path, actorMaxID, nil, "", "", nil, nil)
+}
+
+func request[T any](ctx context.Context, c *Client, method, path, actorMaxID string, body []byte, contentType, idempotencyKey string, inbox *InboxLease, client *http.Client) (T, error) {
 	var zero T
+	if client == nil {
+		client = c.httpClient
+	}
 	if actorMaxID != "" && !validMaxID(actorMaxID) {
 		return zero, errors.New("data-api: invalid actor MAX ID")
 	}
@@ -122,7 +150,7 @@ func get[T any](ctx context.Context, c *Client, path, actorMaxID string) (T, err
 		u.RawQuery = parts[1]
 	}
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+		req, err := http.NewRequestWithContext(ctx, method, u.String(), bytes.NewReader(body))
 		if err != nil {
 			return zero, err
 		}
@@ -130,10 +158,20 @@ func get[T any](ctx context.Context, c *Client, path, actorMaxID string) (T, err
 		req.Header.Set("X-Contract-Version", ContractVersion)
 		req.Header.Set("X-Request-ID", requestID)
 		req.Header.Set("Accept", "application/json")
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		if idempotencyKey != "" {
+			req.Header.Set("Idempotency-Key", idempotencyKey)
+		}
+		if inbox != nil {
+			req.Header.Set("X-Inbox-Event-ID", inbox.EventID)
+			req.Header.Set("X-Inbox-Lease", inbox.Token)
+		}
 		if actorMaxID != "" {
 			req.Header.Set("X-Actor-Max-ID", actorMaxID)
 		}
-		res, err := c.httpClient.Do(req)
+		res, err := client.Do(req)
 		if err != nil {
 			if ctx.Err() != nil {
 				return zero, ctx.Err()

@@ -1,6 +1,9 @@
 package dataapi
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // DTOs mirror the read projections of contracts/data-api.openapi.yaml v1.0.
 // Nullable fields use pointers so absent values remain distinct from zero values.
@@ -48,7 +51,7 @@ type Vehicle struct {
 	ManualBlocked          bool             `json:"manual_blocked"`
 	NeedsReview            bool             `json:"needs_review"`
 	CurrentParking         *ParkingLocation `json:"current_parking"`
-	CurrentFuel            *string          `json:"current_fuel"`
+	CurrentFuel            *int             `json:"current_fuel"`
 	CurrentOdometerKM      *int64           `json:"current_odometer_km"`
 	FuelConfirmedAt        *time.Time       `json:"fuel_confirmed_at"`
 	OdometerConfirmedAt    *time.Time       `json:"odometer_confirmed_at"`
@@ -60,6 +63,54 @@ type Vehicle struct {
 type Page[T any] struct {
 	Items      []T     `json:"items"`
 	NextCursor *string `json:"next_cursor"`
+}
+
+type Inspection struct {
+	ID                string     `json:"id"`
+	Phase             string     `json:"phase"`
+	Status            string     `json:"status"`
+	FuelLevel         *int       `json:"fuel_level"`
+	OdometerKM        *int64     `json:"odometer_km"`
+	NewDamage         *bool      `json:"new_damage"`
+	CabinClean        *bool      `json:"cabin_clean"`
+	ParkingAllowed    *bool      `json:"parking_allowed"`
+	KeysReturned      *bool      `json:"keys_returned"`
+	CarLocked         *bool      `json:"car_locked"`
+	OccupiedSlots     []int      `json:"occupied_slots"`
+	MissingSlots      []int      `json:"missing_slots"`
+	PhotosConfirmedAt *time.Time `json:"photos_confirmed_at"`
+	Version           int64      `json:"version"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
+type Checkout struct {
+	ID                string     `json:"id"`
+	VehicleID         string     `json:"vehicle_id"`
+	EmployeeID        string     `json:"employee_id"`
+	Status            string     `json:"status"`
+	Step              string     `json:"step"`
+	ExpiresAt         time.Time  `json:"expires_at"`
+	IntentConfirmedAt *time.Time `json:"intent_confirmed_at"`
+	RulesVersionID    *string    `json:"rules_version_id"`
+	RulesAcceptedAt   *time.Time `json:"rules_accepted_at"`
+	NoNewIssues       *bool      `json:"no_new_issues"`
+	Inspection        Inspection `json:"inspection"`
+	Version           int64      `json:"version"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
+type CurrentState struct {
+	Checkout            *Checkout       `json:"checkout"`
+	Trip                json.RawMessage `json:"trip"`
+	Return              json.RawMessage `json:"return"`
+	NextStep            *string         `json:"next_step"`
+	ConversationVersion int64           `json:"conversation_version"`
+}
+
+type PhotoUploadResult struct {
+	AssetID    string     `json:"asset_id"`
+	SHA256     string     `json:"sha256"`
+	Inspection Inspection `json:"inspection"`
 }
 
 type ErrorDetails struct {
