@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "1e22c0db-a86b-44f0-b2d1-33c197bea3ee"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T14:21:48Z"
+heartbeat_utc: "2026-09-27T14:26:06Z"
 current_task: BE-01
-current_substep: "Mock checkout hold проверен в памяти; далее snapshot и restart"
-last_verified_code_commit: "3bdb0b99b9970b46c0027a84388f467e77e3b878"
+current_substep: "Mock snapshot/restart проверен; далее остальные команды и Compose"
+last_verified_code_commit: "9c706e4ad4011802237955997c6768c246bddd07"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: атомарный файловый snapshot mock после команд и expiration; restart-тест, failed-save без ложного 200"
+next_step: "BE-01: расширить mock до contract scenarios (8+8 фото, return, admin close), добавить Compose backend и проверить чистый запуск"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `3bdb0b99b9970b46c0027a84388f467e77e3b878` — клиент, mock-чтения и in-memory hold; WIP | Snapshot/restart, остальные команды, scenarios |
+| BE-01 | IN_PROGRESS | `9c706e4ad4011802237955997c6768c246bddd07` — клиент, mock-чтения, hold и snapshot; WIP | Остальные команды, scenarios, Compose |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,10 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `9c706e4ad4011802237955997c6768c246bddd07`. Mock сохраняет vehicles, checkouts и результаты команд через temp-file + sync + rename в `DATA_MOCK_SNAPSHOT_FILE` после успешной мутации и истечения hold. При ошибке записи откатывает память и возвращает 503 без ложного 200; повреждённый snapshot не сбрасывается к seed. `cmd/data-mock` требует путь snapshot, который должен лежать на постоянном томе. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0; `go test -count=3 ./internal/datamock` → exit 0. Тесты перезапуска подтвердили hold, idempotency, отмену и expiration; injected failed-save подтвердил откат и 503. Бизнес-команды кроме `checkout.create/cancel`, фото 8+8 и Compose ещё отсутствуют; mock readiness 503, BE-01 WIP.
+
+### Предыдущий BE-01 checkpoint (hold в памяти)
 
 - BE-01 code commit: `3bdb0b99b9970b46c0027a84388f467e77e3b878`. В mock добавлены in-memory `checkout.create/cancel`, 15-минутный hold, версии, права на выдачу, mutex для гонки, успешные повторы Idempotency-Key и lookup своего результата. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0; `go test -count=20 ./internal/datamock` → exit 0 до финального теста истечения. HTTP-тесты через DataAPI client проверили одного победителя при конкурентной выдаче, отмену, истечение, недопуск blocked driver, чужой key и конфликт key/body. State и idempotency пока только в памяти; перезапуск и failed-save не проверены, readiness остаётся 503. BE-01 WIP.
 
