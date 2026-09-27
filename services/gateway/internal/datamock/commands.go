@@ -1,10 +1,11 @@
 package datamock
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ type mockCommand struct {
 	Operation string
 	TargetID  string
 	Version   int64
+	Payload   json.RawMessage
 }
 
 func parseCommand(body []byte) (mockCommand, bool) {
@@ -37,7 +39,11 @@ func parseCommand(body []byte) (mockCommand, bool) {
 		return mockCommand{}, false
 	}
 	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(fields["payload"], &payload); err != nil || payload == nil || len(payload) != 0 {
+	if err := json.Unmarshal(fields["payload"], &payload); err != nil || payload == nil {
+		return mockCommand{}, false
+	}
+	command.Payload = fields["payload"]
+	if (command.Operation == "checkout.create" || command.Operation == "checkout.cancel" || command.Operation == "inspection.confirm_photos" || command.Operation == "trip.begin_return" || command.Operation == "return.cancel") && len(payload) != 0 {
 		return mockCommand{}, false
 	}
 	return command, true
@@ -56,13 +62,16 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		return
 	}
 	command, ok := parseCommand(body)
-	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos") {
+	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos" && command.Operation != "challenge.create" && command.Operation != "challenge.answer" && command.Operation != "checkout.accept_rules" && command.Operation != "inspection.update" && command.Operation != "checkout.set_no_new_issues" && command.Operation != "checkout.start" && command.Operation != "trip.begin_return" && command.Operation != "return.cancel" && command.Operation != "return.set_location" && command.Operation != "return.complete" && command.Operation != "issue.create") {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
 	actor := r.Header.Get("X-Actor-Max-ID")
 	identity := actor + ":" + key
-	signature := command.Operation + ":" + command.TargetID + ":" + strconv.FormatInt(command.Version, 10)
+	var canonical any
+	_ = json.Unmarshal(body, &canonical)
+	canonicalBody, _ := json.Marshal(canonical)
+	signature := fmt.Sprintf("%x", sha256.Sum256(canonicalBody))
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if record, exists := s.commands[identity]; exists {
@@ -82,8 +91,30 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		result, ok = s.createCheckout(w, requestID, actor, command)
 	} else if command.Operation == "checkout.cancel" {
 		result, ok = s.cancelCheckout(w, requestID, actor, command)
-	} else {
+	} else if command.Operation == "inspection.confirm_photos" {
 		result, ok = s.confirmPhotos(w, requestID, actor, command)
+	} else if command.Operation == "challenge.create" {
+		result, ok = s.createChallenge(w, requestID, actor, command)
+	} else if command.Operation == "challenge.answer" {
+		result, ok = s.answerChallenge(w, requestID, actor, command)
+	} else if command.Operation == "checkout.accept_rules" {
+		result, ok = s.acceptRules(w, requestID, actor, command)
+	} else if command.Operation == "inspection.update" {
+		result, ok = s.updateInspection(w, requestID, actor, command)
+	} else if command.Operation == "checkout.set_no_new_issues" {
+		result, ok = s.setNoNewIssues(w, requestID, actor, command)
+	} else if command.Operation == "checkout.start" {
+		result, ok = s.startCheckout(w, requestID, actor, command)
+	} else if command.Operation == "trip.begin_return" {
+		result, ok = s.beginReturn(w, requestID, actor, command)
+	} else if command.Operation == "return.cancel" {
+		result, ok = s.cancelReturn(w, requestID, actor, command)
+	} else if command.Operation == "return.set_location" {
+		result, ok = s.setReturnLocation(w, requestID, actor, command)
+	} else if command.Operation == "return.complete" {
+		result, ok = s.completeReturn(w, requestID, actor, command)
+	} else {
+		result, ok = s.createIssue(w, requestID, actor, command)
 	}
 	if !ok {
 		return
@@ -101,6 +132,10 @@ func (s *Server) createCheckout(w http.ResponseWriter, requestID, actor string, 
 	employee := s.employees[actor]
 	if !employee.CanStartTrip {
 		s.fail(w, requestID, http.StatusForbidden, "CANNOT_START_TRIP")
+		return dataapi.CommandResult{}, false
+	}
+	if employee.ActiveTripID != nil {
+		s.fail(w, requestID, http.StatusConflict, "USER_BUSY")
 		return dataapi.CommandResult{}, false
 	}
 	for _, checkout := range s.checkouts {
@@ -173,40 +208,61 @@ func (s *Server) cancelCheckout(w http.ResponseWriter, requestID, actor string, 
 func (s *Server) confirmPhotos(w http.ResponseWriter, requestID, actor string, command mockCommand) (dataapi.CommandResult, bool) {
 	var checkout dataapi.Checkout
 	var checkoutID string
+	var draft dataapi.Return
+	var returnID string
 	for id, candidate := range s.checkouts {
 		if candidate.Inspection.ID == command.TargetID {
 			checkout, checkoutID = candidate, id
 			break
 		}
 	}
-	if checkoutID == "" || checkout.EmployeeID != s.employees[actor].ID {
+	if checkoutID == "" {
+		for id, candidate := range s.returns {
+			if candidate.Inspection.ID == command.TargetID {
+				draft, returnID = candidate, id
+				break
+			}
+		}
+	}
+	var inspection *dataapi.Inspection
+	if checkoutID != "" && checkout.EmployeeID == s.employees[actor].ID {
+		inspection = &checkout.Inspection
+	} else if returnID != "" && s.trips[draft.TripID].EmployeeID == s.employees[actor].ID {
+		inspection = &draft.Inspection
+	} else {
 		s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
 		return dataapi.CommandResult{}, false
 	}
-	if checkout.Status == "expired" {
+	if checkoutID != "" && checkout.Status == "expired" {
 		s.failVersion(w, requestID, http.StatusConflict, "HOLD_EXPIRED", checkout.Inspection.Version)
 		return dataapi.CommandResult{}, false
 	}
-	if checkout.Status != "holding" || checkout.Inspection.Status != "draft" {
+	if checkoutID != "" && checkout.Status != "holding" || returnID != "" && (draft.Status != "draft" || draft.IntentConfirmedAt == nil || s.trips[draft.TripID].Status != "returning") || inspection.Status != "draft" {
 		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
 		return dataapi.CommandResult{}, false
 	}
-	if checkout.Inspection.Version != command.Version {
-		s.failVersion(w, requestID, http.StatusConflict, "STALE_VERSION", checkout.Inspection.Version)
+	if inspection.Version != command.Version {
+		s.failVersion(w, requestID, http.StatusConflict, "STALE_VERSION", inspection.Version)
 		return dataapi.CommandResult{}, false
 	}
-	if len(checkout.Inspection.MissingSlots) != 0 {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]any{"code": "PHOTO_SET_INCOMPLETE", "message": "PHOTO_SET_INCOMPLETE", "retryable": false, "details": map[string]any{"missing_slots": checkout.Inspection.MissingSlots}}, "request_id": requestID})
+	if len(inspection.MissingSlots) != 0 {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]any{"code": "PHOTO_SET_INCOMPLETE", "message": "PHOTO_SET_INCOMPLETE", "retryable": false, "details": map[string]any{"missing_slots": inspection.MissingSlots}}, "request_id": requestID})
 		return dataapi.CommandResult{}, false
 	}
 	now := s.now().UTC()
-	checkout.Inspection.PhotosConfirmedAt = &now
-	checkout.Inspection.Version++
-	checkout.Inspection.UpdatedAt = now
-	checkout.Version++
-	checkout.UpdatedAt = now
-	s.checkouts[checkoutID] = checkout
-	return commandResult("inspection.confirm_photos", checkout.Inspection), true
+	inspection.PhotosConfirmedAt = &now
+	inspection.Version++
+	inspection.UpdatedAt = now
+	if checkoutID != "" {
+		checkout.Version++
+		checkout.UpdatedAt = now
+		s.checkouts[checkoutID] = checkout
+	} else {
+		draft.Version++
+		draft.UpdatedAt = now
+		s.returns[returnID] = draft
+	}
+	return commandResult("inspection.confirm_photos", *inspection), true
 }
 
 func (s *Server) commandResult(w http.ResponseWriter, r *http.Request, requestID string) {

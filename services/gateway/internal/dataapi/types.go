@@ -1,7 +1,6 @@
 package dataapi
 
 import (
-	"encoding/json"
 	"time"
 )
 
@@ -29,6 +28,23 @@ type Me struct {
 	Allowed   bool      `json:"allowed"`
 	MaxUserID string    `json:"max_user_id"`
 	Employee  *Employee `json:"employee"`
+}
+
+type Rules struct {
+	ID           string `json:"id"`
+	VersionLabel string `json:"version_label"`
+	Body         string `json:"body"`
+}
+
+type Challenge struct {
+	ID                string    `json:"id"`
+	Purpose           string    `json:"purpose"`
+	Question          string    `json:"question"`
+	Options           []int     `json:"options"`
+	ExpiresAt         time.Time `json:"expires_at"`
+	AttemptsRemaining int       `json:"attempts_remaining"`
+	Version           int64     `json:"version"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 type ParkingLocation struct {
@@ -99,18 +115,78 @@ type Checkout struct {
 	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
+type Trip struct {
+	ID               string           `json:"id"`
+	VehicleID        string           `json:"vehicle_id"`
+	EmployeeID       string           `json:"employee_id"`
+	CheckoutID       string           `json:"checkout_id"`
+	Status           string           `json:"status"`
+	StartedAt        time.Time        `json:"started_at"`
+	EndedAt          *time.Time       `json:"ended_at"`
+	ReturnID         *string          `json:"return_id"`
+	MissingData      []string         `json:"missing_data"`
+	BeforeInspection Inspection       `json:"before_inspection"`
+	AfterInspection  *Inspection      `json:"after_inspection"`
+	ParkingLocation  *ParkingLocation `json:"parking_location"`
+	Issues           []Issue          `json:"issues"`
+	Version          int64            `json:"version"`
+	UpdatedAt        time.Time        `json:"updated_at"`
+}
+
+type Issue struct {
+	ID             string    `json:"id"`
+	VehicleID      string    `json:"vehicle_id"`
+	AuthorID       string    `json:"author_id"`
+	Stage          string    `json:"stage"`
+	Category       string    `json:"category"`
+	Description    string    `json:"description"`
+	Status         string    `json:"status"`
+	BlocksIssuance bool      `json:"blocks_issuance"`
+	TripID         *string   `json:"trip_id"`
+	InspectionID   *string   `json:"inspection_id"`
+	AssetIDs       []string  `json:"asset_ids"`
+	Version        int64     `json:"version"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type Return struct {
+	ID                string           `json:"id"`
+	TripID            string           `json:"trip_id"`
+	Status            string           `json:"status"`
+	Step              string           `json:"step"`
+	IntentConfirmedAt *time.Time       `json:"intent_confirmed_at"`
+	ParkingLocation   *ParkingLocation `json:"parking_location"`
+	Inspection        Inspection       `json:"inspection"`
+	Version           int64            `json:"version"`
+	UpdatedAt         time.Time        `json:"updated_at"`
+}
+
 type CurrentState struct {
-	Checkout            *Checkout       `json:"checkout"`
-	Trip                json.RawMessage `json:"trip"`
-	Return              json.RawMessage `json:"return"`
-	NextStep            *string         `json:"next_step"`
-	ConversationVersion int64           `json:"conversation_version"`
+	Checkout            *Checkout `json:"checkout"`
+	Trip                *Trip     `json:"trip"`
+	Return              *Return   `json:"return"`
+	NextStep            *string   `json:"next_step"`
+	ConversationVersion int64     `json:"conversation_version"`
 }
 
 type PhotoUploadResult struct {
 	AssetID    string     `json:"asset_id"`
 	SHA256     string     `json:"sha256"`
 	Inspection Inspection `json:"inspection"`
+}
+
+type StagedAsset struct {
+	AssetID   string    `json:"asset_id"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type AdminSummary struct {
+	Available   int `json:"available"`
+	Holding     int `json:"holding"`
+	ActiveTrips int `json:"active_trips"`
+	Returning   int `json:"returning"`
+	NeedsReview int `json:"needs_review"`
+	OpenIssues  int `json:"open_issues"`
 }
 
 type ErrorDetails struct {

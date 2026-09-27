@@ -21,7 +21,8 @@ import (
 var syntheticSeed []byte
 
 type seedFile struct {
-	DemoOnly  bool `json:"demo_only"`
+	DemoOnly  bool   `json:"demo_only"`
+	Rules     string `json:"rules"`
 	Employees []struct {
 		MaxUserID    string `json:"max_user_id"`
 		DisplayName  string `json:"display_name"`
@@ -46,45 +47,64 @@ type seedFile struct {
 type Server struct {
 	mu           sync.Mutex
 	token        string
+	workerToken  string
 	employees    map[string]dataapi.Employee
 	vehicles     []dataapi.Vehicle
 	checkouts    map[string]dataapi.Checkout
+	trips        map[string]dataapi.Trip
+	returns      map[string]dataapi.Return
+	issues       map[string]dataapi.Issue
+	issueAssets  map[string]stagedIssueAsset
+	stageResults map[string]stageAttempt
 	commands     map[string]commandRecord
 	photos       map[string]map[int]photoRecord
 	photoResults map[string]photoAttempt
+	challenges   map[string]mockChallenge
+	rules        dataapi.Rules
 	now          func() time.Time
 	saveSnapshot func(stateSnapshot) error
 	assetDir     string
 }
 
 func New(token string) (*Server, error) {
-	return newServer(token, "", time.Now)
+	return newServer(token, "", "", time.Now)
 }
 
 func NewWithClock(token string, now func() time.Time) (*Server, error) {
-	return newServer(token, "", now)
+	return newServer(token, "", "", now)
 }
 
 func NewWithSnapshot(token, path string, now func() time.Time) (*Server, error) {
 	if path == "" {
 		return nil, errors.New("data-mock: snapshot path required")
 	}
-	return newServer(token, path, now)
+	return newServer(token, "", path, now)
 }
 
-func newServer(token, snapshotPath string, now func() time.Time) (*Server, error) {
+func NewWithSnapshotAndWorkerToken(token, workerToken, path string, now func() time.Time) (*Server, error) {
+	if path == "" || workerToken == "" {
+		return nil, errors.New("data-mock: snapshot and worker token required")
+	}
+	return newServer(token, workerToken, path, now)
+}
+
+func newServer(token, workerToken, snapshotPath string, now func() time.Time) (*Server, error) {
 	if token == "" || strings.ContainsAny(token, "\r\n") {
 		return nil, errors.New("data-mock: service token required")
+	}
+	if workerToken == token && workerToken != "" || strings.ContainsAny(workerToken, "\r\n") {
+		return nil, errors.New("data-mock: worker token must be separate")
 	}
 	if now == nil {
 		return nil, errors.New("data-mock: clock required")
 	}
 	var seed seedFile
-	if err := json.Unmarshal(syntheticSeed, &seed); err != nil || !seed.DemoOnly || len(seed.Vehicles) != 10 {
+	if err := json.Unmarshal(syntheticSeed, &seed); err != nil || !seed.DemoOnly || seed.Rules == "" || len(seed.Vehicles) != 10 {
 		return nil, errors.New("data-mock: invalid synthetic seed")
 	}
 	stamp := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
-	s := &Server{token: token, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), now: now}
+	s := &Server{token: token, workerToken: workerToken, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), trips: make(map[string]dataapi.Trip), returns: make(map[string]dataapi.Return), issues: make(map[string]dataapi.Issue), issueAssets: make(map[string]stagedIssueAsset), stageResults: make(map[string]stageAttempt), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), challenges: make(map[string]mockChallenge), now: now,
+		rules: dataapi.Rules{ID: "90000000-0000-4000-8000-000000000001", VersionLabel: "demo-v1", Body: seed.Rules}}
 	for i, item := range seed.Employees {
 		id := fmt.Sprintf("80000000-0000-4000-8000-%012d", i+1)
 		s.employees[item.MaxUserID] = dataapi.Employee{ID: id, MaxUserID: item.MaxUserID, DisplayName: item.DisplayName, Role: item.Role, CanStartTrip: item.CanStartTrip, Version: 1, UpdatedAt: stamp}
@@ -121,6 +141,8 @@ func (s *Server) Handler() http.Handler {
 		s.success(w, requestID, dataapi.Meta{ContractVersion: dataapi.ContractVersion, BuildSHA: "synthetic", Mode: "mock", Capabilities: []string{"read-fixtures"}})
 	}))
 	mux.HandleFunc("GET /internal/v1/me", s.authorize(true, func(w http.ResponseWriter, r *http.Request, requestID string) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		actor := r.Header.Get("X-Actor-Max-ID")
 		employee, found := s.employees[actor]
 		var own *dataapi.Employee
@@ -129,12 +151,27 @@ func (s *Server) Handler() http.Handler {
 		}
 		s.success(w, requestID, dataapi.Me{Allowed: found, MaxUserID: actor, Employee: own})
 	}))
+	mux.HandleFunc("GET /internal/v1/rules/current", s.authorize(true, s.requireEmployee(func(w http.ResponseWriter, _ *http.Request, requestID string) {
+		s.success(w, requestID, s.rules)
+	})))
 	mux.HandleFunc("GET /internal/v1/state", s.authorize(true, s.requireEmployee(s.currentState)))
 	mux.HandleFunc("GET /internal/v1/checkouts/{id}", s.authorize(true, s.requireEmployee(s.checkout)))
+	mux.HandleFunc("GET /internal/v1/trips/{id}", s.authorize(true, s.requireEmployee(s.trip)))
+	mux.HandleFunc("GET /internal/v1/trips", s.authorize(true, s.requireEmployee(s.myTrips)))
+	mux.HandleFunc("GET /internal/v1/admin/summary", s.authorize(true, s.requireEmployee(s.adminSummary)))
+	mux.HandleFunc("GET /internal/v1/admin/employees", s.authorize(true, s.requireEmployee(s.adminEmployees)))
+	mux.HandleFunc("GET /internal/v1/admin/employees/{id}", s.authorize(true, s.requireEmployee(s.adminEmployee)))
+	mux.HandleFunc("GET /internal/v1/admin/trips", s.authorize(true, s.requireEmployee(s.adminTrips)))
+	mux.HandleFunc("GET /internal/v1/admin/issues", s.authorize(true, s.requireEmployee(s.adminIssues)))
+	mux.HandleFunc("GET /internal/v1/returns/{id}", s.authorize(true, s.requireEmployee(s.returnDraft)))
+	mux.HandleFunc("GET /internal/v1/issues/{id}", s.authorize(true, s.requireEmployee(s.issue)))
 	mux.HandleFunc("GET /internal/v1/inspections/{id}", s.authorize(true, s.requireEmployee(s.inspection)))
 	mux.HandleFunc("POST /internal/v1/inspections/{id}/photos/{slot}", s.authorize(true, s.requireEmployee(s.uploadPhoto)))
+	mux.HandleFunc("POST /internal/v1/assets/stage", s.authorize(true, s.requireEmployee(s.stageIssueAsset)))
+	mux.HandleFunc("GET /internal/v1/assets/{id}/content", s.authorize(true, s.requireEmployee(s.assetContent)))
 	mux.HandleFunc("GET /internal/v1/vehicles", s.authorize(true, s.requireEmployee(s.listVehicles)))
 	mux.HandleFunc("GET /internal/v1/vehicles/{id}", s.authorize(true, s.requireEmployee(s.vehicle)))
+	mux.HandleFunc("GET /internal/v1/vehicles/{id}/previous-inspection", s.authorize(true, s.requireEmployee(s.previousInspection)))
 	mux.HandleFunc("POST /internal/v1/commands", s.authorize(true, s.requireEmployee(s.execute)))
 	mux.HandleFunc("GET /internal/v1/commands/{key}", s.authorize(true, s.requireEmployee(s.commandResult)))
 	return mux
@@ -169,7 +206,10 @@ func (s *Server) authorize(actorRequired bool, next route) http.HandlerFunc {
 
 func (s *Server) requireEmployee(next route) route {
 	return func(w http.ResponseWriter, r *http.Request, requestID string) {
-		if _, ok := s.employees[r.Header.Get("X-Actor-Max-ID")]; !ok {
+		s.mu.Lock()
+		_, ok := s.employees[r.Header.Get("X-Actor-Max-ID")]
+		s.mu.Unlock()
+		if !ok {
 			s.fail(w, requestID, http.StatusForbidden, "ACCESS_DENIED")
 			return
 		}
@@ -270,7 +310,57 @@ func (s *Server) currentState(w http.ResponseWriter, r *http.Request, requestID 
 			break
 		}
 	}
+	for _, trip := range s.trips {
+		if trip.EmployeeID == employee.ID && (trip.Status == "active" || trip.Status == "returning") {
+			current := trip
+			state.Trip = &current
+			step := "active_trip"
+			state.NextStep = &step
+			break
+		}
+	}
+	if state.Trip != nil && state.Trip.ReturnID != nil {
+		if current, found := s.returns[*state.Trip.ReturnID]; found && current.Status == "draft" {
+			state.Return = &current
+			state.NextStep = &current.Step
+		}
+	}
 	s.success(w, requestID, state)
+}
+
+func (s *Server) returnDraft(w http.ResponseWriter, r *http.Request, requestID string) {
+	id := r.PathValue("id")
+	if !validUUID(id) {
+		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, found := s.returns[id]
+	trip := s.trips[current.TripID]
+	employee := s.employees[r.Header.Get("X-Actor-Max-ID")]
+	if !found || trip.EmployeeID != employee.ID && employee.Role != "admin" {
+		s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
+		return
+	}
+	s.success(w, requestID, current)
+}
+
+func (s *Server) trip(w http.ResponseWriter, r *http.Request, requestID string) {
+	id := r.PathValue("id")
+	if !validUUID(id) {
+		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, found := s.trips[id]
+	employee := s.employees[r.Header.Get("X-Actor-Max-ID")]
+	if !found || current.EmployeeID != employee.ID && employee.Role != "admin" {
+		s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
+		return
+	}
+	s.success(w, requestID, current)
 }
 
 func (s *Server) checkout(w http.ResponseWriter, r *http.Request, requestID string) {
@@ -309,6 +399,15 @@ func (s *Server) inspection(w http.ResponseWriter, r *http.Request, requestID st
 		if checkout.Inspection.ID == id && (checkout.EmployeeID == employee.ID || employee.Role == "admin") {
 			s.success(w, requestID, checkout.Inspection)
 			return
+		}
+	}
+	for _, draft := range s.returns {
+		if draft.Inspection.ID == id {
+			trip := s.trips[draft.TripID]
+			if trip.EmployeeID == employee.ID || employee.Role == "admin" {
+				s.success(w, requestID, draft.Inspection)
+				return
+			}
 		}
 	}
 	s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")

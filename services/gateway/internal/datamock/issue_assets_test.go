@@ -1,0 +1,188 @@
+package datamock
+
+import (
+	"bytes"
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
+)
+
+func TestStageIssueAssetOwnershipRetryRestartAndRollback(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	now := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
+	mock, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := commandClient(t, mock)
+	ctx := context.Background()
+	created, err := client.CheckoutCreate(ctx, driverID, firstVehicleID, 1, "stage-hold-key", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkout, err := dataapi.DecodeAggregate[dataapi.Checkout](created)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := dataapi.IssueStageInput{ScopeType: "inspection", ScopeID: checkout.Inspection.ID, SourceEventKey: "issue-event-one", IdempotencyKey: "issue-stage-one", ContentType: "image/png", Image: syntheticPNG(t, 42)}
+	_, err = client.StageIssueAsset(ctx, "8000000000000000002", input)
+	expectAPIError(t, err, "NOT_FOUND")
+	first, err := client.StageIssueAsset(ctx, driverID, input)
+	if err != nil || first.ExpiresAt.Sub(now) != 30*time.Minute {
+		t.Fatalf("stage: %+v %v", first, err)
+	}
+	if len(mock.issueAssets) != 1 || len(mock.photos[checkout.Inspection.ID]) != 0 {
+		t.Fatal("staged issue image changed inspection photo slots")
+	}
+	replay, err := client.StageIssueAsset(ctx, driverID, input)
+	if err != nil || replay.AssetID != first.AssetID {
+		t.Fatalf("retry: %+v %v", replay, err)
+	}
+	changed := input
+	changed.SourceEventKey = "changed-event"
+	_, err = client.StageIssueAsset(ctx, driverID, changed)
+	expectAPIError(t, err, "IDEMPOTENCY_CONFLICT")
+	changed.IdempotencyKey = "different-key-1"
+	_, err = client.StageIssueAsset(ctx, driverID, changed)
+	expectAPIError(t, err, "DUPLICATE_PHOTO")
+	restarted, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, err = commandClient(t, restarted).StageIssueAsset(ctx, driverID, input)
+	if err != nil || replay.AssetID != first.AssetID {
+		t.Fatalf("restart retry: %+v %v", replay, err)
+	}
+	second := input
+	second.Image = syntheticPNG(t, 43)
+	second.SourceEventKey = "issue-event-two"
+	second.IdempotencyKey = "issue-stage-two"
+	restarted.saveSnapshot = func(stateSnapshot) error { return os.ErrPermission }
+	_, err = commandClient(t, restarted).StageIssueAsset(ctx, driverID, second)
+	expectAPIError(t, err, "STORAGE_UNAVAILABLE")
+	if len(restarted.issueAssets) != 1 {
+		t.Fatal("failed save retained staged asset")
+	}
+	restarted.saveSnapshot = func(state stateSnapshot) error { return atomicSave(path, state) }
+	staged, err := commandClient(t, restarted).StageIssueAsset(ctx, driverID, second)
+	if err != nil || staged.AssetID == first.AssetID {
+		t.Fatalf("retry after failed save: %+v %v", staged, err)
+	}
+	if err := os.Remove(filepath.Join(restarted.assetDir, first.AssetID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now }); err == nil {
+		t.Fatal("damaged staged asset accepted on restart")
+	}
+}
+
+func TestAuthorizedIssueAssetContent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	mock, err := NewWithSnapshot("test-service-token", path, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := commandClient(t, mock)
+	ctx := context.Background()
+	created, err := client.CheckoutCreate(ctx, driverID, firstVehicleID, 1, "asset-content-hold", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hold, _ := dataapi.DecodeAggregate[dataapi.Checkout](created)
+	image := syntheticPNG(t, 61)
+	staged, err := client.StageIssueAsset(ctx, driverID, dataapi.IssueStageInput{ScopeType: "inspection", ScopeID: hold.Inspection.ID, SourceEventKey: "content-event", IdempotencyKey: "content-stage-key", ContentType: "image/png", Image: image})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fetch := func(actor, token string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, "/internal/v1/assets/"+staged.AssetID+"/content", nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		r.Header.Set("X-Contract-Version", dataapi.ContractVersion)
+		r.Header.Set("X-Request-ID", "10000000-0000-4000-8000-000000000001")
+		r.Header.Set("X-Actor-Max-ID", actor)
+		w := httptest.NewRecorder()
+		mock.Handler().ServeHTTP(w, r)
+		return w
+	}
+	if got := fetch(driverID, "wrong"); got.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong token: %d", got.Code)
+	}
+	if got := fetch("8000000000000000002", "test-service-token"); got.Code != http.StatusNotFound {
+		t.Fatalf("foreign actor: %d", got.Code)
+	}
+	if got := fetch(driverID, "test-service-token"); got.Code != http.StatusOK || got.Header().Get("Content-Type") != "image/png" || !bytes.Equal(got.Body.Bytes(), image) {
+		t.Fatalf("owner content: %d", got.Code)
+	}
+	if got := fetch("8000000000000000003", "test-service-token"); got.Code != http.StatusOK {
+		t.Fatalf("admin content: %d", got.Code)
+	}
+	if err := os.Remove(filepath.Join(mock.assetDir, staged.AssetID)); err != nil {
+		t.Fatal(err)
+	}
+	if got := fetch(driverID, "test-service-token"); got.Code != http.StatusServiceUnavailable {
+		t.Fatalf("missing file: %d", got.Code)
+	}
+}
+
+func TestIssueAttachesStagedAssetsAtomically(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	now := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
+	mock, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := commandClient(t, mock)
+	ctx := context.Background()
+	created, err := client.CheckoutCreate(ctx, driverID, firstVehicleID, 1, "attach-hold-key", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hold, _ := dataapi.DecodeAggregate[dataapi.Checkout](created)
+	stage := func(tone uint8, key string) string {
+		result, err := client.StageIssueAsset(ctx, driverID, dataapi.IssueStageInput{ScopeType: "inspection", ScopeID: hold.Inspection.ID, SourceEventKey: key, IdempotencyKey: key + "-stage", ContentType: "image/png", Image: syntheticPNG(t, tone)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.AssetID
+	}
+	ids := []string{stage(51, "attach-image-one"), stage(52, "attach-image-two")}
+	input := dataapi.IssueCreateInput{Category: "body_damage", Description: "Синтетическое замечание с двумя фото", InspectionID: &hold.Inspection.ID, AssetIDs: ids}
+	_, err = client.IssueCreate(ctx, driverID, firstVehicleID, 2, dataapi.IssueCreateInput{Category: input.Category, Description: input.Description, InspectionID: input.InspectionID, AssetIDs: []string{ids[0], ids[0]}}, "attach-duplicate-id", nil)
+	if err == nil {
+		t.Fatal("duplicate issue asset accepted")
+	}
+	mock.saveSnapshot = func(stateSnapshot) error { return os.ErrPermission }
+	_, err = client.IssueCreate(ctx, driverID, firstVehicleID, 2, input, "attach-failed-save", nil)
+	expectAPIError(t, err, "TEMPORARY_FAILURE")
+	if mock.issueAssets[ids[0]].AttachedIssueID != nil || len(mock.issues) != 0 {
+		t.Fatal("failed issue save consumed asset")
+	}
+	mock.saveSnapshot = func(state stateSnapshot) error { return atomicSave(path, state) }
+	createdIssue, err := client.IssueCreate(ctx, driverID, firstVehicleID, 2, input, "attach-success", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err := dataapi.DecodeAggregate[dataapi.Issue](createdIssue)
+	if err != nil || len(issue.AssetIDs) != 2 || issue.AssetIDs[0] != ids[0] {
+		t.Fatalf("attached issue: %+v %v", issue, err)
+	}
+	for _, id := range ids {
+		if mock.issueAssets[id].AttachedIssueID == nil || *mock.issueAssets[id].AttachedIssueID != issue.ID {
+			t.Fatal("asset attachment missing")
+		}
+	}
+	restarted, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := commandClient(t, restarted).Issue(ctx, driverID, issue.ID)
+	if err != nil || len(restored.AssetIDs) != 2 {
+		t.Fatalf("restart lost attachment: %+v %v", restored, err)
+	}
+}

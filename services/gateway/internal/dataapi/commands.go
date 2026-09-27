@@ -57,6 +57,47 @@ type attestationPayload struct {
 	Attestation bool `json:"attestation"`
 }
 
+type challengeIntent struct {
+	Operation       string `json:"operation"`
+	TargetID        string `json:"target_id"`
+	ExpectedVersion int64  `json:"expected_version"`
+}
+
+type challengeCreatePayload struct {
+	Purpose       string          `json:"purpose"`
+	IntentPayload challengeIntent `json:"intent_payload"`
+}
+
+type challengeAnswerPayload struct {
+	SelectedOption int `json:"selected_option"`
+}
+
+type acceptRulesPayload struct {
+	RulesVersionID string `json:"rules_version_id"`
+}
+
+type InspectionUpdateInput struct {
+	FuelLevel      *int   `json:"fuel_level,omitempty"`
+	OdometerKM     *int64 `json:"odometer_km,omitempty"`
+	NewDamage      *bool  `json:"new_damage,omitempty"`
+	CabinClean     *bool  `json:"cabin_clean,omitempty"`
+	ParkingAllowed *bool  `json:"parking_allowed,omitempty"`
+	KeysReturned   *bool  `json:"keys_returned,omitempty"`
+	CarLocked      *bool  `json:"car_locked,omitempty"`
+}
+
+type IssueCreateInput struct {
+	Category     string   `json:"category"`
+	Description  string   `json:"description"`
+	TripID       *string  `json:"trip_id,omitempty"`
+	InspectionID *string  `json:"inspection_id,omitempty"`
+	AssetIDs     []string `json:"asset_ids"`
+}
+
+func validFuel(level int) bool {
+	return level == 0 || level == 25 || level == 50 || level == 75 || level == 100
+}
+
 // CheckoutCreate creates a 15-minute hold. Python/mock owns the availability transaction.
 func (c *Client) CheckoutCreate(ctx context.Context, actorMaxID, vehicleID string, vehicleVersion int64, key string, inbox *InboxLease) (CommandResult, error) {
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[emptyPayload]{"checkout.create", vehicleID, vehicleVersion, emptyPayload{}})
@@ -64,6 +105,86 @@ func (c *Client) CheckoutCreate(ctx context.Context, actorMaxID, vehicleID strin
 
 func (c *Client) CheckoutCancel(ctx context.Context, actorMaxID, checkoutID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[emptyPayload]{"checkout.cancel", checkoutID, version, emptyPayload{}})
+}
+
+// ChallengeCreateTake binds a math question to the current hold and vehicle intent.
+func (c *Client) ChallengeCreateTake(ctx context.Context, actorMaxID, checkoutID string, checkoutVersion int64, vehicleID string, vehicleVersion int64, key string, inbox *InboxLease) (CommandResult, error) {
+	if !validUUID(vehicleID) || vehicleVersion < 1 {
+		return CommandResult{}, errors.New("data-api: invalid vehicle intent")
+	}
+	payload := challengeCreatePayload{Purpose: "take", IntentPayload: challengeIntent{Operation: "checkout.create", TargetID: vehicleID, ExpectedVersion: vehicleVersion}}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[challengeCreatePayload]{"challenge.create", checkoutID, checkoutVersion, payload})
+}
+
+func (c *Client) ChallengeCreateReturn(ctx context.Context, actorMaxID, returnID string, returnVersion int64, tripID string, tripVersion int64, key string, inbox *InboxLease) (CommandResult, error) {
+	if !validUUID(tripID) || tripVersion < 1 {
+		return CommandResult{}, errors.New("data-api: invalid trip intent")
+	}
+	payload := challengeCreatePayload{Purpose: "return", IntentPayload: challengeIntent{Operation: "trip.begin_return", TargetID: tripID, ExpectedVersion: tripVersion}}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[challengeCreatePayload]{"challenge.create", returnID, returnVersion, payload})
+}
+
+func (c *Client) ChallengeAnswer(ctx context.Context, actorMaxID, challengeID string, version int64, selectedOption int, key string, inbox *InboxLease) (CommandResult, error) {
+	if selectedOption < 0 || selectedOption > 3 {
+		return CommandResult{}, errors.New("data-api: invalid challenge option")
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[challengeAnswerPayload]{"challenge.answer", challengeID, version, challengeAnswerPayload{selectedOption}})
+}
+
+func (c *Client) CheckoutAcceptRules(ctx context.Context, actorMaxID, checkoutID string, version int64, rulesVersionID string, key string, inbox *InboxLease) (CommandResult, error) {
+	if !validUUID(rulesVersionID) {
+		return CommandResult{}, errors.New("data-api: invalid rules version")
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[acceptRulesPayload]{"checkout.accept_rules", checkoutID, version, acceptRulesPayload{rulesVersionID}})
+}
+
+func (c *Client) InspectionUpdate(ctx context.Context, actorMaxID, inspectionID string, version int64, input InspectionUpdateInput, key string, inbox *InboxLease) (CommandResult, error) {
+	if input.FuelLevel == nil && input.OdometerKM == nil && input.NewDamage == nil && input.CabinClean == nil && input.ParkingAllowed == nil && input.KeysReturned == nil && input.CarLocked == nil ||
+		input.FuelLevel != nil && !validFuel(*input.FuelLevel) || input.OdometerKM != nil && *input.OdometerKM < 0 {
+		return CommandResult{}, errors.New("data-api: invalid inspection input")
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[InspectionUpdateInput]{"inspection.update", inspectionID, version, input})
+}
+
+func (c *Client) CheckoutSetNoNewIssues(ctx context.Context, actorMaxID, checkoutID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[struct {
+		Value bool `json:"value"`
+	}]{"checkout.set_no_new_issues", checkoutID, version, struct {
+		Value bool `json:"value"`
+	}{true}})
+}
+
+func (c *Client) CheckoutStart(ctx context.Context, actorMaxID, checkoutID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[attestationPayload]{"checkout.start", checkoutID, version, attestationPayload{true}})
+}
+
+func (c *Client) TripBeginReturn(ctx context.Context, actorMaxID, tripID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[emptyPayload]{"trip.begin_return", tripID, version, emptyPayload{}})
+}
+
+func (c *Client) ReturnCancel(ctx context.Context, actorMaxID, returnID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[emptyPayload]{"return.cancel", returnID, version, emptyPayload{}})
+}
+
+func (c *Client) IssueCreate(ctx context.Context, actorMaxID, vehicleID string, vehicleVersion int64, input IssueCreateInput, key string, inbox *InboxLease) (CommandResult, error) {
+	if (input.TripID == nil) == (input.InspectionID == nil) || strings.TrimSpace(input.Description) == "" || len(input.Description) > 1000 || len(input.AssetIDs) > 3 ||
+		input.Category != "body_damage" && input.Category != "mechanical" && input.Category != "cleanliness" && input.Category != "keys" && input.Category != "other" {
+		return CommandResult{}, errors.New("data-api: invalid issue input")
+	}
+	if input.TripID != nil && !validUUID(*input.TripID) || input.InspectionID != nil && !validUUID(*input.InspectionID) {
+		return CommandResult{}, errors.New("data-api: invalid issue context")
+	}
+	seen := make(map[string]bool)
+	for _, id := range input.AssetIDs {
+		if !validUUID(id) || seen[id] {
+			return CommandResult{}, errors.New("data-api: invalid issue asset")
+		}
+		seen[id] = true
+	}
+	if input.AssetIDs == nil {
+		input.AssetIDs = []string{}
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[IssueCreateInput]{"issue.create", vehicleID, vehicleVersion, input})
 }
 
 func (c *Client) InspectionConfirmPhotos(ctx context.Context, actorMaxID, inspectionID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {

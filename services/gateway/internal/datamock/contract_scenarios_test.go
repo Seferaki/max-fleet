@@ -1,0 +1,395 @@
+package datamock
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
+)
+
+type contractScenarios struct {
+	ContractVersion string `json:"contract_version"`
+	Cases           []struct {
+		ID     string `json:"id"`
+		Expect struct {
+			HTTP  int     `json:"http"`
+			Error *string `json:"error"`
+		} `json:"expect"`
+	} `json:"cases"`
+}
+
+type scenarioContext struct {
+	t      *testing.T
+	client *dataapi.Client
+	mock   *Server
+	ctx    context.Context
+	now    time.Time
+}
+
+func (s scenarioContext) hold(key string) dataapi.Checkout {
+	s.t.Helper()
+	result, err := s.client.CheckoutCreate(s.ctx, driverID, firstVehicleID, 1, key, nil)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	hold, err := dataapi.DecodeAggregate[dataapi.Checkout](result)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	return hold
+}
+
+func (s scenarioContext) upload(inspectionID string, slot int, version int64, tone uint8, event string) (dataapi.PhotoUploadResult, error) {
+	return s.client.UploadInspectionPhoto(s.ctx, driverID, dataapi.InspectionPhotoInput{InspectionID: inspectionID, Slot: slot, Version: version, SourceEventKey: event, IdempotencyKey: "scenario-photo-" + event, ContentType: "image/png", Image: syntheticPNG(s.t, tone)})
+}
+
+func (s scenarioContext) photoSet(count int) dataapi.Checkout {
+	s.t.Helper()
+	hold := s.hold("scenario-photo-hold")
+	version := hold.Inspection.Version
+	for slot := 1; slot <= count; slot++ {
+		result, err := s.upload(hold.Inspection.ID, slot, version, uint8(slot), fmt.Sprintf("slot-%d", slot))
+		if err != nil {
+			s.t.Fatal(err)
+		}
+		version = result.Inspection.Version
+	}
+	hold.Inspection.Version = version
+	return hold
+}
+
+func (s scenarioContext) readyReturn(damage, parkingAllowed bool) (dataapi.Trip, dataapi.Return) {
+	s.t.Helper()
+	tripID := "20000000-0000-4000-8000-000000000001"
+	returnID := "30000000-0000-4000-8000-000000000001"
+	inspectionID := "40000000-0000-4000-8000-000000000001"
+	employee := s.mock.employees[driverID]
+	employee.ActiveTripID = &tripID
+	s.mock.employees[driverID] = employee
+	s.mock.vehicles[0].Status = "in_trip"
+	beforeOdo, afterOdo, fuel := int64(12000), int64(12025), 50
+	clean, yes := true, true
+	trip := dataapi.Trip{ID: tripID, VehicleID: firstVehicleID, EmployeeID: employee.ID, Status: "returning", ReturnID: &returnID, BeforeInspection: dataapi.Inspection{OdometerKM: &beforeOdo}, Issues: []dataapi.Issue{}, Version: 2, UpdatedAt: s.now}
+	if damage {
+		trip.Issues = append(trip.Issues, dataapi.Issue{ID: "50000000-0000-4000-8000-000000000001", Stage: "after", InspectionID: &inspectionID, Category: "body_damage"})
+	}
+	s.mock.trips[tripID] = trip
+	draft := dataapi.Return{ID: returnID, TripID: tripID, Status: "draft", IntentConfirmedAt: &s.now, ParkingLocation: &dataapi.ParkingLocation{ID: "60000000-0000-4000-8000-000000000001", Latitude: 55.75, Longitude: 37.62, Source: "manual_map", ConfirmedAt: s.now}, Version: 1, UpdatedAt: s.now,
+		Inspection: dataapi.Inspection{ID: inspectionID, Phase: "after", Status: "draft", FuelLevel: &fuel, OdometerKM: &afterOdo, NewDamage: &damage, CabinClean: &clean, ParkingAllowed: &parkingAllowed, KeysReturned: &yes, CarLocked: &yes, OccupiedSlots: []int{1, 2, 3, 4, 5, 6, 7, 8}, MissingSlots: []int{}, PhotosConfirmedAt: &s.now, Version: 1, UpdatedAt: s.now}}
+	s.mock.returns[returnID] = draft
+	return trip, draft
+}
+
+func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "contracts", "scenarios", "v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec contractScenarios
+	if err := json.Unmarshal(data, &spec); err != nil || spec.ContractVersion != dataapi.ContractVersion {
+		t.Fatalf("scenario contract: %v", err)
+	}
+	runs := map[string]func(s scenarioContext) error{
+		"identity.admin": func(s scenarioContext) error {
+			summary, err := s.client.AdminSummary(s.ctx, "8000000000000000003")
+			if err == nil && summary.Available != 10 {
+				s.t.Fatal("admin did not receive fleet summary")
+			}
+			return err
+		},
+		"identity.employee": func(s scenarioContext) error {
+			me, err := s.client.Me(s.ctx, driverID)
+			if err == nil && (!me.Allowed || me.Employee == nil || me.Employee.Role != "employee") {
+				s.t.Fatal("employee identity facts failed")
+			}
+			return err
+		},
+		"identity.unknown": func(s scenarioContext) error {
+			_, err := s.client.Vehicles(s.ctx, "9000000000000000001", dataapi.VehicleFilter{})
+			return err
+		},
+		"identity.wrong-owner": func(s scenarioContext) error {
+			_, draft := s.readyReturn(false, true)
+			_, err := s.client.Return(s.ctx, "8000000000000000002", draft.ID)
+			return err
+		},
+		"vehicles.free": func(s scenarioContext) error {
+			available := true
+			page, err := s.client.Vehicles(s.ctx, driverID, dataapi.VehicleFilter{Available: &available})
+			found := false
+			for _, item := range page.Items {
+				if item.ID == firstVehicleID {
+					found = true
+				}
+			}
+			if err == nil && !found {
+				s.t.Fatal("DEMO-001 missing from free vehicles")
+			}
+			return err
+		},
+		"vehicles.holding": func(s scenarioContext) error {
+			hold := s.hold("scenario-holding")
+			if hold.ExpiresAt.Sub(s.now) != 15*time.Minute {
+				s.t.Fatal("hold TTL differs from 15 minutes")
+			}
+			available := true
+			page, err := s.client.Vehicles(s.ctx, driverID, dataapi.VehicleFilter{Available: &available})
+			for _, item := range page.Items {
+				if item.ID == firstVehicleID {
+					s.t.Fatal("holding vehicle still free")
+				}
+			}
+			return err
+		},
+		"checkout.busy": func(s scenarioContext) error {
+			s.hold("scenario-busy-one")
+			_, err := s.client.CheckoutCreate(s.ctx, "8000000000000000002", firstVehicleID, 1, "scenario-busy-two", nil)
+			if len(s.mock.checkouts) != 1 {
+				s.t.Fatal("busy checkout created another hold")
+			}
+			return err
+		},
+		"checkout.cancel": func(s scenarioContext) error {
+			hold := s.hold("scenario-cancel-hold")
+			_, err := s.client.CheckoutCancel(s.ctx, driverID, hold.ID, hold.Version, "scenario-cancel", nil)
+			if err != nil {
+				return err
+			}
+			vehicle, err := s.client.Vehicle(s.ctx, driverID, firstVehicleID)
+			if err == nil && vehicle.Status != "available" {
+				s.t.Fatal("cancel did not release vehicle")
+			}
+			return err
+		},
+		"checkout.expired": func(s scenarioContext) error {
+			hold := s.hold("scenario-expired-hold")
+			s.mock.now = func() time.Time { return s.now.Add(15*time.Minute + time.Second) }
+			_, err := s.client.CheckoutStart(s.ctx, driverID, hold.ID, hold.Version, "scenario-expired-start", nil)
+			if len(s.mock.trips) != 0 {
+				s.t.Fatal("expired hold created trip")
+			}
+			return err
+		},
+		"inspection.zero": func(s scenarioContext) error {
+			hold := s.hold("scenario-zero-photos")
+			_, err := s.client.InspectionConfirmPhotos(s.ctx, driverID, hold.Inspection.ID, hold.Inspection.Version, "scenario-confirm-zero", nil)
+			var apiErr *dataapi.APIError
+			if errors.As(err, &apiErr) && len(apiErr.Details.MissingSlots) != 8 {
+				s.t.Fatal("zero photos did not report eight missing slots")
+			}
+			return err
+		},
+		"inspection.seven": func(s scenarioContext) error {
+			hold := s.photoSet(7)
+			_, err := s.client.InspectionConfirmPhotos(s.ctx, driverID, hold.Inspection.ID, hold.Inspection.Version, "scenario-confirm-seven", nil)
+			var apiErr *dataapi.APIError
+			if errors.As(err, &apiErr) && (len(apiErr.Details.MissingSlots) != 1 || apiErr.Details.MissingSlots[0] != 8) {
+				s.t.Fatal("seven photos did not report slot 8")
+			}
+			inspection, readErr := s.client.Inspection(s.ctx, driverID, hold.Inspection.ID)
+			if readErr != nil || len(inspection.OccupiedSlots) != 7 {
+				s.t.Fatal("seven photos were lost")
+			}
+			return err
+		},
+		"inspection.eight": func(s scenarioContext) error {
+			hold := s.photoSet(8)
+			result, err := s.client.InspectionConfirmPhotos(s.ctx, driverID, hold.Inspection.ID, hold.Inspection.Version, "scenario-confirm-eight", nil)
+			if err != nil {
+				return err
+			}
+			inspection, err := dataapi.DecodeAggregate[dataapi.Inspection](result)
+			if err == nil && (inspection.PhotosConfirmedAt == nil || len(inspection.OccupiedSlots) != 8) {
+				s.t.Fatal("eight photos not confirmed")
+			}
+			return err
+		},
+		"inspection.duplicate-event": func(s scenarioContext) error {
+			hold := s.hold("scenario-duplicate-event-hold")
+			first, err := s.upload(hold.Inspection.ID, 1, hold.Inspection.Version, 31, "repeat-event")
+			if err != nil {
+				return err
+			}
+			again, err := s.upload(hold.Inspection.ID, 1, hold.Inspection.Version, 31, "repeat-event")
+			if err == nil && (again.AssetID != first.AssetID || again.Inspection.Version != first.Inspection.Version) {
+				s.t.Fatal("photo retry changed asset or version")
+			}
+			return err
+		},
+		"inspection.duplicate-hash": func(s scenarioContext) error {
+			hold := s.hold("scenario-duplicate-hash-hold")
+			first, err := s.upload(hold.Inspection.ID, 1, hold.Inspection.Version, 32, "hash-first")
+			if err != nil {
+				return err
+			}
+			_, err = s.upload(hold.Inspection.ID, 2, first.Inspection.Version, 32, "hash-second")
+			inspection, readErr := s.client.Inspection(s.ctx, driverID, hold.Inspection.ID)
+			if readErr != nil || len(inspection.OccupiedSlots) != 1 {
+				s.t.Fatal("duplicate hash occupied second slot")
+			}
+			return err
+		},
+		"inspection.replace": func(s scenarioContext) error {
+			hold := s.photoSet(8)
+			result, err := s.client.InspectionConfirmPhotos(s.ctx, driverID, hold.Inspection.ID, hold.Inspection.Version, "scenario-confirm-replace", nil)
+			if err != nil {
+				return err
+			}
+			confirmed, err := dataapi.DecodeAggregate[dataapi.Inspection](result)
+			if err != nil {
+				return err
+			}
+			before := make(map[int]string)
+			for slot, photo := range s.mock.photos[hold.Inspection.ID] {
+				before[slot] = photo.AssetID
+			}
+			replaced, err := s.upload(hold.Inspection.ID, 3, confirmed.Version, 99, "replace-slot-three")
+			if err != nil {
+				return err
+			}
+			if replaced.Inspection.Version != confirmed.Version+1 || replaced.Inspection.PhotosConfirmedAt != nil || len(replaced.Inspection.OccupiedSlots) != 8 {
+				s.t.Fatal("replacement did not invalidate photo confirmation")
+			}
+			for slot, photo := range s.mock.photos[hold.Inspection.ID] {
+				if slot != 3 && photo.AssetID != before[slot] {
+					s.t.Fatal("replacement changed another slot")
+				}
+			}
+			return nil
+		},
+		"inspection.storage-error": func(s scenarioContext) error {
+			hold := s.photoSet(1)
+			first := s.mock.photos[hold.Inspection.ID][1].AssetID
+			s.mock.saveSnapshot = func(stateSnapshot) error { return os.ErrPermission }
+			_, err := s.upload(hold.Inspection.ID, 2, hold.Inspection.Version, 41, "storage-fail")
+			if len(s.mock.photos[hold.Inspection.ID]) != 1 || s.mock.photos[hold.Inspection.ID][1].AssetID != first {
+				s.t.Fatal("failed upload changed saved slots")
+			}
+			return err
+		},
+		"return.success": func(s scenarioContext) error {
+			trip, draft := s.readyReturn(false, true)
+			result, err := s.client.ReturnComplete(s.ctx, driverID, draft.ID, draft.Version, "scenario-return-success", nil)
+			if err != nil {
+				return err
+			}
+			completed, err := dataapi.DecodeAggregate[dataapi.Return](result)
+			if err == nil && (completed.Status != "completed" || s.mock.trips[trip.ID].Status != "completed" || s.mock.vehicles[0].Status != "available") {
+				s.t.Fatal("successful return did not release vehicle")
+			}
+			return err
+		},
+		"return.damage": func(s scenarioContext) error {
+			trip, draft := s.readyReturn(true, true)
+			_, err := s.client.ReturnComplete(s.ctx, driverID, draft.ID, draft.Version, "scenario-return-damage", nil)
+			if err == nil && (s.mock.trips[trip.ID].Status != "completed" || s.mock.vehicles[0].Status != "unavailable" || !s.mock.vehicles[0].NeedsReview) {
+				s.t.Fatal("damage return released vehicle")
+			}
+			return err
+		},
+		"return.unsafe": func(s scenarioContext) error {
+			trip, draft := s.readyReturn(false, false)
+			_, err := s.client.ReturnComplete(s.ctx, driverID, draft.ID, draft.Version, "scenario-return-unsafe", nil)
+			if s.mock.trips[trip.ID].Status != "returning" || s.mock.returns[draft.ID].Status != "draft" {
+				s.t.Fatal("unsafe return completed trip")
+			}
+			return err
+		},
+		"return.cancel-new": func(s scenarioContext) error {
+			tripID := "20000000-0000-4000-8000-000000000001"
+			s.mock.trips[tripID] = dataapi.Trip{ID: tripID, VehicleID: firstVehicleID, EmployeeID: s.mock.employees[driverID].ID, Status: "active", Version: 1, UpdatedAt: s.now}
+			firstResult, err := s.client.TripBeginReturn(s.ctx, driverID, tripID, 1, "scenario-begin-one", nil)
+			if err != nil {
+				return err
+			}
+			first, err := dataapi.DecodeAggregate[dataapi.Return](firstResult)
+			if err != nil {
+				return err
+			}
+			if _, err = s.client.ReturnCancel(s.ctx, driverID, first.ID, first.Version, "scenario-cancel-return", nil); err != nil {
+				return err
+			}
+			trip, err := s.client.Trip(s.ctx, driverID, tripID)
+			if err != nil {
+				return err
+			}
+			if trip.Status != "active" || trip.ReturnID != nil {
+				s.t.Fatal("cancel did not restore active trip")
+			}
+			secondResult, err := s.client.TripBeginReturn(s.ctx, driverID, tripID, trip.Version, "scenario-begin-two", nil)
+			if err != nil {
+				return err
+			}
+			second, err := dataapi.DecodeAggregate[dataapi.Return](secondResult)
+			if err == nil && (second.ID == first.ID || second.Inspection.ID == first.Inspection.ID || len(second.Inspection.OccupiedSlots) != 0 || len(second.Inspection.MissingSlots) != 8 || second.ParkingLocation != nil) {
+				s.t.Fatal("new return inherited stale data")
+			}
+			return err
+		},
+		"schema.stale": func(s scenarioContext) error {
+			trip, draft := s.readyReturn(false, true)
+			_, err := s.client.ReturnComplete(s.ctx, driverID, draft.ID, draft.Version+1, "scenario-stale-complete", nil)
+			if s.mock.trips[trip.ID].Status != "returning" {
+				s.t.Fatal("stale return completed trip")
+			}
+			return err
+		},
+		"schema.same-key-different-body": func(s scenarioContext) error {
+			s.hold("scenario-same-key")
+			_, err := s.client.CheckoutCreate(s.ctx, driverID, "10000000-0000-4000-8000-000000000002", 1, "scenario-same-key", nil)
+			if len(s.mock.checkouts) != 1 {
+				s.t.Fatal("conflicting key changed checkout state")
+			}
+			return err
+		},
+	}
+	seen := map[string]bool{}
+	for _, item := range spec.Cases {
+		if seen[item.ID] {
+			t.Fatalf("duplicate scenario %s", item.ID)
+		}
+		seen[item.ID] = true
+		run, selected := runs[item.ID]
+		if !selected {
+			continue
+		}
+		t.Run(item.ID, func(t *testing.T) {
+			now := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
+			mock, err := NewWithSnapshot("test-service-token", filepath.Join(t.TempDir(), "state.json"), func() time.Time { return now })
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := scenarioContext{t: t, client: commandClient(t, mock), mock: mock, ctx: context.Background(), now: now}
+			err = run(s)
+			status, code := 200, ""
+			if err != nil {
+				var apiErr *dataapi.APIError
+				if !errors.As(err, &apiErr) {
+					t.Fatalf("non-HTTP failure: %v", err)
+				}
+				status, code = apiErr.Status, apiErr.Code
+			}
+			wantCode := ""
+			if item.Expect.Error != nil {
+				wantCode = *item.Expect.Error
+			}
+			if status != item.Expect.HTTP || code != wantCode {
+				t.Fatalf("scenario %s: got %d %s, want %d %s", item.ID, status, code, item.Expect.HTTP, wantCode)
+			}
+		})
+	}
+	if len(runs) != 22 {
+		t.Fatal("scenario runner count changed")
+	}
+	for id := range runs {
+		if !seen[id] {
+			t.Fatalf("scenario %s missing from contract", id)
+		}
+	}
+}

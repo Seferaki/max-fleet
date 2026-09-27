@@ -87,3 +87,57 @@ func TestOwnCommandResultUsesActorAndOperation(t *testing.T) {
 		t.Fatalf("lookup: %+v %v", result, err)
 	}
 }
+
+func TestTakeChallengeAndRulesCommands(t *testing.T) {
+	var operations []string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(body)
+		for _, want := range []string{`"target_id":"` + commandVehicleID + `"`, `"expected_version":1`} {
+			if !strings.Contains(text, want) {
+				t.Errorf("command missing %s: %s", want, text)
+			}
+		}
+		var operation string
+		switch {
+		case strings.Contains(text, `"operation":"challenge.create"`):
+			operation = "challenge.create"
+			if !strings.Contains(text, `"purpose":"take"`) || !strings.Contains(text, `"intent_payload"`) {
+				t.Errorf("invalid take challenge: %s", text)
+			}
+		case strings.Contains(text, `"operation":"challenge.answer"`):
+			operation = "challenge.answer"
+			if !strings.Contains(text, `"selected_option":2`) {
+				t.Errorf("invalid answer: %s", text)
+			}
+		case strings.Contains(text, `"operation":"checkout.accept_rules"`):
+			operation = "checkout.accept_rules"
+			if !strings.Contains(text, `"rules_version_id":"`+commandVehicleID+`"`) {
+				t.Errorf("invalid rules version: %s", text)
+			}
+		default:
+			t.Errorf("unexpected command: %s", text)
+		}
+		operations = append(operations, operation)
+		_, _ = w.Write([]byte(`{"data":{"operation":"` + operation + `","aggregate":{"id":"` + commandVehicleID + `"}},"request_id":"` + testRequestID + `"}`))
+	})
+	ctx := context.Background()
+	if _, err := c.ChallengeCreateTake(ctx, "900001", commandVehicleID, 1, commandVehicleID, 1, "challenge-create-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ChallengeAnswer(ctx, "900001", commandVehicleID, 1, 2, "challenge-answer-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CheckoutAcceptRules(ctx, "900001", commandVehicleID, 1, commandVehicleID, "accept-rules-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(operations) != 3 {
+		t.Fatalf("sent %d commands", len(operations))
+	}
+	if _, err := c.ChallengeAnswer(ctx, "900001", commandVehicleID, 1, 4, "invalid-answer", nil); err == nil {
+		t.Fatal("invalid option accepted")
+	}
+}

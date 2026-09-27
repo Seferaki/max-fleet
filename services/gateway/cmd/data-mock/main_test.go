@@ -25,3 +25,23 @@ func TestServiceTokenSources(t *testing.T) {
 		t.Fatal("two token sources accepted")
 	}
 }
+
+func TestWorkerTokenSources(t *testing.T) {
+	t.Setenv("WORKER_API_TOKEN", "")
+	t.Setenv("WORKER_API_TOKEN_FILE", "")
+	if _, err := readToken("WORKER_API_TOKEN", "WORKER_API_TOKEN_FILE"); err == nil {
+		t.Fatal("missing worker token accepted")
+	}
+	path := filepath.Join(t.TempDir(), "worker-token")
+	if err := os.WriteFile(path, []byte("worker-file-token\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WORKER_API_TOKEN_FILE", path)
+	if got, err := readToken("WORKER_API_TOKEN", "WORKER_API_TOKEN_FILE"); err != nil || got != "worker-file-token" {
+		t.Fatalf("worker file token: %v", err)
+	}
+	t.Setenv("WORKER_API_TOKEN", "worker-env-token")
+	if _, err := readToken("WORKER_API_TOKEN", "WORKER_API_TOKEN_FILE"); err == nil {
+		t.Fatal("two worker token sources accepted")
+	}
+}
