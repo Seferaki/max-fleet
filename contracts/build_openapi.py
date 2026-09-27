@@ -787,6 +787,6 @@ for name in ("live", "ready"):
     }}
 
 
-ROOT.joinpath("data-api.openapi.yaml").write_text(
-    yaml.safe_dump(spec, allow_unicode=True, sort_keys=False, width=110), encoding="utf-8"
+ROOT.joinpath("data-api.openapi.yaml").write_bytes(
+    yaml.safe_dump(spec, allow_unicode=True, sort_keys=False, width=110).encode("utf-8")
 )
