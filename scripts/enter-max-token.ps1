@@ -15,17 +15,17 @@ $tokenPath = Join-Path $secretDirectory 'max_bot_token'
 $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 
 function Set-PrivateAcl([string]$Path, [bool]$Directory) {
+    $sid = $currentSid.Value
+    $grant = if ($Directory) { "*${sid}:(OI)(CI)F" } else { "*${sid}:F" }
+    & icacls.exe $Path /inheritance:r /grant:r $grant | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Не удалось ограничить ACL: $Path" }
     $acl = Get-Acl -LiteralPath $Path
-    $acl.SetAccessRuleProtection($true, $false)
-    foreach ($rule in @($acl.Access)) {
-        $acl.RemoveAccessRuleSpecific($rule)
+    if (-not $acl.AreAccessRulesProtected -or
+        @($acl.Access | Where-Object {
+            $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -ne $sid
+        }).Count -ne 0) {
+        throw "ACL содержит посторонние правила: $Path"
     }
-    $inheritance = if ($Directory) { 'ContainerInherit,ObjectInherit' } else { 'None' }
-    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
-        $currentSid, 'FullControl', $inheritance, 'None', 'Allow'
-    )
-    $acl.AddAccessRule($rule)
-    Set-Acl -LiteralPath $Path -AclObject $acl
 }
 
 if ($Prepare -or $Enter) {

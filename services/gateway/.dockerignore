@@ -1,0 +1,9 @@
+.git
+.env
+.env.*
+!.env.example
+secrets/
+*.exe
+*.test
+*.out
+coverage/
