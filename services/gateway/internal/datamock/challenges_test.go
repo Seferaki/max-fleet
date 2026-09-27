@@ -185,6 +185,61 @@ func TestTakeChallengePersistsAndRulesRequireAnswer(t *testing.T) {
 	}
 	_, err = client.CheckoutCreate(ctx, driverID, "10000000-0000-4000-8000-000000000002", 1, "another-hold-1", nil)
 	expectAPIError(t, err, "USER_BUSY")
+	_, err = client.TripBeginReturn(ctx, "8000000000000000002", trip.ID, trip.Version, "foreign-return-1", nil)
+	expectAPIError(t, err, "NOT_FOUND")
+	beginResult, err := client.TripBeginReturn(ctx, driverID, trip.ID, trip.Version, "begin-return-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := dataapi.DecodeAggregate[dataapi.Return](beginResult)
+	if err != nil || draft.Status != "draft" || draft.Step != "math" || draft.Inspection.Phase != "after" || len(draft.Inspection.MissingSlots) != 8 {
+		t.Fatalf("fresh return: %+v %v", draft, err)
+	}
+	again, err := client.TripBeginReturn(ctx, driverID, trip.ID, trip.Version, "begin-return-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repeatedDraft, _ := dataapi.DecodeAggregate[dataapi.Return](again)
+	if repeatedDraft.ID != draft.ID {
+		t.Fatal("duplicate begin_return created another draft")
+	}
+	_, err = client.TripBeginReturn(ctx, driverID, trip.ID, trip.Version+1, "begin-second-1", nil)
+	expectAPIError(t, err, "INVALID_STATE")
+	state, err = client.State(ctx, driverID)
+	if err != nil || state.Return == nil || state.Return.ID != draft.ID || state.Trip == nil || state.Trip.Status != "returning" {
+		t.Fatalf("return state: %+v %v", state, err)
+	}
+	cancelledResult, err := client.ReturnCancel(ctx, driverID, draft.ID, draft.Version, "cancel-return-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelled, err := dataapi.DecodeAggregate[dataapi.Return](cancelledResult)
+	if err != nil || cancelled.Status != "cancelled" || cancelled.Inspection.Status != "abandoned" {
+		t.Fatalf("cancelled return: %+v %v", cancelled, err)
+	}
+	active, err := client.Trip(ctx, driverID, trip.ID)
+	if err != nil || active.Status != "active" || active.ReturnID != nil {
+		t.Fatalf("trip after cancel: %+v %v", active, err)
+	}
+	freshResult, err := client.TripBeginReturn(ctx, driverID, trip.ID, active.Version, "begin-again-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, _ := dataapi.DecodeAggregate[dataapi.Return](freshResult)
+	if fresh.ID == draft.ID || fresh.Inspection.ID == draft.Inspection.ID || len(fresh.Inspection.OccupiedSlots) != 0 || fresh.ParkingLocation != nil {
+		t.Fatalf("new return inherited cancelled data: %+v", fresh)
+	}
+	_, err = client.Return(ctx, "8000000000000000002", fresh.ID)
+	expectAPIError(t, err, "NOT_FOUND")
+	last, err = NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	client = commandClient(t, last)
+	state, err = client.State(ctx, driverID)
+	if err != nil || state.Return == nil || state.Return.ID != fresh.ID || state.Trip == nil || state.Trip.Status != "returning" {
+		t.Fatalf("restored fresh return: %+v %v", state, err)
+	}
 }
 
 func TestTakeChallengeThreeErrorsAndTTL(t *testing.T) {

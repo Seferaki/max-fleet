@@ -43,7 +43,7 @@ func parseCommand(body []byte) (mockCommand, bool) {
 		return mockCommand{}, false
 	}
 	command.Payload = fields["payload"]
-	if (command.Operation == "checkout.create" || command.Operation == "checkout.cancel" || command.Operation == "inspection.confirm_photos") && len(payload) != 0 {
+	if (command.Operation == "checkout.create" || command.Operation == "checkout.cancel" || command.Operation == "inspection.confirm_photos" || command.Operation == "trip.begin_return" || command.Operation == "return.cancel") && len(payload) != 0 {
 		return mockCommand{}, false
 	}
 	return command, true
@@ -62,7 +62,7 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		return
 	}
 	command, ok := parseCommand(body)
-	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos" && command.Operation != "challenge.create" && command.Operation != "challenge.answer" && command.Operation != "checkout.accept_rules" && command.Operation != "inspection.update" && command.Operation != "checkout.set_no_new_issues" && command.Operation != "checkout.start") {
+	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos" && command.Operation != "challenge.create" && command.Operation != "challenge.answer" && command.Operation != "checkout.accept_rules" && command.Operation != "inspection.update" && command.Operation != "checkout.set_no_new_issues" && command.Operation != "checkout.start" && command.Operation != "trip.begin_return" && command.Operation != "return.cancel") {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
@@ -103,8 +103,12 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		result, ok = s.updateInspection(w, requestID, actor, command)
 	} else if command.Operation == "checkout.set_no_new_issues" {
 		result, ok = s.setNoNewIssues(w, requestID, actor, command)
-	} else {
+	} else if command.Operation == "checkout.start" {
 		result, ok = s.startCheckout(w, requestID, actor, command)
+	} else if command.Operation == "trip.begin_return" {
+		result, ok = s.beginReturn(w, requestID, actor, command)
+	} else {
+		result, ok = s.cancelReturn(w, requestID, actor, command)
 	}
 	if !ok {
 		return

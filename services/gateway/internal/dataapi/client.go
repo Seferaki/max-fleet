@@ -135,6 +135,13 @@ func (c *Client) Trip(ctx context.Context, actorMaxID, tripID string) (Trip, err
 	return get[Trip](ctx, c, "/trips/"+tripID, actorMaxID)
 }
 
+func (c *Client) Return(ctx context.Context, actorMaxID, returnID string) (Return, error) {
+	if !validUUID(returnID) {
+		return Return{}, errors.New("data-api: invalid return ID")
+	}
+	return get[Return](ctx, c, "/returns/"+returnID, actorMaxID)
+}
+
 func get[T any](ctx context.Context, c *Client, path, actorMaxID string) (T, error) {
 	return request[T](ctx, c, http.MethodGet, path, actorMaxID, nil, "", "", nil, nil)
 }

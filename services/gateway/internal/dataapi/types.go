@@ -134,12 +134,24 @@ type Trip struct {
 	UpdatedAt        time.Time         `json:"updated_at"`
 }
 
+type Return struct {
+	ID                string           `json:"id"`
+	TripID            string           `json:"trip_id"`
+	Status            string           `json:"status"`
+	Step              string           `json:"step"`
+	IntentConfirmedAt *time.Time       `json:"intent_confirmed_at"`
+	ParkingLocation   *ParkingLocation `json:"parking_location"`
+	Inspection        Inspection       `json:"inspection"`
+	Version           int64            `json:"version"`
+	UpdatedAt         time.Time        `json:"updated_at"`
+}
+
 type CurrentState struct {
-	Checkout            *Checkout       `json:"checkout"`
-	Trip                *Trip           `json:"trip"`
-	Return              json.RawMessage `json:"return"`
-	NextStep            *string         `json:"next_step"`
-	ConversationVersion int64           `json:"conversation_version"`
+	Checkout            *Checkout `json:"checkout"`
+	Trip                *Trip     `json:"trip"`
+	Return              *Return   `json:"return"`
+	NextStep            *string   `json:"next_step"`
+	ConversationVersion int64     `json:"conversation_version"`
 }
 
 type PhotoUploadResult struct {
