@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "cb546f02-a21d-4237-a7fa-726329b9b908"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T19:50:31Z"
+heartbeat_utc: "2026-09-27T19:52:36Z"
 current_task: BE-01
-current_substep: "8 из 44 контрактных сценариев исполнены client→mock; далее расширение покрытия"
-last_verified_code_commit: "35d84f5ad7c12c09da74c3ffb9e79ffee51adf94"
+current_substep: "12 из 44 контрактных сценариев исполнены client→mock; далее замена фото и return cases"
+last_verified_code_commit: "662fc0b8cd7ae1ef4d70e0bf01e8fa57990ae754"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: расширить исполняемые контрактные сценарии take/inspection/return; затем admin read/inbox маршруты; WIP"
+next_step: "BE-01: расширить исполняемые контрактные сценарии inspection.replace/storage-error и return; затем admin read/inbox маршруты; WIP"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `35d84f5ad7c12c09da74c3ffb9e79ffee51adf94` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets и Compose; WIP | 8/44 сценариев исполнены; admin/inbox маршруты |
+| BE-01 | IN_PROGRESS | `662fc0b8cd7ae1ef4d70e0bf01e8fa57990ae754` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets и Compose; WIP | 12/44 сценариев исполнены; admin/inbox маршруты |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `662fc0b8cd7ae1ef4d70e0bf01e8fa57990ae754`. Исполняемый runner добавил inspection.seven/eight/duplicate-event/duplicate-hash из `contracts/scenarios/v1.json` через client→persistent mock. Теперь 12/44 кейсов PASS; проверены 7 сохранённых фото при отказе подтверждения, подтверждение 8/8, неизменность asset/version при повторе и незанятый слот при дублирующем hash. `go test -run TestContractScenarioSubsetAgainstHTTPMock -v ./internal/datamock`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Остальные 32 кейса этим runner не исполнены, BE-01 WIP.
 
 - BE-01 code commit: `35d84f5ad7c12c09da74c3ffb9e79ffee51adf94`. Тест читает `contracts/scenarios/v1.json` и исполняет 8 из 44 кейсов через DataAPI HTTP client и mock, сверяя ожидаемые HTTP status/error и ключевые факты: identity.employee/unknown, vehicles.free/holding, checkout.busy/cancel, inspection.zero, schema.same-key-different-body. `go test -run TestContractScenarioSubsetAgainstHTTPMock -v ./internal/datamock` → 8 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Остальные 36 кейсов не исполнены этим runner, BE-01 WIP.
 
