@@ -29,10 +29,11 @@ type Config struct {
 }
 
 type Client struct {
-	baseURL    *url.URL
-	token      string
-	httpClient *http.Client
-	wait       func(context.Context, time.Duration) error
+	baseURL      *url.URL
+	token        string
+	httpClient   *http.Client
+	uploadClient *http.Client
+	wait         func(context.Context, time.Duration) error
 }
 
 func New(cfg Config) (*Client, error) {
@@ -51,7 +52,9 @@ func New(cfg Config) (*Client, error) {
 		}
 	}
 	u.Path = strings.TrimSuffix(u.Path, "/")
-	return &Client{baseURL: u, token: cfg.Token, httpClient: httpClient, wait: waitContext}, nil
+	uploadClient := *httpClient
+	uploadClient.Timeout = 60 * time.Second
+	return &Client{baseURL: u, token: cfg.Token, httpClient: httpClient, uploadClient: &uploadClient, wait: waitContext}, nil
 }
 
 func (c *Client) Meta(ctx context.Context) (Meta, error) {
@@ -122,11 +125,14 @@ func (c *Client) Inspection(ctx context.Context, actorMaxID, inspectionID string
 }
 
 func get[T any](ctx context.Context, c *Client, path, actorMaxID string) (T, error) {
-	return request[T](ctx, c, http.MethodGet, path, actorMaxID, nil, "", nil)
+	return request[T](ctx, c, http.MethodGet, path, actorMaxID, nil, "", "", nil, nil)
 }
 
-func request[T any](ctx context.Context, c *Client, method, path, actorMaxID string, body []byte, idempotencyKey string, inbox *InboxLease) (T, error) {
+func request[T any](ctx context.Context, c *Client, method, path, actorMaxID string, body []byte, contentType, idempotencyKey string, inbox *InboxLease, client *http.Client) (T, error) {
 	var zero T
+	if client == nil {
+		client = c.httpClient
+	}
 	if actorMaxID != "" && !validMaxID(actorMaxID) {
 		return zero, errors.New("data-api: invalid actor MAX ID")
 	}
@@ -152,8 +158,8 @@ func request[T any](ctx context.Context, c *Client, method, path, actorMaxID str
 		req.Header.Set("X-Contract-Version", ContractVersion)
 		req.Header.Set("X-Request-ID", requestID)
 		req.Header.Set("Accept", "application/json")
-		if body != nil {
-			req.Header.Set("Content-Type", "application/json")
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
 		}
 		if idempotencyKey != "" {
 			req.Header.Set("Idempotency-Key", idempotencyKey)
@@ -165,7 +171,7 @@ func request[T any](ctx context.Context, c *Client, method, path, actorMaxID str
 		if actorMaxID != "" {
 			req.Header.Set("X-Actor-Max-ID", actorMaxID)
 		}
-		res, err := c.httpClient.Do(req)
+		res, err := client.Do(req)
 		if err != nil {
 			if ctx.Err() != nil {
 				return zero, ctx.Err()

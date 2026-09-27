@@ -85,7 +85,7 @@ func executeCommand[P any](ctx context.Context, c *Client, actorMaxID, key strin
 	if err != nil {
 		return CommandResult{}, errors.New("data-api: invalid command body")
 	}
-	result, err := request[CommandResult](ctx, c, "POST", "/commands", actorMaxID, body, key, inbox)
+	result, err := request[CommandResult](ctx, c, "POST", "/commands", actorMaxID, body, "application/json", key, inbox, nil)
 	if err != nil {
 		return CommandResult{}, err
 	}

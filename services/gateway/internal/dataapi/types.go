@@ -107,6 +107,12 @@ type CurrentState struct {
 	ConversationVersion int64           `json:"conversation_version"`
 }
 
+type PhotoUploadResult struct {
+	AssetID    string     `json:"asset_id"`
+	SHA256     string     `json:"sha256"`
+	Inspection Inspection `json:"inspection"`
+}
+
 type ErrorDetails struct {
 	CurrentVersion *int64 `json:"current_version,omitempty"`
 	MissingSlots   []int  `json:"missing_slots,omitempty"`
