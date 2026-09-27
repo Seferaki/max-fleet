@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "de2e37a7-1a31-4a70-81c1-a9988c8c22bf"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T23:07:53Z"
+heartbeat_utc: "2026-09-27T23:11:45Z"
 current_task: BE-01
-current_substep: "Inbox ingest/claim/ack/retry и command fencing проверены; далее Worker HTTP client"
-last_verified_code_commit: "a3aaaba3ef0d743055cb812b41647cf1bfecc3b2"
+current_substep: "Typed WorkerClient проверен; далее integrations/notifications"
+last_verified_code_commit: "ed954e0aa865785e37c2ccea1549e7284492b591"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: добавить typed Worker HTTP client для inbox; затем integrations/notifications и расширить исполняемый contract runner; WIP"
+next_step: "BE-01: реализовать integrations lease/checkpoint и notifications claim/ack/retry; затем расширить исполняемый contract runner и восстановление; WIP"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `a3aaaba3ef0d743055cb812b41647cf1bfecc3b2` — durable inbox ingest/claim/ack/retry и command fencing; WIP | 22/44 runner-сценария; Worker client, notification/integration маршруты |
+| BE-01 | IN_PROGRESS | `ed954e0aa865785e37c2ccea1549e7284492b591` — typed WorkerClient и durable inbox; WIP | 22/44 runner-сценария; notification/integration маршруты и часть команд |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `ed954e0aa865785e37c2ccea1549e7284492b591`. Отдельный `dataapi.WorkerClient` использует WorkerBearer без X-Actor-Max-ID, те же request ID, Idempotency-Key и bounded retry transport, что и actor client. Методы `StoreInbox`, `ClaimInbox`, `AckInbox`, `RetryInbox` типизированы. `go test ./internal/dataapi ./internal/datamock -run 'TestWorkerClient' -count=1 -v` → 3 PASS: стабильные headers/body при 503, invalid input до сети, полный цикл с отдельным mock и отказ service token на worker route. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `... -Direction docker` → три image build exit 0. [CI предыдущего fenced inbox checkpoint](https://github.com/Seferaki/max-fleet/actions/runs/36357678244) → пять jobs success; CI нового SHA ещё не проверен. Integrations/notifications и часть 44 runner-сценариев остаются WIP.
 
 - BE-01 code commit: `a3aaaba3ef0d743055cb812b41647cf1bfecc3b2`. Mock `POST /inbox/{id}/ack|retry` принимает только текущий lease token до срока, сохраняет переход в snapshot v10 и повторяет ответ по тому же Idempotency-Key; после пяти неудачных попыток event → dead. Доменная команда с X-Inbox-Event-ID/X-Inbox-Lease под той же mutex проверяет actor и действующий token до replay/idempotency и мутации: старый worker получает 409 `LEASE_EXPIRED`. `go test ./internal/datamock -run '^TestInbox' -count=1 -v` → 12 PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `docker build -f services/gateway/Dockerfile.data-mock -t max-fleet-data-mock:lease services/gateway` → exit 0. Тесты проверили неверный/устаревший token, другого actor, retry scheduling, dead, restart, failed save и загрузку v9 snapshot. [CI предыдущего claim checkpoint](https://github.com/Seferaki/max-fleet/actions/runs/36357314465) → пять jobs success; CI для нового SHA ещё не проверен. Worker-клиент/notification/integration маршруты не реализованы; BE-01 WIP.
 
