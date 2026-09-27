@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "b78b0297-a9fa-4023-a429-3c2df2f65cfe"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T13:09:39Z"
+heartbeat_utc: "2026-09-27T13:13:02Z"
 current_task: S-03
-current_substep: "Проверка чистого checkout и опубликованного CI"
-last_verified_code_commit: "64c9c2f92aa4cf16dcd4288c743e514a3b93edd7"
+current_substep: "Повторная проверка чистого checkout после исправления LF; затем CI"
+last_verified_code_commit: "da03904b06eea69138649dd98f57785f900aee24"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "S-03: push checkpoint, затем проверить чистый checkout и GitHub CI; при успехе закрыть S-03 и перейти к BE-01"
+next_step: "S-03: push LF-fix, новый чистый clone, verify all и GitHub CI; при успехе закрыть S-03"
 human_required: [H-01]
 ```
 
@@ -27,7 +27,7 @@ human_required: [H-01]
 |---|---|---|---|
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
-| S-03 | IN_PROGRESS | `64c9c2f92aa4cf16dcd4288c743e514a3b93edd7` — локальные проверки прошли; WIP | Чистый checkout и опубликованный CI |
+| S-03 | IN_PROGRESS | `da03904b06eea69138649dd98f57785f900aee24` — LF-fix; WIP | Повтор чистого checkout и опубликованный CI |
 | BE-01 | TODO | — | См. план |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
@@ -60,6 +60,10 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- S-03 code commit: `da03904b06eea69138649dd98f57785f900aee24`. Первый чистый clone на `3c6606a` выявил platform-dependent CRLF в `build_openapi.py`: `py contracts/validate.py` упал на byte equality YAML после генерации. Генератор теперь пишет UTF-8/LF через `write_bytes`; повтор локально → `OK: 2 OpenAPI, 36 routes, 24 commands, 7 examples, 44 scenarios`. Новый чистый clone и CI ещё не проверены, S-03 остаётся WIP.
+
+### Предыдущий S-03 checkpoint
 
 - S-03 code commit: `64c9c2f92aa4cf16dcd4288c743e514a3b93edd7`. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap.ps1` → 8 service/DB/storage секретов созданы вне OneDrive; повтор → существующие не перезаписаны, ACL ограничен текущим пользователем, значения не выводились. `scripts/enter-max-token.ps1 -Prepare/-Check` → работает, MAX token отсутствует. `sh -n` для Unix-скриптов → exit 0; `bootstrap.sh` выполнен в одноразовом Python-контейнере → файлы созданы. `py scripts/check-secrets.py --staged` и `--tracked` → совпадений нет.
 - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` → exit 0: контракт/Redocly, Go test/vet/build, npm typecheck/build, три Docker image build. Docker Engine стал доступен в ходе S-03. Runtime smoke для gateway и web: UID 10001/101, `/health/live`=200, `/health/ready`=503; последнее ожидаемо для каркаса.
