@@ -6,12 +6,12 @@
 status_schema: 1
 track: backend
 lock_state: ACTIVE
-owner: B
-session_id: "03b598a4-f24c-4f3b-baf7-2102fa4a1eea"
+owner: A
+session_id: "de2e37a7-1a31-4a70-81c1-a9988c8c22bf"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T20:59:21Z"
+heartbeat_utc: "2026-09-27T22:47:03Z"
 current_task: BE-01
-current_substep: "WorkerBearer подготовлен; следующий шаг — durable inbox ingest"
+current_substep: "Takeover подтверждён владельцем; далее durable inbox ingest"
 last_verified_code_commit: "47209359eb677a0bce509174c053c80630e8248d"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
@@ -226,3 +226,4 @@ human_required: [H-01]
 | 2026-09-27 19:48 | HANDOFF → B | BE-01 / `26096c3` | Новая сессия B; отдельный claim-коммит до изменения кода |
 | 2026-09-27 20:07 | B → HANDOFF | BE-01 / `e4a2d67` | 22/44 сценария и admin reads опубликованы; Go test/vet/build и contract validation прошли, inbox WIP |
 | 2026-09-27 20:54 | HANDOFF → B | BE-01 / `609e6ca` | Новая сессия B; отдельный claim-коммит до изменения кода |
+| 2026-09-27 22:47 | B → A | BE-01 / `8af36a6` | Владелец подтвердил остановку B; takeover отдельным claim-коммитом до изменения кода |
