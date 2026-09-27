@@ -108,6 +108,14 @@ func (c *Client) ChallengeCreateTake(ctx context.Context, actorMaxID, checkoutID
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[challengeCreatePayload]{"challenge.create", checkoutID, checkoutVersion, payload})
 }
 
+func (c *Client) ChallengeCreateReturn(ctx context.Context, actorMaxID, returnID string, returnVersion int64, tripID string, tripVersion int64, key string, inbox *InboxLease) (CommandResult, error) {
+	if !validUUID(tripID) || tripVersion < 1 {
+		return CommandResult{}, errors.New("data-api: invalid trip intent")
+	}
+	payload := challengeCreatePayload{Purpose: "return", IntentPayload: challengeIntent{Operation: "trip.begin_return", TargetID: tripID, ExpectedVersion: tripVersion}}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[challengeCreatePayload]{"challenge.create", returnID, returnVersion, payload})
+}
+
 func (c *Client) ChallengeAnswer(ctx context.Context, actorMaxID, challengeID string, version int64, selectedOption int, key string, inbox *InboxLease) (CommandResult, error) {
 	if selectedOption < 0 || selectedOption > 3 {
 		return CommandResult{}, errors.New("data-api: invalid challenge option")

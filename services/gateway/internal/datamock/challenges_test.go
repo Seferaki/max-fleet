@@ -240,6 +240,25 @@ func TestTakeChallengePersistsAndRulesRequireAnswer(t *testing.T) {
 	if err != nil || state.Return == nil || state.Return.ID != fresh.ID || state.Trip == nil || state.Trip.Status != "returning" {
 		t.Fatalf("restored fresh return: %+v %v", state, err)
 	}
+	_, err = client.ChallengeCreateReturn(ctx, "8000000000000000002", fresh.ID, fresh.Version, trip.ID, active.Version, "foreign-math-return", nil)
+	expectAPIError(t, err, "NOT_FOUND")
+	returnChallengeResult, err := client.ChallengeCreateReturn(ctx, driverID, fresh.ID, fresh.Version, trip.ID, active.Version, "math-return-create", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	returnChallenge, err := dataapi.DecodeAggregate[dataapi.Challenge](returnChallengeResult)
+	if err != nil || returnChallenge.Purpose != "return" {
+		t.Fatalf("return challenge: %+v %v", returnChallenge, err)
+	}
+	right, _ := challengeChoices(t, returnChallenge)
+	returnAnswer, err := client.ChallengeAnswer(ctx, driverID, returnChallenge.ID, returnChallenge.Version, right, "math-return-answer", nil)
+	if err != nil || returnAnswer.Correct == nil || !*returnAnswer.Correct {
+		t.Fatalf("return answer: %+v %v", returnAnswer, err)
+	}
+	confirmedReturn, err := client.Return(ctx, driverID, fresh.ID)
+	if err != nil || confirmedReturn.IntentConfirmedAt == nil || confirmedReturn.Step != "checklist" {
+		t.Fatalf("confirmed return intent: %+v %v", confirmedReturn, err)
+	}
 }
 
 func TestTakeChallengeThreeErrorsAndTTL(t *testing.T) {

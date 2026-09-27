@@ -18,6 +18,8 @@ type mockChallenge struct {
 	Actor           string            `json:"actor"`
 	CheckoutID      string            `json:"checkout_id"`
 	CheckoutVersion int64             `json:"checkout_version"`
+	ReturnID        string            `json:"return_id,omitempty"`
+	ReturnVersion   int64             `json:"return_version,omitempty"`
 	CorrectOption   int               `json:"correct_option"`
 	Solved          bool              `json:"solved"`
 	Invalidated     bool              `json:"invalidated"`
@@ -64,33 +66,69 @@ func (s *Server) createChallenge(w http.ResponseWriter, requestID, actor string,
 	var payload takeChallengePayload
 	var fields map[string]json.RawMessage
 	_ = json.Unmarshal(command.Payload, &fields)
-	if !hasFields(command.Payload, "purpose", "intent_payload") || !hasFields(fields["intent_payload"], "operation", "target_id", "expected_version") || !strictPayload(command.Payload, &payload) || payload.Purpose != "take" || payload.IntentPayload.Operation != "checkout.create" || !validUUID(payload.IntentPayload.TargetID) || payload.IntentPayload.ExpectedVersion < 1 {
+	if !hasFields(command.Payload, "purpose", "intent_payload") || !hasFields(fields["intent_payload"], "operation", "target_id", "expected_version") || !strictPayload(command.Payload, &payload) || (payload.Purpose != "take" && payload.Purpose != "return") || !validUUID(payload.IntentPayload.TargetID) || payload.IntentPayload.ExpectedVersion < 1 {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return dataapi.CommandResult{}, false
 	}
-	checkout, found := s.checkouts[command.TargetID]
-	if !found || checkout.EmployeeID != s.employees[actor].ID {
-		s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
-		return dataapi.CommandResult{}, false
-	}
-	if checkout.Version != command.Version {
-		s.failVersion(w, requestID, http.StatusConflict, "STALE_VERSION", checkout.Version)
-		return dataapi.CommandResult{}, false
-	}
-	if checkout.Status != "holding" || checkout.IntentConfirmedAt != nil || checkout.VehicleID != payload.IntentPayload.TargetID {
-		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
-		return dataapi.CommandResult{}, false
-	}
-	vehicleVersion := int64(0)
-	for _, vehicle := range s.vehicles {
-		if vehicle.ID == checkout.VehicleID {
-			vehicleVersion = vehicle.Version - 1 // checkout.create advanced the vehicle version.
-			break
+	record := mockChallenge{Actor: actor}
+	expires := s.now().UTC().Add(5 * time.Minute)
+	if payload.Purpose == "take" {
+		if payload.IntentPayload.Operation != "checkout.create" {
+			s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
+			return dataapi.CommandResult{}, false
 		}
-	}
-	if payload.IntentPayload.ExpectedVersion != vehicleVersion {
-		s.fail(w, requestID, http.StatusConflict, "STALE_VERSION")
-		return dataapi.CommandResult{}, false
+		checkout, found := s.checkouts[command.TargetID]
+		if !found || checkout.EmployeeID != s.employees[actor].ID {
+			s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
+			return dataapi.CommandResult{}, false
+		}
+		if checkout.Version != command.Version {
+			s.failVersion(w, requestID, http.StatusConflict, "STALE_VERSION", checkout.Version)
+			return dataapi.CommandResult{}, false
+		}
+		if checkout.Status != "holding" || checkout.IntentConfirmedAt != nil || checkout.VehicleID != payload.IntentPayload.TargetID {
+			s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
+			return dataapi.CommandResult{}, false
+		}
+		vehicleVersion := int64(0)
+		for _, vehicle := range s.vehicles {
+			if vehicle.ID == checkout.VehicleID {
+				vehicleVersion = vehicle.Version - 1 // checkout.create advanced the vehicle version.
+				break
+			}
+		}
+		if payload.IntentPayload.ExpectedVersion != vehicleVersion {
+			s.fail(w, requestID, http.StatusConflict, "STALE_VERSION")
+			return dataapi.CommandResult{}, false
+		}
+		if checkout.ExpiresAt.Before(expires) {
+			expires = checkout.ExpiresAt
+		}
+		record.CheckoutID, record.CheckoutVersion = checkout.ID, checkout.Version
+	} else {
+		if payload.IntentPayload.Operation != "trip.begin_return" {
+			s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
+			return dataapi.CommandResult{}, false
+		}
+		draft, found := s.returns[command.TargetID]
+		trip := s.trips[draft.TripID]
+		if !found || trip.EmployeeID != s.employees[actor].ID {
+			s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
+			return dataapi.CommandResult{}, false
+		}
+		if draft.Version != command.Version {
+			s.failVersion(w, requestID, http.StatusConflict, "STALE_VERSION", draft.Version)
+			return dataapi.CommandResult{}, false
+		}
+		if draft.Status != "draft" || draft.IntentConfirmedAt != nil || trip.Status != "returning" || trip.ReturnID == nil || *trip.ReturnID != draft.ID || trip.ID != payload.IntentPayload.TargetID {
+			s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
+			return dataapi.CommandResult{}, false
+		}
+		if payload.IntentPayload.ExpectedVersion != trip.Version-1 {
+			s.fail(w, requestID, http.StatusConflict, "STALE_VERSION")
+			return dataapi.CommandResult{}, false
+		}
+		record.ReturnID, record.ReturnVersion = draft.ID, draft.Version
 	}
 	first, err := rand.Int(rand.Reader, big.NewInt(9))
 	if err != nil {
@@ -123,18 +161,16 @@ func (s *Server) createChallenge(w http.ResponseWriter, requestID, actor string,
 		}
 	}
 	now := s.now().UTC()
-	expires := now.Add(5 * time.Minute)
-	if checkout.ExpiresAt.Before(expires) {
-		expires = checkout.ExpiresAt
-	}
-	challenge := dataapi.Challenge{ID: newRequestID(), Purpose: "take", Question: fmt.Sprintf("%d + %d = ?", a, b), Options: options, ExpiresAt: expires, AttemptsRemaining: 3, Version: 1, UpdatedAt: now}
+	challenge := dataapi.Challenge{ID: newRequestID(), Purpose: payload.Purpose, Question: fmt.Sprintf("%d + %d = ?", a, b), Options: options, ExpiresAt: expires, AttemptsRemaining: 3, Version: 1, UpdatedAt: now}
 	for id, old := range s.challenges {
-		if old.CheckoutID == checkout.ID && !old.Solved && !old.Invalidated {
+		if (record.CheckoutID != "" && old.CheckoutID == record.CheckoutID || record.ReturnID != "" && old.ReturnID == record.ReturnID) && !old.Solved && !old.Invalidated {
 			old.Invalidated = true
 			s.challenges[id] = old
 		}
 	}
-	s.challenges[challenge.ID] = mockChallenge{Public: challenge, Actor: actor, CheckoutID: checkout.ID, CheckoutVersion: checkout.Version, CorrectOption: correctOption}
+	record.Public = challenge
+	record.CorrectOption = correctOption
+	s.challenges[challenge.ID] = record
 	return commandResult("challenge.create", challenge), true
 }
 
@@ -157,8 +193,13 @@ func (s *Server) answerChallenge(w http.ResponseWriter, requestID, actor string,
 		s.fail(w, requestID, http.StatusConflict, "CHALLENGE_EXPIRED")
 		return dataapi.CommandResult{}, false
 	}
+	if challenge.Invalidated || challenge.Solved || challenge.Public.AttemptsRemaining == 0 {
+		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
+		return dataapi.CommandResult{}, false
+	}
 	checkout := s.checkouts[challenge.CheckoutID]
-	if challenge.Invalidated || challenge.Solved || challenge.Public.AttemptsRemaining == 0 || checkout.Status != "holding" || checkout.Version != challenge.CheckoutVersion {
+	draft := s.returns[challenge.ReturnID]
+	if challenge.Public.Purpose == "take" && (checkout.Status != "holding" || checkout.Version != challenge.CheckoutVersion) || challenge.Public.Purpose == "return" && (draft.Status != "draft" || draft.Version != challenge.ReturnVersion) {
 		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
 		return dataapi.CommandResult{}, false
 	}
@@ -168,11 +209,19 @@ func (s *Server) answerChallenge(w http.ResponseWriter, requestID, actor string,
 		challenge.Public.AttemptsRemaining--
 	} else {
 		challenge.Solved = true
-		checkout.IntentConfirmedAt = &now
-		checkout.Step = "rules"
-		checkout.Version++
-		checkout.UpdatedAt = now
-		s.checkouts[checkout.ID] = checkout
+		if challenge.Public.Purpose == "take" {
+			checkout.IntentConfirmedAt = &now
+			checkout.Step = "rules"
+			checkout.Version++
+			checkout.UpdatedAt = now
+			s.checkouts[checkout.ID] = checkout
+		} else {
+			draft.IntentConfirmedAt = &now
+			draft.Step = "checklist"
+			draft.Version++
+			draft.UpdatedAt = now
+			s.returns[draft.ID] = draft
+		}
 	}
 	challenge.Public.Version++
 	challenge.Public.UpdatedAt = now
