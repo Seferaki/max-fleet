@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "de2e37a7-1a31-4a70-81c1-a9988c8c22bf"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T23:17:53Z"
+heartbeat_utc: "2026-09-27T23:21:17Z"
 current_task: BE-01
-current_substep: "Polling integration lease проверен; далее marker checkpoint"
-last_verified_code_commit: "0f1bbaf14b13b2f06d68c0bdc799ed30ba827912"
+current_substep: "CAS marker checkpoint проверен; далее typed integration WorkerClient"
+last_verified_code_commit: "86c16334bd803563948fb300c231ff3c6261f121"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: реализовать integrations checkpoint с CAS marker и durable stored_event_ids, затем notifications claim/ack/retry; WIP"
+next_step: "BE-01: добавить typed WorkerClient для integrations lease/checkpoint, затем notifications claim/ack/retry; WIP"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `86c16334bd803563948fb300c231ff3c6261f121`. Persistent mock `POST /integrations/{key}/checkpoint` проверяет WorkerBearer, текущий lease token, expected_version, previous_marker и каждый перечисленный `stored_event_id` в durable inbox той же интеграции до смены marker. Повтор Idempotency-Key возвращает прежний ответ до expiry; изменённый запрос 409. Snapshot v12 хранит marker и ключи, v11 загружается; failed save откатывает marker и отвечает 503. `go test ./internal/datamock -run '^TestIntegration' -count=1 -v` → 4 PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `docker build -f services/gateway/Dockerfile.data-mock -t max-fleet-data-mock:integration-checkpoint services/gateway` → exit 0. CI этого SHA ещё не проверен. Список `stored_event_ids` задаёт worker: mock подтверждает их сохранение, но сам не может знать полноту внешней пачки MAX. Typed client integrations и notifications WIP.
 
 - BE-01 code commit: `0f1bbaf14b13b2f06d68c0bdc799ed30ba827912`. Persistent mock обслуживает `GET /integrations/demo-bot` и `POST /integrations/demo-bot/lease` с отдельным WorkerBearer, expected_version, single-poller арендой 2 минуты, идемпотентным повтором до expiry, продлением только тем же worker и fencing устаревшего token. Snapshot v11 хранит состояние/ключи, v10 мигрирует синтетическую интеграцию; failed save откатывает память и даёт 503. `go test ./internal/datamock -run '^TestIntegrationLease' -count=1 -v` → 2 PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `docker build -f services/gateway/Dockerfile.data-mock -t max-fleet-data-mock:integration-lease services/gateway` → exit 0. [CI предыдущего typed WorkerClient checkpoint](https://github.com/Seferaki/max-fleet/actions/runs/36357891863) → пять jobs success; CI этого SHA ещё не проверен. Marker checkpoint и notifications WIP; реальный MAX/Python не проверены.
 
