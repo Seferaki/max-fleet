@@ -332,6 +332,105 @@ func TestTakeChallengePersistsAndRulesRequireAnswer(t *testing.T) {
 	}
 	_, err = client.ReturnSetLocation(ctx, "8000000000000000002", fresh.ID, located.Version, "foreign-location-1", nil, point)
 	expectAPIError(t, err, "NOT_FOUND")
+	_, err = client.ReturnComplete(ctx, driverID, fresh.ID, located.Version, "unconfirmed-complete", nil)
+	expectAPIError(t, err, "INVALID_STATE")
+	if _, err := client.InspectionConfirmPhotos(ctx, driverID, after.ID, restoredAfter.Version, "reconfirm-after", nil); err != nil {
+		t.Fatal(err)
+	}
+	readyReturn, err := client.Return(ctx, driverID, fresh.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noKeys := false
+	_, err = client.InspectionUpdate(ctx, driverID, after.ID, readyReturn.Inspection.Version, dataapi.InspectionUpdateInput{KeysReturned: &noKeys}, "keys-missing-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unsafeDraft, err := client.Return(ctx, driverID, fresh.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.ReturnComplete(ctx, driverID, fresh.ID, unsafeDraft.Version, "unsafe-complete-1", nil)
+	expectAPIError(t, err, "UNSAFE_RETURN")
+	stillReturning, err := client.Trip(ctx, driverID, trip.ID)
+	if err != nil || stillReturning.Status != "returning" {
+		t.Fatalf("unsafe return released trip: %+v %v", stillReturning, err)
+	}
+	yesKeys := true
+	_, err = client.InspectionUpdate(ctx, driverID, after.ID, unsafeDraft.Inspection.Version, dataapi.InspectionUpdateInput{KeysReturned: &yesKeys}, "keys-returned-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readyReturn, err = client.Return(ctx, driverID, fresh.ID)
+	if err != nil || readyReturn.ParkingLocation == nil || readyReturn.Inspection.PhotosConfirmedAt == nil {
+		t.Fatalf("safe draft lost data: %+v %v", readyReturn, err)
+	}
+	for _, field := range []string{"parking", "locked"} {
+		unsafeInput, safeInput := dataapi.InspectionUpdateInput{}, dataapi.InspectionUpdateInput{}
+		if field == "parking" {
+			unsafeInput.ParkingAllowed, safeInput.ParkingAllowed = &noKeys, &yesKeys
+		} else {
+			unsafeInput.CarLocked, safeInput.CarLocked = &noKeys, &yesKeys
+		}
+		if _, err := client.InspectionUpdate(ctx, driverID, after.ID, readyReturn.Inspection.Version, unsafeInput, "unsafe-"+field+"-field", nil); err != nil {
+			t.Fatal(err)
+		}
+		unsafeDraft, err = client.Return(ctx, driverID, fresh.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = client.ReturnComplete(ctx, driverID, fresh.ID, unsafeDraft.Version, "unsafe-"+field+"-complete", nil)
+		expectAPIError(t, err, "UNSAFE_RETURN")
+		if _, err := client.InspectionUpdate(ctx, driverID, after.ID, unsafeDraft.Inspection.Version, safeInput, "safe-"+field+"-field", nil); err != nil {
+			t.Fatal(err)
+		}
+		readyReturn, err = client.Return(ctx, driverID, fresh.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	save = last.saveSnapshot
+	last.saveSnapshot = func(stateSnapshot) error { return errors.New("injected return save failure") }
+	_, err = client.ReturnComplete(ctx, driverID, fresh.ID, readyReturn.Version, "failed-complete-1", nil)
+	expectAPIError(t, err, "TEMPORARY_FAILURE")
+	last.saveSnapshot = save
+	stillReturning, err = client.Trip(ctx, driverID, trip.ID)
+	if err != nil || stillReturning.Status != "returning" || last.returns[fresh.ID].Status != "draft" {
+		t.Fatalf("failed complete changed state: %+v %v", stillReturning, err)
+	}
+	completedResult, err := client.ReturnComplete(ctx, driverID, fresh.ID, readyReturn.Version, "complete-return-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed, err := dataapi.DecodeAggregate[dataapi.Return](completedResult)
+	if err != nil || completed.Status != "completed" || completed.Inspection.Status != "finalized" {
+		t.Fatalf("completed return: %+v %v", completed, err)
+	}
+	completedAgain, err := client.ReturnComplete(ctx, driverID, fresh.ID, readyReturn.Version, "complete-return-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	same, _ := dataapi.DecodeAggregate[dataapi.Return](completedAgain)
+	if same.ID != completed.ID {
+		t.Fatal("duplicate return changed result")
+	}
+	last, err = NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	client = commandClient(t, last)
+	finishedTrip, err := client.Trip(ctx, driverID, trip.ID)
+	if err != nil || finishedTrip.Status != "completed" || finishedTrip.EndedAt == nil || finishedTrip.AfterInspection == nil || finishedTrip.ParkingLocation == nil {
+		t.Fatalf("restored completed trip: %+v %v", finishedTrip, err)
+	}
+	vehicleAfter, err := client.Vehicle(ctx, driverID, firstVehicleID)
+	if err != nil || vehicleAfter.Status != "available" || vehicleAfter.CurrentParking == nil || vehicleAfter.CurrentOdometerKM == nil || *vehicleAfter.CurrentOdometerKM != afterOdo {
+		t.Fatalf("released vehicle: %+v %v", vehicleAfter, err)
+	}
+	me, err = client.Me(ctx, driverID)
+	if err != nil || me.Employee == nil || me.Employee.ActiveTripID != nil {
+		t.Fatalf("employee not released: %+v %v", me, err)
+	}
 }
 
 func TestTakeChallengeThreeErrorsAndTTL(t *testing.T) {
