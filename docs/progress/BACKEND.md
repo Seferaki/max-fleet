@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "e729bd72-cef8-4dae-a0af-ac815fee04a9"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T15:21:26Z"
+heartbeat_utc: "2026-09-27T19:03:13Z"
 current_task: BE-01
-current_substep: "After-inspection данные и 8 фото подтверждены; далее location и return.complete"
-last_verified_code_commit: "229244c3580ce5b2f6be25da2445da035e8f25e9"
+current_substep: "Confirmed return location с manual_map/max_geo; далее безопасный return.complete"
+last_verified_code_commit: "fe85b138656e511fae759f78f57873bfce71fd89"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: добавить return.set_location с confirmed=true и manual_map/max_geo, затем return.complete с запретом unsafe return и атомарным release; после — contract scenarios и Compose"
+next_step: "BE-01: добавить return.complete с запретом unsafe return, проверкой 8 confirmed after фото, данных, места и атомарным release; после — contract scenarios и Compose"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `229244c3580ce5b2f6be25da2445da035e8f25e9` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start и fresh return draft; WIP | Location/complete, scenarios, Compose |
+| BE-01 | IN_PROGRESS | `fe85b138656e511fae759f78f57873bfce71fd89` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start, return draft/location; WIP | Complete, scenarios, Compose |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `fe85b138656e511fae759f78f57873bfce71fd89`. Mock реализует `return.set_location` для активного draft после math: координаты и source валидируются, `confirmed=true` обязательно, manual_map/max_geo доступны владельцу, source admin — только admin; сохранение обновляет version в snapshot. Клиент уже имел typed команду. Тесты проверили устаревшую версию, отказ неподтверждённой точки, чужого водителя и подмены admin source, успешную ручную точку. `go test ./...`, `go test -count=3 ./internal/datamock`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. `return.complete` ещё не реализован; BE-01 WIP.
 
 - BE-01 code commit: `229244c3580ce5b2f6be25da2445da035e8f25e9`. `inspection.update`, multipart photo upload, `inspection.confirm_photos` и GET inspection теперь работают также с текущим after draft после return math. Owner/version/phase/state проверяются, after odometer не может быть меньше before. Каждому draft принадлежат свои 8 слотов; при 7/8 подтверждение отклоняется, при 8/8 фиксируется, замена slot 3 сбрасывает подтверждение. Тесты проверили чужого actor и recovery после restart с восьмью фото. `go test -count=3 ./internal/datamock`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Location/complete ещё нет; BE-01 WIP.
 
