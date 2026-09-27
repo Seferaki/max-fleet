@@ -31,3 +31,15 @@ type InboxStored struct {
 	Duplicate bool      `json:"duplicate"`
 	StoredAt  time.Time `json:"stored_at"`
 }
+
+type InboxClaimItem struct {
+	ID             string          `json:"id"`
+	Event          NormalizedEvent `json:"event"`
+	LeaseToken     string          `json:"lease_token"`
+	LeaseExpiresAt time.Time       `json:"lease_expires_at"`
+	Attempt        int             `json:"attempt"`
+}
+
+type InboxClaim struct {
+	Items []InboxClaimItem `json:"items"`
+}
