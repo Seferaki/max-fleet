@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "1e22c0db-a86b-44f0-b2d1-33c197bea3ee"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T14:41:28Z"
+heartbeat_utc: "2026-09-27T14:45:35Z"
 current_task: BE-01
-current_substep: "Mock before-фото 8 слотов проверен; далее подтверждение и after-фото"
-last_verified_code_commit: "10453ec578050242c1acc71513385c5d19d1a473"
+current_substep: "Подтверждение 8 before-фото проверено; далее checkout.start/return"
+last_verified_code_commit: "058a6f7de34ca474ac6748a454702e7315845688"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: добавить inspection.confirm_photos с требованием 8 слотов, затем checkout.start и return с after-осмотром; проверить Docker build и contract scenarios"
+next_step: "BE-01: добавить checkout.start с правилами/math/8 фото и trip.begin_return с новым after-осмотром; затем безопасный return и Compose"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `10453ec578050242c1acc71513385c5d19d1a473` — клиент, mock-чтения/recovery, hold/snapshot и before-фото; WIP | After-фото, остальные команды, scenarios, Compose |
+| BE-01 | IN_PROGRESS | `058a6f7de34ca474ac6748a454702e7315845688` — клиент, mock-чтения/recovery, hold/snapshot и подтверждение before-фото; WIP | Trip/after/return, остальные команды, scenarios, Compose |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,10 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `058a6f7de34ca474ac6748a454702e7315845688`. Добавлен `inspection.confirm_photos` в DataAPI client и mock. При 7/8 возвращает 422 `PHOTO_SET_INCOMPLETE` с `missing_slots=[8]` без потери семи файлов; при 8/8 выставляет `photos_confirmed_at` и версию. Замена slot 3 после подтверждения сохраняет 8 слотов, сбрасывает подтверждение. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Тесты через HTTP client прошли. Docker build ещё выполняется, результат не заявлен. Math/правила/start/after/return не готовы, BE-01 WIP.
+
+### Предыдущий BE-01 checkpoint (before-фото)
 
 - BE-01 code commit: `10453ec578050242c1acc71513385c5d19d1a473`. Mock принимает один multipart JPEG/PNG/WebP для before-inspection: проверяет MIME, декодирование, до 10 MiB/25 MP, slot 1…8, actor, версию, SHA-256 и дубли event/hash; сохраняет asset файлом и метаданные в атомарном snapshot перед HTTP 200. Ошибка записи откатывает новый слот и не стирает предыдущие. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Тесты: 7/8/замена slot 3, 422 duplicate hash, 413 oversized, 415 MIME, чужой actor, idempotent retry после restart, failed save 503 и отказ старта при отсутствующем asset. Docker build запущен, результата на момент status commit нет. WebP decoder подключён из pinned `golang.org/x/image v0.46.0`, отдельный WebP fixture пока не проверен. After-фото и остальные команды отсутствуют; BE-01 WIP.
 
