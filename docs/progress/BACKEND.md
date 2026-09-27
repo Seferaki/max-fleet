@@ -5,19 +5,19 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: HANDOFF
+lock_state: ACTIVE
 owner: B
-session_id: "cb546f02-a21d-4237-a7fa-726329b9b908"
+session_id: "03b598a4-f24c-4f3b-baf7-2102fa4a1eea"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T20:07:01Z"
+heartbeat_utc: "2026-09-27T20:54:09Z"
 current_task: BE-01
-current_substep: "Административные read-маршруты опубликованы; контракт и дерево проверены перед передачей"
+current_substep: "Новая сессия B: долговечный inbox mock и WorkerBearer"
 last_verified_code_commit: "e4a2d6717dd3dcd8c735085e7caca953ad123d48"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "Захватить HANDOFF отдельным claim-коммитом; BE-01: реализовать inbox durable ingest/claim/ack/retry с WorkerBearer, lease и restart, затем notifications/integrations; WIP"
+next_step: "BE-01: реализовать inbox durable ingest/claim/ack/retry с WorkerBearer, lease и restart, затем notifications/integrations; WIP"
 human_required: [H-01]
 ```
 
@@ -223,3 +223,4 @@ human_required: [H-01]
 | 2026-09-27 19:40 | B → HANDOFF | BE-01 / `d909cdc` | Go test/vet/build, contract validation, Docker build/runtime проверены; локальные контейнеры остановлены, том сохранён |
 | 2026-09-27 19:48 | HANDOFF → B | BE-01 / `26096c3` | Новая сессия B; отдельный claim-коммит до изменения кода |
 | 2026-09-27 20:07 | B → HANDOFF | BE-01 / `e4a2d67` | 22/44 сценария и admin reads опубликованы; Go test/vet/build и contract validation прошли, inbox WIP |
+| 2026-09-27 20:54 | HANDOFF → B | BE-01 / `609e6ca` | Новая сессия B; отдельный claim-коммит до изменения кода |
