@@ -9,7 +9,10 @@ artifacts/
 test-results/
 playwright-report/
 node_modules/
+web/node_modules/
+web/dist/
 .venv/
+.local/
 *.pem
 *.key
 *.p12
