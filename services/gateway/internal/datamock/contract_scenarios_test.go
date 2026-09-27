@@ -133,6 +133,15 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 			return err
 		},
+		"checkout.expired": func(s scenarioContext) error {
+			hold := s.hold("scenario-expired-hold")
+			s.mock.now = func() time.Time { return s.now.Add(15*time.Minute + time.Second) }
+			_, err := s.client.CheckoutStart(s.ctx, driverID, hold.ID, hold.Version, "scenario-expired-start", nil)
+			if len(s.mock.trips) != 0 {
+				s.t.Fatal("expired hold created trip")
+			}
+			return err
+		},
 		"inspection.zero": func(s scenarioContext) error {
 			hold := s.hold("scenario-zero-photos")
 			_, err := s.client.InspectionConfirmPhotos(s.ctx, driverID, hold.Inspection.ID, hold.Inspection.Version, "scenario-confirm-zero", nil)
@@ -192,6 +201,44 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 			return err
 		},
+		"inspection.replace": func(s scenarioContext) error {
+			hold := s.photoSet(8)
+			result, err := s.client.InspectionConfirmPhotos(s.ctx, driverID, hold.Inspection.ID, hold.Inspection.Version, "scenario-confirm-replace", nil)
+			if err != nil {
+				return err
+			}
+			confirmed, err := dataapi.DecodeAggregate[dataapi.Inspection](result)
+			if err != nil {
+				return err
+			}
+			before := make(map[int]string)
+			for slot, photo := range s.mock.photos[hold.Inspection.ID] {
+				before[slot] = photo.AssetID
+			}
+			replaced, err := s.upload(hold.Inspection.ID, 3, confirmed.Version, 99, "replace-slot-three")
+			if err != nil {
+				return err
+			}
+			if replaced.Inspection.Version != confirmed.Version+1 || replaced.Inspection.PhotosConfirmedAt != nil || len(replaced.Inspection.OccupiedSlots) != 8 {
+				s.t.Fatal("replacement did not invalidate photo confirmation")
+			}
+			for slot, photo := range s.mock.photos[hold.Inspection.ID] {
+				if slot != 3 && photo.AssetID != before[slot] {
+					s.t.Fatal("replacement changed another slot")
+				}
+			}
+			return nil
+		},
+		"inspection.storage-error": func(s scenarioContext) error {
+			hold := s.photoSet(1)
+			first := s.mock.photos[hold.Inspection.ID][1].AssetID
+			s.mock.saveSnapshot = func(stateSnapshot) error { return os.ErrPermission }
+			_, err := s.upload(hold.Inspection.ID, 2, hold.Inspection.Version, 41, "storage-fail")
+			if len(s.mock.photos[hold.Inspection.ID]) != 1 || s.mock.photos[hold.Inspection.ID][1].AssetID != first {
+				s.t.Fatal("failed upload changed saved slots")
+			}
+			return err
+		},
 		"schema.same-key-different-body": func(s scenarioContext) error {
 			s.hold("scenario-same-key")
 			_, err := s.client.CheckoutCreate(s.ctx, driverID, "10000000-0000-4000-8000-000000000002", 1, "scenario-same-key", nil)
@@ -236,7 +283,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 		})
 	}
-	if len(runs) != 12 {
+	if len(runs) != 15 {
 		t.Fatal("scenario runner count changed")
 	}
 	for id := range runs {
