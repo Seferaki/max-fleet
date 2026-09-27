@@ -5,19 +5,19 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: ACTIVE
+lock_state: HANDOFF
 owner: B
 session_id: "1e22c0db-a86b-44f0-b2d1-33c197bea3ee"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T14:45:35Z"
+heartbeat_utc: "2026-09-27T14:47:43Z"
 current_task: BE-01
-current_substep: "Подтверждение 8 before-фото проверено; далее checkout.start/return"
+current_substep: "Подтверждение 8 before-фото и Docker build проверены; плановый handoff"
 last_verified_code_commit: "058a6f7de34ca474ac6748a454702e7315845688"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: добавить checkout.start с правилами/math/8 фото и trip.begin_return с новым after-осмотром; затем безопасный return и Compose"
+next_step: "BE-01: проверить contract requirements math/rules, добавить checkout.start и trip.begin_return с новым after-осмотром; затем безопасный return и Compose"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,10 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- Плановая передача B: `docker build -f Dockerfile.data-mock -t max-fleet-data-mock:be01 .` из `services/gateway` повторно на code commit `058a6f7` → exit 0, image digest manifest list `sha256:b73fc8f74cae6e636f18e9144e91ee08737961345414f45771bb12ff8e188ee9`. Это только сборка mock image; runtime container и MAX не проверены. Рабочее дерево чистое на момент передачи. Реальный MAX consumer здесь не запущен. Для продолжения достаточно синтетического seed из Git; локальные `.local/` Go/Python и тестовые snapshot/assets между ноутбуками не переносятся. Из секретов будущему запуску нужны локальные `DATA_API_TOKEN_FILE` и позднее `MAX_BOT_TOKEN_FILE`; значения не публикуются. H-01 остаётся HUMAN_REQUIRED, MAX token на этом ноутбуке отсутствует.
+
+### Предыдущий BE-01 checkpoint (8 фото)
 
 - BE-01 code commit: `058a6f7de34ca474ac6748a454702e7315845688`. Добавлен `inspection.confirm_photos` в DataAPI client и mock. При 7/8 возвращает 422 `PHOTO_SET_INCOMPLETE` с `missing_slots=[8]` без потери семи файлов; при 8/8 выставляет `photos_confirmed_at` и версию. Замена slot 3 после подтверждения сохраняет 8 слотов, сбрасывает подтверждение. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Тесты через HTTP client прошли. Docker build ещё выполняется, результат не заявлен. Math/правила/start/after/return не готовы, BE-01 WIP.
 
@@ -152,3 +156,4 @@ human_required: [H-01]
 |---|---|---|---|
 | 2026-09-27 12:19 | FREE → A | S-01 / `3d53d5a` | Claim опубликован в `codex/backend` |
 | 2026-09-27 13:53 | A → B | BE-01 / `f3e6f49` | Пользователь подтвердил остановку A; takeover через отдельный claim-коммит |
+| 2026-09-27 14:47 | B → HANDOFF | BE-01 / `058a6f7` | Проверены Go test/vet/build и Docker image; следующему исполнителю захватить очередь claim-коммитом |
