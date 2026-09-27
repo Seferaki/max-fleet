@@ -5,13 +5,13 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: HANDOFF
+lock_state: ACTIVE
 owner: B
-session_id: "1e22c0db-a86b-44f0-b2d1-33c197bea3ee"
+session_id: "e729bd72-cef8-4dae-a0af-ac815fee04a9"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T14:47:43Z"
+heartbeat_utc: "2026-09-27T14:55:28Z"
 current_task: BE-01
-current_substep: "Подтверждение 8 before-фото и Docker build проверены; плановый handoff"
+current_substep: "Возобновление BE-01 после опубликованного HANDOFF; проверка math/rules перед checkout.start"
 last_verified_code_commit: "058a6f7de34ca474ac6748a454702e7315845688"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
@@ -157,3 +157,4 @@ human_required: [H-01]
 | 2026-09-27 12:19 | FREE → A | S-01 / `3d53d5a` | Claim опубликован в `codex/backend` |
 | 2026-09-27 13:53 | A → B | BE-01 / `f3e6f49` | Пользователь подтвердил остановку A; takeover через отдельный claim-коммит |
 | 2026-09-27 14:47 | B → HANDOFF | BE-01 / `058a6f7` | Проверены Go test/vet/build и Docker image; следующему исполнителю захватить очередь claim-коммитом |
+| 2026-09-27 14:55 | HANDOFF → B | BE-01 / `058a6f7` | Новая сессия B; отдельный claim-коммит до изменения кода |
