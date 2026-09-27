@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "b78b0297-a9fa-4023-a429-3c2df2f65cfe"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T12:24:06Z"
+heartbeat_utc: "2026-09-27T12:29:31Z"
 current_task: S-02
-current_substep: "Формализация OpenAPI v1 по docs/API_CONTRACT.md"
-last_verified_code_commit: "76d2ac9b2b709e41734fa32d413c00695daa600b"
-checkpoint_state: VERIFIED
+current_substep: "Добавить команды, фото и технические очереди к уже проверенным чтениям OpenAPI"
+last_verified_code_commit: "5df66029edf0072965de23e0abcf9300724c2090"
+checkpoint_state: WIP
 contract_commit: null
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "S-02: описать DTO, маршруты и ошибки в contracts/data-api.openapi.yaml; затем проверить примеры и сценарии"
+next_step: "S-02: добавить discriminated union команд, маршруты фото и очередей, version bump; затем примеры и сценарии"
 human_required: [H-01]
 ```
 
@@ -26,7 +26,7 @@ human_required: [H-01]
 | ID | Статус | Commit / доказательство | Следующий подшаг / блокер |
 |---|---|---|---|
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
-| S-02 | IN_PROGRESS | — | OpenAPI v1, fixtures и contract gate |
+| S-02 | IN_PROGRESS | `5df66029edf0072965de23e0abcf9300724c2090` — 18 GET, общие DTO; WIP | Команды, фото, очереди, fixtures и contract gate |
 | S-03 | TODO | — | См. план |
 | BE-01 | TODO | — | См. план |
 | BE-02 | TODO | — | См. план |
@@ -60,6 +60,11 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- S-02 code commit: `5df66029edf0072965de23e0abcf9300724c2090`. `py contracts/build_openapi.py` → OpenAPI 3.1.0, 18 маршрутов, 48 схем; `openapi-spec-validator 0.9.0` → valid. `.local/openapi-validator` не публикуется. Состояние WIP: команды, загрузки фото, очереди, сценарии и contract gate пока отсутствуют.
+- Следующий проверяемый подшаг: описать операции/маршруты, затем повторить генерацию и валидацию; `DONE` для S-02 не ставить до полной проверки fixtures.
+
+### Предыдущий S-01 checkpoint
 
 - Code commit: `76d2ac9b2b709e41734fa32d413c00695daa600b` (S-01). Изменены `.dockerignore`, `contracts/examples/synthetic-seed.json`, `scripts/enter-max-token.ps1`.
 - Проверено: JSON разбирается; `demo_only=true`, 10 уникальных машин и тестовые сотрудники; `git check-ignore` покрывает `.env`, `secrets/`, `data/`, `backups/`, `*.dump`, `*.sql.gz`; staged secret pattern scan без совпадений; `git diff --cached --check` прошёл.
