@@ -147,6 +147,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /internal/v1/checkouts/{id}", s.authorize(true, s.requireEmployee(s.checkout)))
 	mux.HandleFunc("GET /internal/v1/trips/{id}", s.authorize(true, s.requireEmployee(s.trip)))
 	mux.HandleFunc("GET /internal/v1/trips", s.authorize(true, s.requireEmployee(s.myTrips)))
+	mux.HandleFunc("GET /internal/v1/admin/summary", s.authorize(true, s.requireEmployee(s.adminSummary)))
 	mux.HandleFunc("GET /internal/v1/returns/{id}", s.authorize(true, s.requireEmployee(s.returnDraft)))
 	mux.HandleFunc("GET /internal/v1/issues/{id}", s.authorize(true, s.requireEmployee(s.issue)))
 	mux.HandleFunc("GET /internal/v1/inspections/{id}", s.authorize(true, s.requireEmployee(s.inspection)))

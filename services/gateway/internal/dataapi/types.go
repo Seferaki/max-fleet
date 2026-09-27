@@ -180,6 +180,15 @@ type StagedAsset struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+type AdminSummary struct {
+	Available   int `json:"available"`
+	Holding     int `json:"holding"`
+	ActiveTrips int `json:"active_trips"`
+	Returning   int `json:"returning"`
+	NeedsReview int `json:"needs_review"`
+	OpenIssues  int `json:"open_issues"`
+}
+
 type ErrorDetails struct {
 	CurrentVersion *int64 `json:"current_version,omitempty"`
 	MissingSlots   []int  `json:"missing_slots,omitempty"`

@@ -156,6 +156,10 @@ func (c *Client) MyTrips(ctx context.Context, actorMaxID string, limit int, curs
 	return get[Page[Trip]](ctx, c, "/trips?"+query.Encode(), actorMaxID)
 }
 
+func (c *Client) AdminSummary(ctx context.Context, actorMaxID string) (AdminSummary, error) {
+	return get[AdminSummary](ctx, c, "/admin/summary", actorMaxID)
+}
+
 func (c *Client) Return(ctx context.Context, actorMaxID, returnID string) (Return, error) {
 	if !validUUID(returnID) {
 		return Return{}, errors.New("data-api: invalid return ID")

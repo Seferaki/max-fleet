@@ -96,6 +96,13 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 		t.Fatalf("scenario contract: %v", err)
 	}
 	runs := map[string]func(s scenarioContext) error{
+		"identity.admin": func(s scenarioContext) error {
+			summary, err := s.client.AdminSummary(s.ctx, "8000000000000000003")
+			if err == nil && summary.Available != 10 {
+				s.t.Fatal("admin did not receive fleet summary")
+			}
+			return err
+		},
 		"identity.employee": func(s scenarioContext) error {
 			me, err := s.client.Me(s.ctx, driverID)
 			if err == nil && (!me.Allowed || me.Employee == nil || me.Employee.Role != "employee") {
@@ -377,7 +384,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 		})
 	}
-	if len(runs) != 21 {
+	if len(runs) != 22 {
 		t.Fatal("scenario runner count changed")
 	}
 	for id := range runs {
