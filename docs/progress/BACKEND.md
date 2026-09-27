@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "cb546f02-a21d-4237-a7fa-726329b9b908"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T19:54:12Z"
+heartbeat_utc: "2026-09-27T19:56:19Z"
 current_task: BE-01
-current_substep: "15 из 44 контрактных сценариев исполнены client→mock; далее return cases"
-last_verified_code_commit: "e8bafedf8f12adcdf34c4a8fd2bbf24c426df595"
+current_substep: "18 из 44 контрактных сценариев исполнены client→mock; unsafe return status исправлен"
+last_verified_code_commit: "cd7a0e81393ea3fcbdb1723e0d04d817b5926871"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: исполнить return.success/damage/unsafe/cancel-new на mock; затем admin read/inbox маршруты; WIP"
+next_step: "BE-01: исполнить return.cancel-new и остальные применимые сценарии; затем admin read/inbox маршруты; WIP"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `e8bafedf8f12adcdf34c4a8fd2bbf24c426df595` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets и Compose; WIP | 15/44 сценариев исполнены; admin/inbox маршруты |
+| BE-01 | IN_PROGRESS | `cd7a0e81393ea3fcbdb1723e0d04d817b5926871` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets и Compose; WIP | 18/44 сценариев исполнены; admin/inbox маршруты |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `cd7a0e81393ea3fcbdb1723e0d04d817b5926871`. Runner добавил return.success/damage/unsafe на синтетическом готовом after draft через HTTP-клиент. Первый запуск обнаружил расхождение: mock отдавал 409 `UNSAFE_RETURN`, сценарий контракта требует 422. Mock исправлен на 422; повтор `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0, 18/44 выбранных сценариев PASS. Для return cases входной draft собран фикстурой, не пройден весь диалог MAX. Остальные 26 кейсов runner не исполнил; BE-01 WIP.
 
 - BE-01 code commit: `e8bafedf8f12adcdf34c4a8fd2bbf24c426df595`. Runner добавил checkout.expired, inspection.replace и inspection.storage-error: hold после +15m1s не создаёт trip; замена slot 3 оставляет остальные 7 и сбрасывает подтверждение; failed-save сохраняет ранее загруженный slot и не занимает новый. Теперь 15/44 кейсов из контракта PASS. `go test -run TestContractScenarioSubsetAgainstHTTPMock -v ./internal/datamock`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Остальные 29 кейсов runner не исполнил; BE-01 WIP.
 
