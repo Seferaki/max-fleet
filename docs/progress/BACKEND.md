@@ -5,19 +5,19 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: HANDOFF
+lock_state: ACTIVE
 owner: B
-session_id: "e729bd72-cef8-4dae-a0af-ac815fee04a9"
+session_id: "cb546f02-a21d-4237-a7fa-726329b9b908"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T19:40:07Z"
+heartbeat_utc: "2026-09-27T19:48:27Z"
 current_task: BE-01
-current_substep: "Проверен Docker runtime после обновления mock; локальные контейнеры остановлены, том сохранён"
+current_substep: "Новая сессия B: исполнение контрактных сценариев client→mock"
 last_verified_code_commit: "d909cdc2bbf1371413350ec93bb59a6ba1ea3c1f"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "Захватить HANDOFF отдельным claim-коммитом; BE-01: исполнить контрактные сценарии client→mock, затем admin read/inbox маршруты; WIP"
+next_step: "BE-01: исполнить контрактные сценарии client→mock, затем admin read/inbox маршруты; WIP"
 human_required: [H-01]
 ```
 
@@ -201,3 +201,4 @@ human_required: [H-01]
 | 2026-09-27 14:47 | B → HANDOFF | BE-01 / `058a6f7` | Проверены Go test/vet/build и Docker image; следующему исполнителю захватить очередь claim-коммитом |
 | 2026-09-27 14:55 | HANDOFF → B | BE-01 / `058a6f7` | Новая сессия B; отдельный claim-коммит до изменения кода |
 | 2026-09-27 19:40 | B → HANDOFF | BE-01 / `d909cdc` | Go test/vet/build, contract validation, Docker build/runtime проверены; локальные контейнеры остановлены, том сохранён |
+| 2026-09-27 19:48 | HANDOFF → B | BE-01 / `26096c3` | Новая сессия B; отдельный claim-коммит до изменения кода |
