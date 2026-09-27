@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "e729bd72-cef8-4dae-a0af-ac815fee04a9"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T19:21:28Z"
+heartbeat_utc: "2026-09-27T19:23:16Z"
 current_task: BE-01
-current_substep: "Compose mock с постоянным томом проверен runtime; далее staged issue-фото и contract scenarios"
-last_verified_code_commit: "b383213ac7217b61e9328864ab6379c193c91ce1"
+current_substep: "Client multipart stageIssueAsset проверен; далее mock endpoint и asset ACL"
+last_verified_code_commit: "c12157ed6ffac154fb9f690b310e4f3d2cf29257"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: добавить staged issue-фото и asset ACL; проверить contract scenarios против mock, недостающие маршруты и readiness; затем BE-02"
+next_step: "BE-01: реализовать /assets/stage в mock с actor/scope/TTL/size/MIME/idempotency/restart; затем связать до 3 assets с issue и проверить ACL"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `b383213ac7217b61e9328864ab6379c193c91ce1` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues и Compose; WIP | Issue photos, scenarios, недостающие маршруты |
+| BE-01 | IN_PROGRESS | `c12157ed6ffac154fb9f690b310e4f3d2cf29257` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues и Compose; WIP | Issue stage server, scenarios, недостающие маршруты |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `c12157ed6ffac154fb9f690b310e4f3d2cf29257`. DataAPI client отправляет один bounded multipart `POST /assets/stage` для issue с scope vehicle/trip/inspection, максимум 10 MiB, MIME JPEG/PNG/WebP и 60s timeout; повтор 503 сохраняет body, X-Request-ID и Idempotency-Key. Типизированный `StagedAsset` проверяет ID/expiry. HTTP-тесты проверили поля, повтор и отказ неверного scope. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Mock route ещё отсутствует; BE-01 WIP.
 
 - BE-01 code commit: `b383213ac7217b61e9328864ab6379c193c91ce1`. Добавлен `deploy/compose.backend.yaml`: один `data-mock`, gateway, Docker secret, named volume для snapshot/assets, non-root/read-only images и healthcheck `/health/live`. `scripts/prepare-compose-token.ps1` создаёт игнорируемую приватную копию `data_api_token` для Docker Desktop; исходный LocalAppData файл с ACL пользователя смонтировался как каталог, первый `up` не прошёл, после копии `up --build -d` → оба сервиса healthy. `docker compose ... config --quiet` → exit 0. Gateway `/health/live`=200, `/health/ready`=503; mock `/meta` с token → mode=mock. HTTP `checkout.create` создал hold `ba55835c-1cf2-4d06-8143-088a079ba46c`; после `docker restart` и Compose recreate `/state` вернул тот же ID, файл snapshot в named volume принадлежит UID 10001. Секрет не выводился. Mock/MAX/Python интеграция и прочие маршруты WIP; healthcheck live не означает readiness.
 
