@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01 и S-02 выполнены; код приложения ещё не написан. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01 и S-02 выполнены; каркас S-03 создан, бизнес-маршруты ещё не написаны. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "b78b0297-a9fa-4023-a429-3c2df2f65cfe"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T13:13:02Z"
+heartbeat_utc: "2026-09-27T13:20:03Z"
 current_task: S-03
-current_substep: "Повторная проверка чистого checkout после исправления LF; затем CI"
-last_verified_code_commit: "da03904b06eea69138649dd98f57785f900aee24"
+current_substep: "Исправлен конфликт Python-зависимостей CI; ожидание опубликованного прогона"
+last_verified_code_commit: "efe28b30ee513cdbd3d9c16e799d3808d5f6ca52"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "S-03: push LF-fix, новый чистый clone, verify all и GitHub CI; при успехе закрыть S-03"
+next_step: "S-03: опубликовать CI dependency fix, проверить новый Actions run; при успехе закрыть S-03 и начать BE-01"
 human_required: [H-01]
 ```
 
@@ -27,7 +27,7 @@ human_required: [H-01]
 |---|---|---|---|
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
-| S-03 | IN_PROGRESS | `da03904b06eea69138649dd98f57785f900aee24` — LF-fix; WIP | Повтор чистого checkout и опубликованный CI |
+| S-03 | IN_PROGRESS | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52` — Python dependency fix; WIP | GitHub CI после push |
 | BE-01 | TODO | — | См. план |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
@@ -60,6 +60,10 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- S-03 code commit: `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`. Второй чистый clone из опубликованного `5ab7e85` прошёл `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all`: контракт, Go test/vet/build, web typecheck/build и три Docker build; `py scripts/check-secrets.py --tracked` → без совпадений; git status clone чистый. GitHub Actions run [36321666745](https://github.com/Seferaki/max-fleet/actions/runs/36321666745) выявил конфликт pinned `jsonschema==4.22.0` с `openapi-spec-validator==0.9.0` (требует >=4.26.0): contract job failed, остальные четыре job success. `jsonschema` закреплён на `4.26.0`; `docker run ... python:3.12-slim ... pip install -r contracts/requirements-dev.txt && python contracts/validate.py` → exit 0 и 44 сценария. Новый удалённый CI ещё не проверен, поэтому S-03 WIP.
+
+### Предыдущий S-03 checkpoint
 
 - S-03 code commit: `da03904b06eea69138649dd98f57785f900aee24`. Первый чистый clone на `3c6606a` выявил platform-dependent CRLF в `build_openapi.py`: `py contracts/validate.py` упал на byte equality YAML после генерации. Генератор теперь пишет UTF-8/LF через `write_bytes`; повтор локально → `OK: 2 OpenAPI, 36 routes, 24 commands, 7 examples, 44 scenarios`. Новый чистый clone и CI ещё не проверены, S-03 остаётся WIP.
 
