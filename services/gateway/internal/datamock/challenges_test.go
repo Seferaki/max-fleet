@@ -97,6 +97,32 @@ func TestTakeChallengePersistsAndRulesRequireAnswer(t *testing.T) {
 	if err != nil || ready.RulesAcceptedAt == nil || ready.RulesVersionID == nil || *ready.RulesVersionID != restarted.rules.ID || ready.Step != "inspection" {
 		t.Fatalf("accepted rules: %+v %v", ready, err)
 	}
+	badOdometer := int64(11999)
+	_, err = client.InspectionUpdate(ctx, driverID, ready.Inspection.ID, ready.Inspection.Version, dataapi.InspectionUpdateInput{OdometerKM: &badOdometer}, "odo-backward-1", nil)
+	expectAPIError(t, err, "ODOMETER_ROLLBACK")
+	fuel, odometer := 75, int64(12010)
+	updatedResult, err := client.InspectionUpdate(ctx, driverID, ready.Inspection.ID, ready.Inspection.Version, dataapi.InspectionUpdateInput{FuelLevel: &fuel, OdometerKM: &odometer}, "inspection-data-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := dataapi.DecodeAggregate[dataapi.Inspection](updatedResult)
+	if err != nil || updated.FuelLevel == nil || *updated.FuelLevel != 75 || updated.OdometerKM == nil || *updated.OdometerKM != 12010 {
+		t.Fatalf("inspection data: %+v %v", updated, err)
+	}
+	_, err = client.CheckoutSetNoNewIssues(ctx, "8000000000000000002", hold.ID, ready.Version+1, "foreign-issues-1", nil)
+	expectAPIError(t, err, "NOT_FOUND")
+	issueResult, err := client.CheckoutSetNoNewIssues(ctx, driverID, hold.ID, ready.Version+1, "no-issues-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withIssues, err := dataapi.DecodeAggregate[dataapi.Checkout](issueResult)
+	if err != nil || withIssues.NoNewIssues == nil || !*withIssues.NoNewIssues {
+		t.Fatalf("no new issues: %+v %v", withIssues, err)
+	}
+	invalidFuel := 33
+	if _, err := client.InspectionUpdate(ctx, driverID, updated.ID, updated.Version, dataapi.InspectionUpdateInput{FuelLevel: &invalidFuel}, "invalid-fuel-1", nil); err == nil {
+		t.Fatal("unsupported fuel level accepted")
+	}
 }
 
 func TestTakeChallengeThreeErrorsAndTTL(t *testing.T) {

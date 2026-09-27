@@ -76,6 +76,20 @@ type acceptRulesPayload struct {
 	RulesVersionID string `json:"rules_version_id"`
 }
 
+type InspectionUpdateInput struct {
+	FuelLevel      *int   `json:"fuel_level,omitempty"`
+	OdometerKM     *int64 `json:"odometer_km,omitempty"`
+	NewDamage      *bool  `json:"new_damage,omitempty"`
+	CabinClean     *bool  `json:"cabin_clean,omitempty"`
+	ParkingAllowed *bool  `json:"parking_allowed,omitempty"`
+	KeysReturned   *bool  `json:"keys_returned,omitempty"`
+	CarLocked      *bool  `json:"car_locked,omitempty"`
+}
+
+func validFuel(level int) bool {
+	return level == 0 || level == 25 || level == 50 || level == 75 || level == 100
+}
+
 // CheckoutCreate creates a 15-minute hold. Python/mock owns the availability transaction.
 func (c *Client) CheckoutCreate(ctx context.Context, actorMaxID, vehicleID string, vehicleVersion int64, key string, inbox *InboxLease) (CommandResult, error) {
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[emptyPayload]{"checkout.create", vehicleID, vehicleVersion, emptyPayload{}})
@@ -106,6 +120,22 @@ func (c *Client) CheckoutAcceptRules(ctx context.Context, actorMaxID, checkoutID
 		return CommandResult{}, errors.New("data-api: invalid rules version")
 	}
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[acceptRulesPayload]{"checkout.accept_rules", checkoutID, version, acceptRulesPayload{rulesVersionID}})
+}
+
+func (c *Client) InspectionUpdate(ctx context.Context, actorMaxID, inspectionID string, version int64, input InspectionUpdateInput, key string, inbox *InboxLease) (CommandResult, error) {
+	if input.FuelLevel == nil && input.OdometerKM == nil && input.NewDamage == nil && input.CabinClean == nil && input.ParkingAllowed == nil && input.KeysReturned == nil && input.CarLocked == nil ||
+		input.FuelLevel != nil && !validFuel(*input.FuelLevel) || input.OdometerKM != nil && *input.OdometerKM < 0 {
+		return CommandResult{}, errors.New("data-api: invalid inspection input")
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[InspectionUpdateInput]{"inspection.update", inspectionID, version, input})
+}
+
+func (c *Client) CheckoutSetNoNewIssues(ctx context.Context, actorMaxID, checkoutID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[struct {
+		Value bool `json:"value"`
+	}]{"checkout.set_no_new_issues", checkoutID, version, struct {
+		Value bool `json:"value"`
+	}{true}})
 }
 
 func (c *Client) InspectionConfirmPhotos(ctx context.Context, actorMaxID, inspectionID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {

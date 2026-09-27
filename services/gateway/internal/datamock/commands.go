@@ -62,7 +62,7 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		return
 	}
 	command, ok := parseCommand(body)
-	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos" && command.Operation != "challenge.create" && command.Operation != "challenge.answer" && command.Operation != "checkout.accept_rules") {
+	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos" && command.Operation != "challenge.create" && command.Operation != "challenge.answer" && command.Operation != "checkout.accept_rules" && command.Operation != "inspection.update" && command.Operation != "checkout.set_no_new_issues") {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
@@ -97,8 +97,12 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		result, ok = s.createChallenge(w, requestID, actor, command)
 	} else if command.Operation == "challenge.answer" {
 		result, ok = s.answerChallenge(w, requestID, actor, command)
-	} else {
+	} else if command.Operation == "checkout.accept_rules" {
 		result, ok = s.acceptRules(w, requestID, actor, command)
+	} else if command.Operation == "inspection.update" {
+		result, ok = s.updateInspection(w, requestID, actor, command)
+	} else {
+		result, ok = s.setNoNewIssues(w, requestID, actor, command)
 	}
 	if !ok {
 		return
