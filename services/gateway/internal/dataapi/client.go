@@ -185,6 +185,41 @@ func (c *Client) AdminEmployee(ctx context.Context, actorMaxID, employeeID strin
 	return get[Employee](ctx, c, "/admin/employees/"+employeeID, actorMaxID)
 }
 
+type AdminTripFilter struct {
+	State      string
+	EmployeeID string
+	VehicleID  string
+	Limit      int
+	Cursor     string
+}
+
+func (c *Client) AdminTrips(ctx context.Context, actorMaxID string, filter AdminTripFilter) (Page[Trip], error) {
+	if filter.State != "" && filter.State != "active" && filter.State != "returning" && filter.State != "completed" && filter.State != "closed_by_admin" || filter.EmployeeID != "" && !validUUID(filter.EmployeeID) || filter.VehicleID != "" && !validUUID(filter.VehicleID) || filter.Limit < 0 || filter.Limit > 50 || len(filter.Cursor) > 2048 {
+		return Page[Trip]{}, errors.New("data-api: invalid admin trips filter")
+	}
+	query := url.Values{}
+	if filter.State != "" {
+		query.Set("state", filter.State)
+	}
+	if filter.EmployeeID != "" {
+		query.Set("employee_id", filter.EmployeeID)
+	}
+	if filter.VehicleID != "" {
+		query.Set("vehicle_id", filter.VehicleID)
+	}
+	if filter.Limit > 0 {
+		query.Set("limit", strconv.Itoa(filter.Limit))
+	}
+	if filter.Cursor != "" {
+		query.Set("cursor", filter.Cursor)
+	}
+	path := "/admin/trips"
+	if len(query) != 0 {
+		path += "?" + query.Encode()
+	}
+	return get[Page[Trip]](ctx, c, path, actorMaxID)
+}
+
 func (c *Client) Return(ctx context.Context, actorMaxID, returnID string) (Return, error) {
 	if !validUUID(returnID) {
 		return Return{}, errors.New("data-api: invalid return ID")
