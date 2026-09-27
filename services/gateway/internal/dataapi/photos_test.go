@@ -85,3 +85,44 @@ func TestPhotoUploadRejectsInvalidInputAndDuplicateError(t *testing.T) {
 		t.Fatalf("duplicate: calls=%d err=%v", calls, err)
 	}
 }
+
+func TestStageIssueAssetRetriesSameMultipart(t *testing.T) {
+	var calls int
+	var firstBody []byte
+	var firstRequestID string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path != "/internal/v1/assets/stage" || r.Header.Get("Idempotency-Key") != "stage-issue-key-1" || r.Header.Get("X-Actor-Max-ID") != "900001" {
+			t.Error("incorrect stage request")
+		}
+		body, _ := io.ReadAll(r.Body)
+		if calls == 1 {
+			firstBody, firstRequestID = body, r.Header.Get("X-Request-ID")
+		} else if !bytes.Equal(body, firstBody) || r.Header.Get("X-Request-ID") != firstRequestID {
+			t.Error("stage retry changed body or request ID")
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		if err := r.ParseMultipartForm(11 << 20); err != nil {
+			t.Fatal(err)
+		}
+		if r.FormValue("purpose") != "issue" || r.FormValue("scope_type") != "inspection" || r.FormValue("scope_id") != "40000000-0000-4000-8000-000000000001" || r.FormValue("source_event_key") != "issue-photo-1" {
+			t.Error("incorrect stage fields")
+		}
+		if calls == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":{"code":"STORAGE_UNAVAILABLE","message":"later","retryable":true},"request_id":"` + testRequestID + `"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"asset_id":"50000000-0000-4000-8000-000000000001","expires_at":"2026-09-27T09:30:00Z"},"request_id":"` + testRequestID + `"}`))
+	})
+	input := IssueStageInput{ScopeType: "inspection", ScopeID: "40000000-0000-4000-8000-000000000001", SourceEventKey: "issue-photo-1", IdempotencyKey: "stage-issue-key-1", ContentType: "image/png", Image: []byte("synthetic")}
+	result, err := c.StageIssueAsset(context.Background(), "900001", input)
+	if err != nil || calls != 2 || result.AssetID != "50000000-0000-4000-8000-000000000001" {
+		t.Fatalf("stage: calls=%d result=%+v err=%v", calls, result, err)
+	}
+	input.ScopeType = "other"
+	if _, err := c.StageIssueAsset(context.Background(), "900001", input); err == nil {
+		t.Fatal("unknown issue scope accepted")
+	}
+}

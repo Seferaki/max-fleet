@@ -175,6 +175,11 @@ type PhotoUploadResult struct {
 	Inspection Inspection `json:"inspection"`
 }
 
+type StagedAsset struct {
+	AssetID   string    `json:"asset_id"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
 type ErrorDetails struct {
 	CurrentVersion *int64 `json:"current_version,omitempty"`
 	MissingSlots   []int  `json:"missing_slots,omitempty"`
