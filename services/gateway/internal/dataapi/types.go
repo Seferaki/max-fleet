@@ -1,6 +1,9 @@
 package dataapi
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // DTOs mirror the read projections of contracts/data-api.openapi.yaml v1.0.
 // Nullable fields use pointers so absent values remain distinct from zero values.
@@ -94,6 +97,14 @@ type Checkout struct {
 	Inspection        Inspection `json:"inspection"`
 	Version           int64      `json:"version"`
 	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
+type CurrentState struct {
+	Checkout            *Checkout       `json:"checkout"`
+	Trip                json.RawMessage `json:"trip"`
+	Return              json.RawMessage `json:"return"`
+	NextStep            *string         `json:"next_step"`
+	ConversationVersion int64           `json:"conversation_version"`
 }
 
 type ErrorDetails struct {

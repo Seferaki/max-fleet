@@ -36,6 +36,26 @@ func TestSnapshotRestoresHoldAndIdempotency(t *testing.T) {
 		t.Fatal(err)
 	}
 	secondClient := commandClient(t, restarted)
+	state, err := secondClient.State(ctx, driverID)
+	if err != nil || state.Checkout == nil || state.Checkout.ID != checkout.ID || state.NextStep == nil || *state.NextStep != "math" {
+		t.Fatalf("state not restored: %+v %v", state, err)
+	}
+	ownerCheckout, err := secondClient.Checkout(ctx, driverID, checkout.ID)
+	if err != nil || ownerCheckout.ID != checkout.ID {
+		t.Fatalf("own checkout: %+v %v", ownerCheckout, err)
+	}
+	inspection, err := secondClient.Inspection(ctx, driverID, checkout.Inspection.ID)
+	if err != nil || len(inspection.MissingSlots) != 8 {
+		t.Fatalf("own inspection: %+v %v", inspection, err)
+	}
+	_, err = secondClient.Checkout(ctx, "8000000000000000002", checkout.ID)
+	expectAPIError(t, err, "NOT_FOUND")
+	_, err = secondClient.Inspection(ctx, "8000000000000000002", checkout.Inspection.ID)
+	expectAPIError(t, err, "NOT_FOUND")
+	adminCheckout, err := secondClient.Checkout(ctx, "8000000000000000003", checkout.ID)
+	if err != nil || adminCheckout.ID != checkout.ID {
+		t.Fatalf("admin checkout: %+v %v", adminCheckout, err)
+	}
 	vehicle, err := secondClient.Vehicle(ctx, driverID, firstVehicleID)
 	if err != nil || vehicle.Status != "holding" || vehicle.Version != 2 {
 		t.Fatalf("hold lost on restart: %+v %v", vehicle, err)
@@ -57,6 +77,10 @@ func TestSnapshotRestoresHoldAndIdempotency(t *testing.T) {
 		t.Fatal(err)
 	}
 	thirdClient := commandClient(t, third)
+	state, err = thirdClient.State(ctx, driverID)
+	if err != nil || state.Checkout != nil {
+		t.Fatalf("cancelled checkout remains active: %+v %v", state, err)
+	}
 	vehicle, err = thirdClient.Vehicle(ctx, driverID, firstVehicleID)
 	if err != nil || vehicle.Status != "available" || vehicle.Version != 3 {
 		t.Fatalf("cancellation lost on restart: %+v %v", vehicle, err)

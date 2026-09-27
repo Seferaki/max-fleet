@@ -125,6 +125,9 @@ func (s *Server) Handler() http.Handler {
 		}
 		s.success(w, requestID, dataapi.Me{Allowed: found, MaxUserID: actor, Employee: own})
 	}))
+	mux.HandleFunc("GET /internal/v1/state", s.authorize(true, s.requireEmployee(s.currentState)))
+	mux.HandleFunc("GET /internal/v1/checkouts/{id}", s.authorize(true, s.requireEmployee(s.checkout)))
+	mux.HandleFunc("GET /internal/v1/inspections/{id}", s.authorize(true, s.requireEmployee(s.inspection)))
 	mux.HandleFunc("GET /internal/v1/vehicles", s.authorize(true, s.requireEmployee(s.listVehicles)))
 	mux.HandleFunc("GET /internal/v1/vehicles/{id}", s.authorize(true, s.requireEmployee(s.vehicle)))
 	mux.HandleFunc("POST /internal/v1/commands", s.authorize(true, s.requireEmployee(s.execute)))
@@ -240,6 +243,66 @@ func (s *Server) vehicle(w http.ResponseWriter, r *http.Request, requestID strin
 	for _, v := range s.vehicles {
 		if v.ID == id {
 			s.success(w, requestID, v)
+			return
+		}
+	}
+	s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
+}
+
+func (s *Server) currentState(w http.ResponseWriter, r *http.Request, requestID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.expireAndSave(w, requestID) {
+		return
+	}
+	employee := s.employees[r.Header.Get("X-Actor-Max-ID")]
+	state := dataapi.CurrentState{ConversationVersion: 1}
+	for _, checkout := range s.checkouts {
+		if checkout.EmployeeID == employee.ID && checkout.Status == "holding" {
+			current := checkout
+			state.Checkout = &current
+			state.NextStep = &current.Step
+			break
+		}
+	}
+	s.success(w, requestID, state)
+}
+
+func (s *Server) checkout(w http.ResponseWriter, r *http.Request, requestID string) {
+	id := r.PathValue("id")
+	if !validUUID(id) {
+		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.expireAndSave(w, requestID) {
+		return
+	}
+	current, found := s.checkouts[id]
+	employee := s.employees[r.Header.Get("X-Actor-Max-ID")]
+	if !found || current.EmployeeID != employee.ID && employee.Role != "admin" {
+		s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
+		return
+	}
+	s.success(w, requestID, current)
+}
+
+func (s *Server) inspection(w http.ResponseWriter, r *http.Request, requestID string) {
+	id := r.PathValue("id")
+	if !validUUID(id) {
+		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.expireAndSave(w, requestID) {
+		return
+	}
+	employee := s.employees[r.Header.Get("X-Actor-Max-ID")]
+	for _, checkout := range s.checkouts {
+		if checkout.Inspection.ID == id && (checkout.EmployeeID == employee.ID || employee.Role == "admin") {
+			s.success(w, requestID, checkout.Inspection)
 			return
 		}
 	}

@@ -103,6 +103,24 @@ func (c *Client) Vehicle(ctx context.Context, actorMaxID, vehicleID string) (Veh
 	return get[Vehicle](ctx, c, "/vehicles/"+vehicleID, actorMaxID)
 }
 
+func (c *Client) State(ctx context.Context, actorMaxID string) (CurrentState, error) {
+	return get[CurrentState](ctx, c, "/state", actorMaxID)
+}
+
+func (c *Client) Checkout(ctx context.Context, actorMaxID, checkoutID string) (Checkout, error) {
+	if !validUUID(checkoutID) {
+		return Checkout{}, errors.New("data-api: invalid checkout ID")
+	}
+	return get[Checkout](ctx, c, "/checkouts/"+checkoutID, actorMaxID)
+}
+
+func (c *Client) Inspection(ctx context.Context, actorMaxID, inspectionID string) (Inspection, error) {
+	if !validUUID(inspectionID) {
+		return Inspection{}, errors.New("data-api: invalid inspection ID")
+	}
+	return get[Inspection](ctx, c, "/inspections/"+inspectionID, actorMaxID)
+}
+
 func get[T any](ctx context.Context, c *Client, path, actorMaxID string) (T, error) {
 	return request[T](ctx, c, http.MethodGet, path, actorMaxID, nil, "", nil)
 }

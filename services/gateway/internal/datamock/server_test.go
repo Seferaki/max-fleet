@@ -77,6 +77,10 @@ func TestMockAuthorizationAndVersion(t *testing.T) {
 	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusForbidden || apiErr.Code != "ACCESS_DENIED" {
 		t.Fatalf("unknown actor: %v", err)
 	}
+	_, err = client.State(context.Background(), "900001")
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusForbidden {
+		t.Fatalf("unknown actor state: %v", err)
+	}
 	request, _ := http.NewRequest(http.MethodGet, server.URL+"/internal/v1/vehicles", nil)
 	request.Header.Set("Authorization", "Bearer wrong-token")
 	request.Header.Set("X-Contract-Version", "1.0")
