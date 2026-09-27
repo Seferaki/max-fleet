@@ -73,7 +73,10 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		s.success(w, requestID, record.Result)
 		return
 	}
-	s.expireHolds()
+	if !s.expireAndSave(w, requestID) {
+		return
+	}
+	before := s.snapshot()
 	var result dataapi.CommandResult
 	if command.Operation == "checkout.create" {
 		result, ok = s.createCheckout(w, requestID, actor, command)
@@ -84,6 +87,11 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		return
 	}
 	s.commands[identity] = commandRecord{Signature: signature, Result: result}
+	if err := s.persist(); err != nil {
+		s.restore(before)
+		s.fail(w, requestID, http.StatusServiceUnavailable, "TEMPORARY_FAILURE")
+		return
+	}
 	s.success(w, requestID, result)
 }
 
@@ -176,13 +184,15 @@ func (s *Server) commandResult(w http.ResponseWriter, r *http.Request, requestID
 	s.success(w, requestID, record.Result)
 }
 
-func (s *Server) expireHolds() {
+func (s *Server) expireHolds() bool {
 	now := s.now().UTC()
+	changed := false
 	for id, checkout := range s.checkouts {
 		if checkout.Status != "holding" || now.Before(checkout.ExpiresAt) {
 			continue
 		}
 		checkout.Status = "expired"
+		changed = true
 		checkout.Version++
 		checkout.UpdatedAt = now
 		s.checkouts[id] = checkout
@@ -195,6 +205,7 @@ func (s *Server) expireHolds() {
 			}
 		}
 	}
+	return changed
 }
 
 func commandResult(operation string, checkout dataapi.Checkout) dataapi.CommandResult {

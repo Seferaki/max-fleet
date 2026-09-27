@@ -44,20 +44,32 @@ type seedFile struct {
 }
 
 type Server struct {
-	mu        sync.Mutex
-	token     string
-	employees map[string]dataapi.Employee
-	vehicles  []dataapi.Vehicle
-	checkouts map[string]dataapi.Checkout
-	commands  map[string]commandRecord
-	now       func() time.Time
+	mu           sync.Mutex
+	token        string
+	employees    map[string]dataapi.Employee
+	vehicles     []dataapi.Vehicle
+	checkouts    map[string]dataapi.Checkout
+	commands     map[string]commandRecord
+	now          func() time.Time
+	saveSnapshot func(stateSnapshot) error
 }
 
 func New(token string) (*Server, error) {
-	return NewWithClock(token, time.Now)
+	return newServer(token, "", time.Now)
 }
 
 func NewWithClock(token string, now func() time.Time) (*Server, error) {
+	return newServer(token, "", now)
+}
+
+func NewWithSnapshot(token, path string, now func() time.Time) (*Server, error) {
+	if path == "" {
+		return nil, errors.New("data-mock: snapshot path required")
+	}
+	return newServer(token, path, now)
+}
+
+func newServer(token, snapshotPath string, now func() time.Time) (*Server, error) {
 	if token == "" || strings.ContainsAny(token, "\r\n") {
 		return nil, errors.New("data-mock: service token required")
 	}
@@ -83,6 +95,12 @@ func NewWithClock(token string, now func() time.Time) (*Server, error) {
 			v.KnownNonblockingIssues = []string{}
 		}
 		s.vehicles = append(s.vehicles, v)
+	}
+	if snapshotPath != "" {
+		s.saveSnapshot = func(state stateSnapshot) error { return atomicSave(snapshotPath, state) }
+		if err := s.loadSnapshot(snapshotPath); err != nil {
+			return nil, err
+		}
 	}
 	return s, nil
 }
@@ -154,7 +172,9 @@ func (s *Server) requireEmployee(next route) route {
 func (s *Server) listVehicles(w http.ResponseWriter, r *http.Request, requestID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.expireHolds()
+	if !s.expireAndSave(w, requestID) {
+		return
+	}
 	query := r.URL.Query()
 	for key := range query {
 		if key != "available" && key != "limit" && key != "cursor" {
@@ -209,7 +229,9 @@ func (s *Server) listVehicles(w http.ResponseWriter, r *http.Request, requestID 
 func (s *Server) vehicle(w http.ResponseWriter, r *http.Request, requestID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.expireHolds()
+	if !s.expireAndSave(w, requestID) {
+		return
+	}
 	id := r.PathValue("id")
 	if !validUUID(id) {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/datamock"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/skeleton"
@@ -27,7 +28,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	server, err := datamock.New(token)
+	snapshotPath := os.Getenv("DATA_MOCK_SNAPSHOT_FILE")
+	server, err := datamock.NewWithSnapshot(token, snapshotPath, time.Now)
 	if err != nil {
 		log.Fatal(err)
 	}
