@@ -1,7 +1,10 @@
 package datamock
 
 import (
+	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -79,6 +82,54 @@ func TestStageIssueAssetOwnershipRetryRestartAndRollback(t *testing.T) {
 	}
 }
 
+func TestAuthorizedIssueAssetContent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	mock, err := NewWithSnapshot("test-service-token", path, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := commandClient(t, mock)
+	ctx := context.Background()
+	created, err := client.CheckoutCreate(ctx, driverID, firstVehicleID, 1, "asset-content-hold", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hold, _ := dataapi.DecodeAggregate[dataapi.Checkout](created)
+	image := syntheticPNG(t, 61)
+	staged, err := client.StageIssueAsset(ctx, driverID, dataapi.IssueStageInput{ScopeType: "inspection", ScopeID: hold.Inspection.ID, SourceEventKey: "content-event", IdempotencyKey: "content-stage-key", ContentType: "image/png", Image: image})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fetch := func(actor, token string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, "/internal/v1/assets/"+staged.AssetID+"/content", nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		r.Header.Set("X-Contract-Version", dataapi.ContractVersion)
+		r.Header.Set("X-Request-ID", "10000000-0000-4000-8000-000000000001")
+		r.Header.Set("X-Actor-Max-ID", actor)
+		w := httptest.NewRecorder()
+		mock.Handler().ServeHTTP(w, r)
+		return w
+	}
+	if got := fetch(driverID, "wrong"); got.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong token: %d", got.Code)
+	}
+	if got := fetch("8000000000000000002", "test-service-token"); got.Code != http.StatusNotFound {
+		t.Fatalf("foreign actor: %d", got.Code)
+	}
+	if got := fetch(driverID, "test-service-token"); got.Code != http.StatusOK || got.Header().Get("Content-Type") != "image/png" || !bytes.Equal(got.Body.Bytes(), image) {
+		t.Fatalf("owner content: %d", got.Code)
+	}
+	if got := fetch("8000000000000000003", "test-service-token"); got.Code != http.StatusOK {
+		t.Fatalf("admin content: %d", got.Code)
+	}
+	if err := os.Remove(filepath.Join(mock.assetDir, staged.AssetID)); err != nil {
+		t.Fatal(err)
+	}
+	if got := fetch(driverID, "test-service-token"); got.Code != http.StatusServiceUnavailable {
+		t.Fatalf("missing file: %d", got.Code)
+	}
+}
+
 func TestIssueAttachesStagedAssetsAtomically(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	now := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
@@ -103,7 +154,9 @@ func TestIssueAttachesStagedAssetsAtomically(t *testing.T) {
 	ids := []string{stage(51, "attach-image-one"), stage(52, "attach-image-two")}
 	input := dataapi.IssueCreateInput{Category: "body_damage", Description: "Синтетическое замечание с двумя фото", InspectionID: &hold.Inspection.ID, AssetIDs: ids}
 	_, err = client.IssueCreate(ctx, driverID, firstVehicleID, 2, dataapi.IssueCreateInput{Category: input.Category, Description: input.Description, InspectionID: input.InspectionID, AssetIDs: []string{ids[0], ids[0]}}, "attach-duplicate-id", nil)
-	if err == nil { t.Fatal("duplicate issue asset accepted") }
+	if err == nil {
+		t.Fatal("duplicate issue asset accepted")
+	}
 	mock.saveSnapshot = func(stateSnapshot) error { return os.ErrPermission }
 	_, err = client.IssueCreate(ctx, driverID, firstVehicleID, 2, input, "attach-failed-save", nil)
 	expectAPIError(t, err, "TEMPORARY_FAILURE")
