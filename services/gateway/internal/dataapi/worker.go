@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // WorkerClient keeps the WorkerBearer separate from the actor-facing client.
@@ -61,6 +62,43 @@ func (c *WorkerClient) RetryInbox(ctx context.Context, id, leaseToken, errorCode
 	}{leaseToken, errorCode, nextAttemptAt.UTC()}, key)
 }
 
+func (c *WorkerClient) GetIntegration(ctx context.Context, integrationKey string) (Integration, error) {
+	if !validIntegrationKey(integrationKey) {
+		return Integration{}, errors.New("data-api: invalid integration key")
+	}
+	return requestWithMode[Integration](ctx, c.transport, http.MethodGet, "/integrations/"+integrationKey, "", nil, "", "", nil, nil, true)
+}
+
+func (c *WorkerClient) LeaseIntegration(ctx context.Context, integrationKey, workerID string, expectedVersion int64, key string) (IntegrationLease, error) {
+	if !validIntegrationKey(integrationKey) || !validWorkerString(workerID, 1, 100) || expectedVersion < 1 || !validKey(key) {
+		return IntegrationLease{}, errors.New("data-api: invalid integration lease")
+	}
+	return workerPost[IntegrationLease](ctx, c, "/integrations/"+integrationKey+"/lease", struct {
+		WorkerID        string `json:"worker_id"`
+		ExpectedVersion int64  `json:"expected_version"`
+	}{workerID, expectedVersion}, key)
+}
+
+func (c *WorkerClient) CheckpointIntegration(ctx context.Context, integrationKey, leaseToken string, expectedVersion int64, previousMarker *string, newMarker string, storedEventIDs []string, key string) (Integration, error) {
+	if !validIntegrationKey(integrationKey) || !validWorkerLease(leaseToken) || expectedVersion < 1 || !validWorkerString(newMarker, 0, 500) || previousMarker != nil && !validWorkerString(*previousMarker, 0, 500) || storedEventIDs == nil || len(storedEventIDs) > 50 || !validKey(key) {
+		return Integration{}, errors.New("data-api: invalid integration checkpoint")
+	}
+	seen := make(map[string]bool, len(storedEventIDs))
+	for _, id := range storedEventIDs {
+		if !validUUID(id) || seen[id] {
+			return Integration{}, errors.New("data-api: invalid stored event ID")
+		}
+		seen[id] = true
+	}
+	return workerPost[Integration](ctx, c, "/integrations/"+integrationKey+"/checkpoint", struct {
+		LeaseToken      string   `json:"lease_token"`
+		ExpectedVersion int64    `json:"expected_version"`
+		PreviousMarker  *string  `json:"previous_marker"`
+		NewMarker       string   `json:"new_marker"`
+		StoredEventIDs  []string `json:"stored_event_ids"`
+	}{leaseToken, expectedVersion, previousMarker, newMarker, storedEventIDs}, key)
+}
+
 func workerPost[T any](ctx context.Context, c *WorkerClient, path string, value any, key string) (T, error) {
 	var zero T
 	body, err := json.Marshal(value)
@@ -72,4 +110,20 @@ func workerPost[T any](ctx context.Context, c *WorkerClient, path string, value 
 
 func validWorkerLease(token string) bool {
 	return token != "" && len(token) <= 200 && !strings.ContainsAny(token, "\r\n")
+}
+
+func validWorkerString(value string, minLen, maxLen int) bool {
+	if len(value) < minLen || len(value) > maxLen {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func validIntegrationKey(key string) bool {
+	return validWorkerString(key, 1, 100) && !strings.ContainsAny(key, "/\\?#")
 }

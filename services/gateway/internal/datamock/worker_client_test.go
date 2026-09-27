@@ -67,3 +67,51 @@ func TestWorkerClientAgainstSeparateMock(t *testing.T) {
 		t.Fatalf("service token accepted by worker route: %v", err)
 	}
 }
+
+func TestWorkerIntegrationClientAgainstMock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	mock, err := NewWithSnapshotAndWorkerToken("service-token", "worker-token", path, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(mock.Handler())
+	defer server.Close()
+	worker, err := dataapi.NewWorker(dataapi.WorkerConfig{BaseURL: server.URL + "/internal/v1", Token: "worker-token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	integration, err := worker.GetIntegration(ctx, "demo-bot")
+	if err != nil || integration.Mode != "polling" || integration.Version != 1 {
+		t.Fatalf("get integration: %+v %v", integration, err)
+	}
+	lease, err := worker.LeaseIntegration(ctx, "demo-bot", "poller-a", integration.Version, "lease-key-001")
+	if err != nil || lease.LeaseToken == "" || lease.Integration.Version != 2 {
+		t.Fatalf("lease integration: %+v %v", lease.Integration, err)
+	}
+	var event dataapi.NormalizedEvent
+	if err := json.Unmarshal(inboxFixture(t), &event); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := worker.StoreInbox(ctx, event, "store-key-001")
+	if err != nil || stored.ID == "" {
+		t.Fatalf("store event: %+v %v", stored, err)
+	}
+	confirmed, err := worker.CheckpointIntegration(ctx, "demo-bot", lease.LeaseToken, lease.Integration.Version, nil, "marker-001", []string{stored.ID}, "checkpoint-key-001")
+	if err != nil || confirmed.Marker == nil || *confirmed.Marker != "marker-001" || confirmed.Version != 3 {
+		t.Fatalf("checkpoint: %+v %v", confirmed, err)
+	}
+	replayed, err := worker.CheckpointIntegration(ctx, "demo-bot", lease.LeaseToken, lease.Integration.Version, nil, "marker-001", []string{stored.ID}, "checkpoint-key-001")
+	if err != nil || replayed.Version != confirmed.Version {
+		t.Fatalf("checkpoint replay: %+v %v", replayed, err)
+	}
+	wrong, err := dataapi.NewWorker(dataapi.WorkerConfig{BaseURL: server.URL + "/internal/v1", Token: "service-token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = wrong.GetIntegration(ctx, "demo-bot")
+	var apiErr *dataapi.APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusUnauthorized {
+		t.Fatalf("service token accepted by integration route: %v", err)
+	}
+}

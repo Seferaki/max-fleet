@@ -62,4 +62,16 @@ func TestWorkerClientRejectsInvalidInputsBeforeNetwork(t *testing.T) {
 	if _, err := worker.RetryInbox(context.Background(), testRequestID, "token", "TEMPORARY_FAILURE", time.Time{}, "worker-key-001"); err == nil {
 		t.Fatal("zero next_attempt_at accepted")
 	}
+	if _, err := worker.GetIntegration(context.Background(), "../other"); err == nil {
+		t.Fatal("path traversal integration key accepted")
+	}
+	if _, err := worker.LeaseIntegration(context.Background(), "demo-bot", "poller-a", 0, "worker-key-001"); err == nil {
+		t.Fatal("zero expected version accepted")
+	}
+	if _, err := worker.CheckpointIntegration(context.Background(), "demo-bot", "lease", 2, nil, "marker", nil, "worker-key-001"); err == nil {
+		t.Fatal("missing stored_event_ids array accepted")
+	}
+	if _, err := worker.CheckpointIntegration(context.Background(), "demo-bot", "lease", 2, nil, "marker", []string{testRequestID, testRequestID}, "worker-key-001"); err == nil {
+		t.Fatal("duplicate stored_event_ids accepted")
+	}
 }
