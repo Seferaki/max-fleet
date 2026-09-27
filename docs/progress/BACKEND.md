@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "de2e37a7-1a31-4a70-81c1-a9988c8c22bf"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T22:54:12Z"
+heartbeat_utc: "2026-09-27T23:01:35Z"
 current_task: BE-01
-current_substep: "Durable POST /inbox проверен; далее claim/ack/retry с fencing lease"
-last_verified_code_commit: "537d3ddbef1396a6bf3096b7045dc9e23b19e7fc"
+current_substep: "Inbox claim с actor order проверен; далее ack/retry и fencing в командах"
+last_verified_code_commit: "908caa149d903335bdfb5701849feb882c837e4c"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: реализовать inbox claim/ack/retry с lease fencing и restart; затем worker client, notifications/integrations; WIP"
+next_step: "BE-01: добавить inbox ack/retry с текущим lease token и проверку fencing в доменных командах; затем worker client, notifications/integrations; WIP"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `537d3ddbef1396a6bf3096b7045dc9e23b19e7fc` — durable POST /inbox; прежние клиент/mock-сценарии; WIP | 22/44 runner-сценария; lease/notification/integration маршруты |
+| BE-01 | IN_PROGRESS | `908caa149d903335bdfb5701849feb882c837e4c` — durable inbox ingest/claim; прежние клиент/mock-сценарии; WIP | 22/44 runner-сценария; ack/retry/fencing, notification/integration маршруты |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `908caa149d903335bdfb5701849feb882c837e4c`. Mock `POST /inbox/claim` выдаёт аренду на 2 минуты, не более одного события для одного actor в пачке и только самое раннее незавершённое событие actor. Повтор с тем же Idempotency-Key возвращает прежние токены до истечения; после истечения нужен новый ключ, старый token не переиспользуется. Порядок ingest записан последовательным номером в snapshot v9; v8 восстанавливается детерминированно. `go test ./internal/datamock -run '^TestInbox' -count=1 -v` → 7 PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `docker build -f services/gateway/Dockerfile.data-mock -t max-fleet-data-mock:claim services/gateway` → exit 0. Проверены restart, actor order, expiry, duplicate, save failure, v8 migration. [CI предыдущего inbox checkpoint](https://github.com/Seferaki/max-fleet/actions/runs/36356927856): все пять jobs success; CI для claim ещё не проверен. Ack/retry и fencing в доменных командах пока отсутствуют, BE-01 WIP.
 
 - BE-01 code commit: `537d3ddbef1396a6bf3096b7045dc9e23b19e7fc`. Mock `POST /internal/v1/inbox` принимает отдельный WorkerBearer, нормализованный private-chat event и Idempotency-Key; duplicate возвращает прежний ID, изменённое тело/ключ — 409. Новый event подтверждается только после атомарного snapshot; при сбое записи — 503 `DATABASE_UNAVAILABLE` и откат памяти. Snapshot v8 хранит inbox и ключи; v7 загружается с пустыми очередями. `go test ./internal/datamock -run '^TestInbox' -count=1 -v` → 4 теста PASS (auth/версия, duplicate/restart, failed save, malformed/multi-photo, v7 migration). `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `docker build -f services/gateway/Dockerfile.data-mock -t max-fleet-data-mock:inbox services/gateway` → exit 0. Первый тестовый прогон выявил пустые map с `omitempty` и binary SHA в JSON; оба исправлены, повтор зелёный. Удалённый CI после этого коммита ещё не проверен. Claim/ack/retry и webhook не реализованы; 22/44 runner-сценария не переобъявлены.
 
