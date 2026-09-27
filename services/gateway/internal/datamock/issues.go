@@ -32,7 +32,7 @@ func (s *Server) createIssue(w http.ResponseWriter, requestID, actor string, com
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return dataapi.CommandResult{}, false
 	}
-	if !strictPayload(command.Payload, &input) || !validIssueCategory(input.Category) || strings.TrimSpace(input.Description) == "" || len(input.Description) > 1000 || len(input.AssetIDs) != 0 || input.AssetIDs == nil || (input.TripID == nil) == (input.InspectionID == nil) {
+	if !strictPayload(command.Payload, &input) || !validIssueCategory(input.Category) || strings.TrimSpace(input.Description) == "" || len(input.Description) > 1000 || len(input.AssetIDs) > 3 || input.AssetIDs == nil || (input.TripID == nil) == (input.InspectionID == nil) {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return dataapi.CommandResult{}, false
 	}
@@ -93,6 +93,19 @@ func (s *Server) createIssue(w http.ResponseWriter, requestID, actor string, com
 		return dataapi.CommandResult{}, false
 	}
 	now := s.now().UTC()
+	seenAssets := make(map[string]bool, len(input.AssetIDs))
+	for _, id := range input.AssetIDs {
+		if !validUUID(id) || seenAssets[id] {
+			s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
+			return dataapi.CommandResult{}, false
+		}
+		seenAssets[id] = true
+		asset, found := s.issueAssets[id]
+		if !found || asset.Actor != actor || asset.AttachedIssueID != nil || !now.Before(asset.ExpiresAt) || !(asset.ScopeType == "vehicle" && asset.ScopeID == vehicle.ID || asset.ScopeType == "trip" && asset.ScopeID == tripID && tripID != "" || asset.ScopeType == "inspection" && input.InspectionID != nil && asset.ScopeID == *input.InspectionID) {
+			s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
+			return dataapi.CommandResult{}, false
+		}
+	}
 	stage := "before"
 	if tripID != "" {
 		stage = "during"
@@ -103,11 +116,16 @@ func (s *Server) createIssue(w http.ResponseWriter, requestID, actor string, com
 			stage = "after"
 		}
 	}
-	issue := dataapi.Issue{ID: newRequestID(), VehicleID: vehicle.ID, AuthorID: employee.ID, Stage: stage, Category: input.Category, Description: input.Description, Status: "open", BlocksIssuance: true, InspectionID: input.InspectionID, AssetIDs: []string{}, Version: 1, UpdatedAt: now}
+	issue := dataapi.Issue{ID: newRequestID(), VehicleID: vehicle.ID, AuthorID: employee.ID, Stage: stage, Category: input.Category, Description: input.Description, Status: "open", BlocksIssuance: true, InspectionID: input.InspectionID, AssetIDs: append([]string{}, input.AssetIDs...), Version: 1, UpdatedAt: now}
 	if tripID != "" {
 		issue.TripID = &tripID
 	}
 	s.issues[issue.ID] = issue
+	for _, id := range input.AssetIDs {
+		asset := s.issueAssets[id]
+		asset.AttachedIssueID = &issue.ID
+		s.issueAssets[id] = asset
+	}
 	if checkoutID != "" {
 		checkout.Status = "rejected"
 		checkout.Step = "issue_reported"

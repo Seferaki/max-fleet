@@ -78,3 +78,58 @@ func TestStageIssueAssetOwnershipRetryRestartAndRollback(t *testing.T) {
 		t.Fatal("damaged staged asset accepted on restart")
 	}
 }
+
+func TestIssueAttachesStagedAssetsAtomically(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	now := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
+	mock, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := commandClient(t, mock)
+	ctx := context.Background()
+	created, err := client.CheckoutCreate(ctx, driverID, firstVehicleID, 1, "attach-hold-key", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hold, _ := dataapi.DecodeAggregate[dataapi.Checkout](created)
+	stage := func(tone uint8, key string) string {
+		result, err := client.StageIssueAsset(ctx, driverID, dataapi.IssueStageInput{ScopeType: "inspection", ScopeID: hold.Inspection.ID, SourceEventKey: key, IdempotencyKey: key + "-stage", ContentType: "image/png", Image: syntheticPNG(t, tone)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.AssetID
+	}
+	ids := []string{stage(51, "attach-image-one"), stage(52, "attach-image-two")}
+	input := dataapi.IssueCreateInput{Category: "body_damage", Description: "Синтетическое замечание с двумя фото", InspectionID: &hold.Inspection.ID, AssetIDs: ids}
+	_, err = client.IssueCreate(ctx, driverID, firstVehicleID, 2, dataapi.IssueCreateInput{Category: input.Category, Description: input.Description, InspectionID: input.InspectionID, AssetIDs: []string{ids[0], ids[0]}}, "attach-duplicate-id", nil)
+	if err == nil { t.Fatal("duplicate issue asset accepted") }
+	mock.saveSnapshot = func(stateSnapshot) error { return os.ErrPermission }
+	_, err = client.IssueCreate(ctx, driverID, firstVehicleID, 2, input, "attach-failed-save", nil)
+	expectAPIError(t, err, "TEMPORARY_FAILURE")
+	if mock.issueAssets[ids[0]].AttachedIssueID != nil || len(mock.issues) != 0 {
+		t.Fatal("failed issue save consumed asset")
+	}
+	mock.saveSnapshot = func(state stateSnapshot) error { return atomicSave(path, state) }
+	createdIssue, err := client.IssueCreate(ctx, driverID, firstVehicleID, 2, input, "attach-success", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err := dataapi.DecodeAggregate[dataapi.Issue](createdIssue)
+	if err != nil || len(issue.AssetIDs) != 2 || issue.AssetIDs[0] != ids[0] {
+		t.Fatalf("attached issue: %+v %v", issue, err)
+	}
+	for _, id := range ids {
+		if mock.issueAssets[id].AttachedIssueID == nil || *mock.issueAssets[id].AttachedIssueID != issue.ID {
+			t.Fatal("asset attachment missing")
+		}
+	}
+	restarted, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := commandClient(t, restarted).Issue(ctx, driverID, issue.ID)
+	if err != nil || len(restored.AssetIDs) != 2 {
+		t.Fatalf("restart lost attachment: %+v %v", restored, err)
+	}
+}
