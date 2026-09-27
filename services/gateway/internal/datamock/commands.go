@@ -1,10 +1,11 @@
 package datamock
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ type mockCommand struct {
 	Operation string
 	TargetID  string
 	Version   int64
+	Payload   json.RawMessage
 }
 
 func parseCommand(body []byte) (mockCommand, bool) {
@@ -37,7 +39,11 @@ func parseCommand(body []byte) (mockCommand, bool) {
 		return mockCommand{}, false
 	}
 	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(fields["payload"], &payload); err != nil || payload == nil || len(payload) != 0 {
+	if err := json.Unmarshal(fields["payload"], &payload); err != nil || payload == nil {
+		return mockCommand{}, false
+	}
+	command.Payload = fields["payload"]
+	if (command.Operation == "checkout.create" || command.Operation == "checkout.cancel" || command.Operation == "inspection.confirm_photos") && len(payload) != 0 {
 		return mockCommand{}, false
 	}
 	return command, true
@@ -56,13 +62,16 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		return
 	}
 	command, ok := parseCommand(body)
-	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos") {
+	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos" && command.Operation != "challenge.create" && command.Operation != "challenge.answer" && command.Operation != "checkout.accept_rules") {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
 	actor := r.Header.Get("X-Actor-Max-ID")
 	identity := actor + ":" + key
-	signature := command.Operation + ":" + command.TargetID + ":" + strconv.FormatInt(command.Version, 10)
+	var canonical any
+	_ = json.Unmarshal(body, &canonical)
+	canonicalBody, _ := json.Marshal(canonical)
+	signature := fmt.Sprintf("%x", sha256.Sum256(canonicalBody))
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if record, exists := s.commands[identity]; exists {
@@ -82,8 +91,14 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		result, ok = s.createCheckout(w, requestID, actor, command)
 	} else if command.Operation == "checkout.cancel" {
 		result, ok = s.cancelCheckout(w, requestID, actor, command)
-	} else {
+	} else if command.Operation == "inspection.confirm_photos" {
 		result, ok = s.confirmPhotos(w, requestID, actor, command)
+	} else if command.Operation == "challenge.create" {
+		result, ok = s.createChallenge(w, requestID, actor, command)
+	} else if command.Operation == "challenge.answer" {
+		result, ok = s.answerChallenge(w, requestID, actor, command)
+	} else {
+		result, ok = s.acceptRules(w, requestID, actor, command)
 	}
 	if !ok {
 		return

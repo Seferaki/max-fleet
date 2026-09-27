@@ -53,6 +53,7 @@ type Server struct {
 	commands     map[string]commandRecord
 	photos       map[string]map[int]photoRecord
 	photoResults map[string]photoAttempt
+	challenges   map[string]mockChallenge
 	rules        dataapi.Rules
 	now          func() time.Time
 	saveSnapshot func(stateSnapshot) error
@@ -86,7 +87,7 @@ func newServer(token, snapshotPath string, now func() time.Time) (*Server, error
 		return nil, errors.New("data-mock: invalid synthetic seed")
 	}
 	stamp := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
-	s := &Server{token: token, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), now: now,
+	s := &Server{token: token, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), challenges: make(map[string]mockChallenge), now: now,
 		rules: dataapi.Rules{ID: "90000000-0000-4000-8000-000000000001", VersionLabel: "demo-v1", Body: seed.Rules}}
 	for i, item := range seed.Employees {
 		id := fmt.Sprintf("80000000-0000-4000-8000-%012d", i+1)
