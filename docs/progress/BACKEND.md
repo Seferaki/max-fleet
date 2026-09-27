@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03 выполнены; mock содержит чтения и две команды hold, остальные бизнес-маршруты ещё не написаны. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03 выполнены; mock содержит часть чтений, hold и before-фото, остальные бизнес-маршруты ещё не написаны. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "e729bd72-cef8-4dae-a0af-ac815fee04a9"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T14:55:28Z"
+heartbeat_utc: "2026-09-27T14:57:41Z"
 current_task: BE-01
-current_substep: "Возобновление BE-01 после опубликованного HANDOFF; проверка math/rules перед checkout.start"
-last_verified_code_commit: "058a6f7de34ca474ac6748a454702e7315845688"
+current_substep: "Текущие правила через DataAPI client и mock; далее math challenge take"
+last_verified_code_commit: "93ede96e0e9a97fe166ea372b0e031ea60fcb44b"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: проверить contract requirements math/rules, добавить checkout.start и trip.begin_return с новым after-осмотром; затем безопасный return и Compose"
+next_step: "BE-01: добавить challenge.create/answer take с TTL, тремя ошибками, auth, idempotency и snapshot; затем принять версию правил и блокировать checkout.start до полного before-осмотра"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `058a6f7de34ca474ac6748a454702e7315845688` — клиент, mock-чтения/recovery, hold/snapshot и подтверждение before-фото; WIP | Trip/after/return, остальные команды, scenarios, Compose |
+| BE-01 | IN_PROGRESS | `93ede96e0e9a97fe166ea372b0e031ea60fcb44b` — клиент, mock-чтения/recovery, hold/snapshot, before-фото и текущие правила; WIP | Math/rules/start, trip/after/return, scenarios, Compose |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `93ede96e0e9a97fe166ea372b0e031ea60fcb44b`. DataAPI client читает `/rules/current`; mock возвращает версию `demo-v1` и текст правил из `demo_only` seed после проверки service token и actor. Неизвестный сотрудник получает 403. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` в `services/gateway` → exit 0; после последней проверки seed повторный `go test ./...` → exit 0. Math и принятие правил ещё не реализованы; BE-01 WIP.
 
 - Плановая передача B: `docker build -f Dockerfile.data-mock -t max-fleet-data-mock:be01 .` из `services/gateway` повторно на code commit `058a6f7` → exit 0, image digest manifest list `sha256:b73fc8f74cae6e636f18e9144e91ee08737961345414f45771bb12ff8e188ee9`. Это только сборка mock image; runtime container и MAX не проверены. Рабочее дерево чистое на момент передачи. Реальный MAX consumer здесь не запущен. Для продолжения достаточно синтетического seed из Git; локальные `.local/` Go/Python и тестовые snapshot/assets между ноутбуками не переносятся. Из секретов будущему запуску нужны локальные `DATA_API_TOKEN_FILE` и позднее `MAX_BOT_TOKEN_FILE`; значения не публикуются. H-01 остаётся HUMAN_REQUIRED, MAX token на этом ноутбуке отсутствует.
 
