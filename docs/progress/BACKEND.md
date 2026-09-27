@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "b78b0297-a9fa-4023-a429-3c2df2f65cfe"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T13:22:19Z"
+heartbeat_utc: "2026-09-27T13:26:42Z"
 current_task: BE-01
-current_substep: "Типизированный DataAPI client, затем mock"
-last_verified_code_commit: "efe28b30ee513cdbd3d9c16e799d3808d5f6ca52"
+current_substep: "Чтения DataAPI client проверены; далее команды и mock"
+last_verified_code_commit: "fffc54eb257eb29783a0d9d2d57981b6c66595e9"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: типизированный HTTP-клиент, управляемый mock и сценарии контракта"
+next_step: "BE-01: добавить типизированные команды и отдельный mock с auth/версиями; проверить контракты и восстановление"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | — | DataAPI client и mock |
+| BE-01 | IN_PROGRESS | `fffc54eb257eb29783a0d9d2d57981b6c66595e9` — чтения DataAPI client; WIP | Команды, mock, scenarios |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,10 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `fffc54eb257eb29783a0d9d2d57981b6c66595e9`. `services/gateway/internal/dataapi` содержит типизированные DTO `/meta`, `/me`, `/vehicles`, `/vehicles/{id}`, проверку URL/actor/UUID/версии метаданных, обязательных служебных заголовков, ограничение ответа 2 MiB, строгий JSON, ошибку с кодом/версией и повтор 429/503/transport с тем же X-Request-ID. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; тесты неизвестного actor, 503 retry, 409 без retry, недопустимого ввода/лишнего поля и несовместимого контракта прошли. Команды, mock, сохранение состояния и проверка сценариев ещё не реализованы; BE-01 WIP.
+
+### Предыдущий checkpoint
 
 - S-03 закрыт по опубликованному [GitHub Actions run 36322065525](https://github.com/Seferaki/max-fleet/actions/runs/36322065525): contract, gateway, web, docker, secret-scan — все пять job success. Чистый checkout и локальные команды указаны ниже. Это проверка каркаса, не готовность MAX, Python или UI-01. Начат BE-01.
 
