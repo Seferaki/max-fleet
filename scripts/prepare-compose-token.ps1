@@ -1,16 +1,17 @@
+param([ValidateSet('data_api_token', 'worker_api_token')][string]$Name = 'data_api_token')
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$source = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'MAXFleet\secrets\data_api_token'
+$source = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) (Join-Path 'MAXFleet\secrets' $Name)
 if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
     & (Join-Path $PSScriptRoot 'bootstrap.ps1') | Out-Null
 }
 if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-    throw 'data_api_token is missing after bootstrap'
+    throw "$Name is missing after bootstrap"
 }
 
 $directory = Join-Path $repositoryRoot '.local\compose-secrets'
-$target = Join-Path $directory 'data_api_token'
+$target = Join-Path $directory $Name
 New-Item -ItemType Directory -Path $directory -Force | Out-Null
 Copy-Item -LiteralPath $source -Destination $target -Force
 

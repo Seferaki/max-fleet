@@ -47,6 +47,7 @@ type seedFile struct {
 type Server struct {
 	mu           sync.Mutex
 	token        string
+	workerToken  string
 	employees    map[string]dataapi.Employee
 	vehicles     []dataapi.Vehicle
 	checkouts    map[string]dataapi.Checkout
@@ -66,23 +67,33 @@ type Server struct {
 }
 
 func New(token string) (*Server, error) {
-	return newServer(token, "", time.Now)
+	return newServer(token, "", "", time.Now)
 }
 
 func NewWithClock(token string, now func() time.Time) (*Server, error) {
-	return newServer(token, "", now)
+	return newServer(token, "", "", now)
 }
 
 func NewWithSnapshot(token, path string, now func() time.Time) (*Server, error) {
 	if path == "" {
 		return nil, errors.New("data-mock: snapshot path required")
 	}
-	return newServer(token, path, now)
+	return newServer(token, "", path, now)
 }
 
-func newServer(token, snapshotPath string, now func() time.Time) (*Server, error) {
+func NewWithSnapshotAndWorkerToken(token, workerToken, path string, now func() time.Time) (*Server, error) {
+	if path == "" || workerToken == "" {
+		return nil, errors.New("data-mock: snapshot and worker token required")
+	}
+	return newServer(token, workerToken, path, now)
+}
+
+func newServer(token, workerToken, snapshotPath string, now func() time.Time) (*Server, error) {
 	if token == "" || strings.ContainsAny(token, "\r\n") {
 		return nil, errors.New("data-mock: service token required")
+	}
+	if workerToken == token && workerToken != "" || strings.ContainsAny(workerToken, "\r\n") {
+		return nil, errors.New("data-mock: worker token must be separate")
 	}
 	if now == nil {
 		return nil, errors.New("data-mock: clock required")
@@ -92,7 +103,7 @@ func newServer(token, snapshotPath string, now func() time.Time) (*Server, error
 		return nil, errors.New("data-mock: invalid synthetic seed")
 	}
 	stamp := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
-	s := &Server{token: token, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), trips: make(map[string]dataapi.Trip), returns: make(map[string]dataapi.Return), issues: make(map[string]dataapi.Issue), issueAssets: make(map[string]stagedIssueAsset), stageResults: make(map[string]stageAttempt), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), challenges: make(map[string]mockChallenge), now: now,
+	s := &Server{token: token, workerToken: workerToken, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), trips: make(map[string]dataapi.Trip), returns: make(map[string]dataapi.Return), issues: make(map[string]dataapi.Issue), issueAssets: make(map[string]stagedIssueAsset), stageResults: make(map[string]stageAttempt), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), challenges: make(map[string]mockChallenge), now: now,
 		rules: dataapi.Rules{ID: "90000000-0000-4000-8000-000000000001", VersionLabel: "demo-v1", Body: seed.Rules}}
 	for i, item := range seed.Employees {
 		id := fmt.Sprintf("80000000-0000-4000-8000-%012d", i+1)
