@@ -1,23 +1,23 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03 выполнены; mock содержит часть чтений, hold и before-фото, остальные бизнес-маршруты ещё не написаны. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03 выполнены; mock покрывает основные сценарии поездки и возврата, но технические очереди и часть команд ещё отсутствуют. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
 track: backend
-lock_state: ACTIVE
+lock_state: HANDOFF
 owner: B
 session_id: "cb546f02-a21d-4237-a7fa-726329b9b908"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T20:06:10Z"
+heartbeat_utc: "2026-09-27T20:07:01Z"
 current_task: BE-01
-current_substep: "Admin issues filters/pagination client/mock проверены; далее inbox"
+current_substep: "Административные read-маршруты опубликованы; контракт и дерево проверены перед передачей"
 last_verified_code_commit: "e4a2d6717dd3dcd8c735085e7caca953ad123d48"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: реализовать inbox durable ingest/claim/ack/retry в mock с lease, затем notifications/integrations; WIP"
+next_step: "Захватить HANDOFF отдельным claim-коммитом; BE-01: реализовать inbox durable ingest/claim/ack/retry с WorkerBearer, lease и restart, затем notifications/integrations; WIP"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- Передача B → HANDOFF после code commit `e4a2d6717dd3dcd8c735085e7caca953ad123d48`. На последнем коде `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0; исполняемый runner: 22/44 сценария PASS. `.local/contract-venv/Scripts/python.exe contracts/validate.py` → OK: 2 OpenAPI, 36 маршрутов, 24 command examples, 7 иных examples, 44 описания сценариев; это валидация всех файлов, не исполнение остальных 22 кейсов. Рабочее дерево чистое. Docker image после последних Go-изменений не пересобирался; контейнеры остановлены на предыдущем HANDOFF, named volume сохранён. Реального MAX consumer нет. Синтетический seed достаточен для следующего ноутбука; `.local/` Go/Python, Compose secret и volume не переносятся. Локальные секреты по имени: `data_api_token` для mock, позже `max_bot_token`; значения не публикуются. H-01 HUMAN_REQUIRED, `scripts/enter-max-token.ps1 -Check` → False. BE-01 WIP, backend_ready_for_integration=false.
 
 - BE-01 code commit: `e4a2d6717dd3dcd8c735085e7caca953ad123d48`. Client/mock реализуют `GET /admin/issues` с status/vehicle_id и limit/cursor; cursor привязан к фильтрам, сортировка по updated_at и ID. Тест проверил запрет employee, две страницы, фильтрацию, отказ изменённого фильтра с прежним cursor и полный список. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Inbox/notification/integration маршруты и 22 неисполненных runner сценария остаются WIP.
 
@@ -220,3 +222,4 @@ human_required: [H-01]
 | 2026-09-27 14:55 | HANDOFF → B | BE-01 / `058a6f7` | Новая сессия B; отдельный claim-коммит до изменения кода |
 | 2026-09-27 19:40 | B → HANDOFF | BE-01 / `d909cdc` | Go test/vet/build, contract validation, Docker build/runtime проверены; локальные контейнеры остановлены, том сохранён |
 | 2026-09-27 19:48 | HANDOFF → B | BE-01 / `26096c3` | Новая сессия B; отдельный claim-коммит до изменения кода |
+| 2026-09-27 20:07 | B → HANDOFF | BE-01 / `e4a2d67` | 22/44 сценария и admin reads опубликованы; Go test/vet/build и contract validation прошли, inbox WIP |
