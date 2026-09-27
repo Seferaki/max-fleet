@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "03b598a4-f24c-4f3b-baf7-2102fa4a1eea"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T20:54:09Z"
+heartbeat_utc: "2026-09-27T20:59:21Z"
 current_task: BE-01
-current_substep: "Новая сессия B: долговечный inbox mock и WorkerBearer"
-last_verified_code_commit: "e4a2d6717dd3dcd8c735085e7caca953ad123d48"
+current_substep: "WorkerBearer подготовлен; следующий шаг — durable inbox ingest"
+last_verified_code_commit: "47209359eb677a0bce509174c053c80630e8248d"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: реализовать inbox durable ingest/claim/ack/retry с WorkerBearer, lease и restart, затем notifications/integrations; WIP"
+next_step: "BE-01: реализовать inbox durable ingest с WorkerBearer, idempotency и restart; затем claim/ack/retry, notifications/integrations; WIP"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `e4a2d6717dd3dcd8c735085e7caca953ad123d48` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets, admin reads и Compose; WIP | 22/44 сценария исполнены; inbox/notification/integration маршруты |
+| BE-01 | IN_PROGRESS | `47209359eb677a0bce509174c053c80630e8248d` — отдельный WorkerBearer для mock/Compose; клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets, admin reads; WIP | 22/44 сценария исполнены; inbox/notification/integration маршруты |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `47209359eb677a0bce509174c053c80630e8248d`. Data mock теперь требует отдельный WorkerBearer при запуске, отвергает совпадающие Data/Worker токены; bootstrap и Compose монтируют оба приватных файла. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock`, `docker compose -f deploy/compose.backend.yaml config --quiet` → exit 0. `docker compose -f deploy/compose.backend.yaml up --build -d` → оба контейнера запущены, data-mock healthy, gateway `/health/live`=200. Токены не выводились; staged secret scan и diff check прошли. Inbox route и восстановление inbox пока отсутствуют. Следующий шаг: durable `POST /inbox` с WorkerBearer, idempotency и restart; BE-01 WIP.
 
 - Передача B → HANDOFF после code commit `e4a2d6717dd3dcd8c735085e7caca953ad123d48`. На последнем коде `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0; исполняемый runner: 22/44 сценария PASS. `.local/contract-venv/Scripts/python.exe contracts/validate.py` → OK: 2 OpenAPI, 36 маршрутов, 24 command examples, 7 иных examples, 44 описания сценариев; это валидация всех файлов, не исполнение остальных 22 кейсов. Рабочее дерево чистое. Docker image после последних Go-изменений не пересобирался; контейнеры остановлены на предыдущем HANDOFF, named volume сохранён. Реального MAX consumer нет. Синтетический seed достаточен для следующего ноутбука; `.local/` Go/Python, Compose secret и volume не переносятся. Локальные секреты по имени: `data_api_token` для mock, позже `max_bot_token`; значения не публикуются. H-01 HUMAN_REQUIRED, `scripts/enter-max-token.ps1 -Check` → False. BE-01 WIP, backend_ready_for_integration=false.
 
