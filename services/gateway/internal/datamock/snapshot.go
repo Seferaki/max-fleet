@@ -29,11 +29,13 @@ type stateSnapshot struct {
 	Photos       map[string]map[int]photoRecord `json:"photos"`
 	PhotoResults map[string]photoAttempt        `json:"photo_results"`
 	Challenges   map[string]mockChallenge       `json:"challenges"`
+	Inbox        map[string]mockInboxEvent      `json:"inbox"`
+	InboxKeys    map[string]inboxKeyRecord      `json:"inbox_keys"`
 }
 
 func (s *Server) snapshot() stateSnapshot {
 	state := stateSnapshot{
-		Version:      7,
+		Version:      8,
 		SeedSHA:      fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)),
 		Vehicles:     append([]dataapi.Vehicle(nil), s.vehicles...),
 		Employees:    make(map[string]dataapi.Employee, len(s.employees)),
@@ -47,6 +49,8 @@ func (s *Server) snapshot() stateSnapshot {
 		Photos:       make(map[string]map[int]photoRecord, len(s.photos)),
 		PhotoResults: make(map[string]photoAttempt, len(s.photoResults)),
 		Challenges:   make(map[string]mockChallenge, len(s.challenges)),
+		Inbox:        make(map[string]mockInboxEvent, len(s.inbox)),
+		InboxKeys:    make(map[string]inboxKeyRecord, len(s.inboxKeys)),
 	}
 	for key, value := range s.checkouts {
 		state.Checkouts[key] = value
@@ -88,6 +92,12 @@ func (s *Server) snapshot() stateSnapshot {
 	for key, value := range s.challenges {
 		state.Challenges[key] = value
 	}
+	for key, value := range s.inbox {
+		state.Inbox[key] = value
+	}
+	for key, value := range s.inboxKeys {
+		state.InboxKeys[key] = value
+	}
 	return state
 }
 
@@ -116,6 +126,8 @@ func (s *Server) restore(state stateSnapshot) {
 	s.photos = state.Photos
 	s.photoResults = state.PhotoResults
 	s.challenges = state.Challenges
+	s.inbox = state.Inbox
+	s.inboxKeys = state.InboxKeys
 }
 
 func (s *Server) persist() error {
@@ -140,7 +152,7 @@ func (s *Server) loadSnapshot(path string) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var state stateSnapshot
-	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 7) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version == 7 && (state.IssueAssets == nil || state.StageResults == nil)) {
+	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 8) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version >= 7 && (state.IssueAssets == nil || state.StageResults == nil)) || (state.Version >= 8 && (state.Inbox == nil || state.InboxKeys == nil)) {
 		return errors.New("data-mock: invalid snapshot; refusing to reset")
 	}
 	if state.Challenges == nil {
@@ -160,6 +172,12 @@ func (s *Server) loadSnapshot(path string) error {
 	}
 	if state.StageResults == nil {
 		state.StageResults = make(map[string]stageAttempt)
+	}
+	if state.Inbox == nil {
+		state.Inbox = make(map[string]mockInboxEvent)
+	}
+	if state.InboxKeys == nil {
+		state.InboxKeys = make(map[string]inboxKeyRecord)
 	}
 	for _, slots := range state.Photos {
 		for _, photo := range slots {
