@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "de2e37a7-1a31-4a70-81c1-a9988c8c22bf"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T23:21:17Z"
+heartbeat_utc: "2026-09-27T23:23:54Z"
 current_task: BE-01
-current_substep: "CAS marker checkpoint проверен; далее typed integration WorkerClient"
-last_verified_code_commit: "86c16334bd803563948fb300c231ff3c6261f121"
+current_substep: "Typed integration WorkerClient проверен; далее notifications"
+last_verified_code_commit: "fb2631006152a31338eeffc5ed2b62b118fd185b"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: добавить typed WorkerClient для integrations lease/checkpoint, затем notifications claim/ack/retry; WIP"
+next_step: "BE-01: реализовать notifications claim/ack/retry в persistent mock и typed WorkerClient; затем contract runner; WIP"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `fb2631006152a31338eeffc5ed2b62b118fd185b`. Отдельный `dataapi.WorkerClient` получил типизированные `GetIntegration`, `LeaseIntegration`, `CheckpointIntegration`; проверяет key, version, token, маркеры и уникальные UUID до сети, не посылает actor header. HTTP тест прошёл GET→lease→durable inbox→checkpoint→idempotent replay и отказ service token. `go test ./internal/dataapi ./internal/datamock -run 'TestWorker' -count=1 -v` → 5 PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `... -Direction docker` → три image build exit 0. [CI для предыдущего marker checkpoint](https://github.com/Seferaki/max-fleet/actions) на момент записи не проверен; CI этого SHA тоже не проверен. Notifications и оставшиеся сценарии WIP.
 
 - BE-01 code commit: `86c16334bd803563948fb300c231ff3c6261f121`. Persistent mock `POST /integrations/{key}/checkpoint` проверяет WorkerBearer, текущий lease token, expected_version, previous_marker и каждый перечисленный `stored_event_id` в durable inbox той же интеграции до смены marker. Повтор Idempotency-Key возвращает прежний ответ до expiry; изменённый запрос 409. Snapshot v12 хранит marker и ключи, v11 загружается; failed save откатывает marker и отвечает 503. `go test ./internal/datamock -run '^TestIntegration' -count=1 -v` → 4 PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `docker build -f services/gateway/Dockerfile.data-mock -t max-fleet-data-mock:integration-checkpoint services/gateway` → exit 0. CI этого SHA ещё не проверен. Список `stored_event_ids` задаёт worker: mock подтверждает их сохранение, но сам не может знать полноту внешней пачки MAX. Typed client integrations и notifications WIP.
 
