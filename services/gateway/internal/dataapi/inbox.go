@@ -43,3 +43,9 @@ type InboxClaimItem struct {
 type InboxClaim struct {
 	Items []InboxClaimItem `json:"items"`
 }
+
+type QueueTransition struct {
+	ID        string    `json:"id"`
+	State     string    `json:"state"`
+	UpdatedAt time.Time `json:"updated_at"`
+}

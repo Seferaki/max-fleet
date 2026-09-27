@@ -16,46 +16,48 @@ import (
 )
 
 type stateSnapshot struct {
-	Version       int                            `json:"version"`
-	SeedSHA       string                         `json:"seed_sha256"`
-	Vehicles      []dataapi.Vehicle              `json:"vehicles"`
-	Employees     map[string]dataapi.Employee    `json:"employees"`
-	Checkouts     map[string]dataapi.Checkout    `json:"checkouts"`
-	Trips         map[string]dataapi.Trip        `json:"trips"`
-	Returns       map[string]dataapi.Return      `json:"returns"`
-	Issues        map[string]dataapi.Issue       `json:"issues"`
-	IssueAssets   map[string]stagedIssueAsset    `json:"issue_assets"`
-	StageResults  map[string]stageAttempt        `json:"stage_results"`
-	Commands      map[string]commandRecord       `json:"commands"`
-	Photos        map[string]map[int]photoRecord `json:"photos"`
-	PhotoResults  map[string]photoAttempt        `json:"photo_results"`
-	Challenges    map[string]mockChallenge       `json:"challenges"`
-	Inbox         map[string]mockInboxEvent      `json:"inbox"`
-	InboxKeys     map[string]inboxKeyRecord      `json:"inbox_keys"`
-	InboxClaims   map[string]inboxClaimRecord    `json:"inbox_claims"`
-	InboxSequence int64                          `json:"inbox_sequence"`
+	Version          int                              `json:"version"`
+	SeedSHA          string                           `json:"seed_sha256"`
+	Vehicles         []dataapi.Vehicle                `json:"vehicles"`
+	Employees        map[string]dataapi.Employee      `json:"employees"`
+	Checkouts        map[string]dataapi.Checkout      `json:"checkouts"`
+	Trips            map[string]dataapi.Trip          `json:"trips"`
+	Returns          map[string]dataapi.Return        `json:"returns"`
+	Issues           map[string]dataapi.Issue         `json:"issues"`
+	IssueAssets      map[string]stagedIssueAsset      `json:"issue_assets"`
+	StageResults     map[string]stageAttempt          `json:"stage_results"`
+	Commands         map[string]commandRecord         `json:"commands"`
+	Photos           map[string]map[int]photoRecord   `json:"photos"`
+	PhotoResults     map[string]photoAttempt          `json:"photo_results"`
+	Challenges       map[string]mockChallenge         `json:"challenges"`
+	Inbox            map[string]mockInboxEvent        `json:"inbox"`
+	InboxKeys        map[string]inboxKeyRecord        `json:"inbox_keys"`
+	InboxClaims      map[string]inboxClaimRecord      `json:"inbox_claims"`
+	InboxTransitions map[string]inboxTransitionRecord `json:"inbox_transitions"`
+	InboxSequence    int64                            `json:"inbox_sequence"`
 }
 
 func (s *Server) snapshot() stateSnapshot {
 	state := stateSnapshot{
-		Version:       9,
-		SeedSHA:       fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)),
-		Vehicles:      append([]dataapi.Vehicle(nil), s.vehicles...),
-		Employees:     make(map[string]dataapi.Employee, len(s.employees)),
-		Checkouts:     make(map[string]dataapi.Checkout, len(s.checkouts)),
-		Trips:         make(map[string]dataapi.Trip, len(s.trips)),
-		Returns:       make(map[string]dataapi.Return, len(s.returns)),
-		Issues:        make(map[string]dataapi.Issue, len(s.issues)),
-		IssueAssets:   make(map[string]stagedIssueAsset, len(s.issueAssets)),
-		StageResults:  make(map[string]stageAttempt, len(s.stageResults)),
-		Commands:      make(map[string]commandRecord, len(s.commands)),
-		Photos:        make(map[string]map[int]photoRecord, len(s.photos)),
-		PhotoResults:  make(map[string]photoAttempt, len(s.photoResults)),
-		Challenges:    make(map[string]mockChallenge, len(s.challenges)),
-		Inbox:         make(map[string]mockInboxEvent, len(s.inbox)),
-		InboxKeys:     make(map[string]inboxKeyRecord, len(s.inboxKeys)),
-		InboxClaims:   make(map[string]inboxClaimRecord, len(s.inboxClaims)),
-		InboxSequence: s.inboxSequence,
+		Version:          10,
+		SeedSHA:          fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)),
+		Vehicles:         append([]dataapi.Vehicle(nil), s.vehicles...),
+		Employees:        make(map[string]dataapi.Employee, len(s.employees)),
+		Checkouts:        make(map[string]dataapi.Checkout, len(s.checkouts)),
+		Trips:            make(map[string]dataapi.Trip, len(s.trips)),
+		Returns:          make(map[string]dataapi.Return, len(s.returns)),
+		Issues:           make(map[string]dataapi.Issue, len(s.issues)),
+		IssueAssets:      make(map[string]stagedIssueAsset, len(s.issueAssets)),
+		StageResults:     make(map[string]stageAttempt, len(s.stageResults)),
+		Commands:         make(map[string]commandRecord, len(s.commands)),
+		Photos:           make(map[string]map[int]photoRecord, len(s.photos)),
+		PhotoResults:     make(map[string]photoAttempt, len(s.photoResults)),
+		Challenges:       make(map[string]mockChallenge, len(s.challenges)),
+		Inbox:            make(map[string]mockInboxEvent, len(s.inbox)),
+		InboxKeys:        make(map[string]inboxKeyRecord, len(s.inboxKeys)),
+		InboxClaims:      make(map[string]inboxClaimRecord, len(s.inboxClaims)),
+		InboxTransitions: make(map[string]inboxTransitionRecord, len(s.inboxTransitions)),
+		InboxSequence:    s.inboxSequence,
 	}
 	for key, value := range s.checkouts {
 		state.Checkouts[key] = value
@@ -106,6 +108,9 @@ func (s *Server) snapshot() stateSnapshot {
 	for key, value := range s.inboxClaims {
 		state.InboxClaims[key] = value
 	}
+	for key, value := range s.inboxTransitions {
+		state.InboxTransitions[key] = value
+	}
 	return state
 }
 
@@ -137,6 +142,7 @@ func (s *Server) restore(state stateSnapshot) {
 	s.inbox = state.Inbox
 	s.inboxKeys = state.InboxKeys
 	s.inboxClaims = state.InboxClaims
+	s.inboxTransitions = state.InboxTransitions
 	s.inboxSequence = state.InboxSequence
 }
 
@@ -162,7 +168,7 @@ func (s *Server) loadSnapshot(path string) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var state stateSnapshot
-	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 9) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version >= 7 && (state.IssueAssets == nil || state.StageResults == nil)) || (state.Version >= 8 && (state.Inbox == nil || state.InboxKeys == nil)) || (state.Version >= 9 && state.InboxClaims == nil) {
+	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 10) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version >= 7 && (state.IssueAssets == nil || state.StageResults == nil)) || (state.Version >= 8 && (state.Inbox == nil || state.InboxKeys == nil)) || (state.Version >= 9 && state.InboxClaims == nil) || (state.Version >= 10 && state.InboxTransitions == nil) {
 		return errors.New("data-mock: invalid snapshot; refusing to reset")
 	}
 	if state.Challenges == nil {
@@ -191,6 +197,9 @@ func (s *Server) loadSnapshot(path string) error {
 	}
 	if state.InboxClaims == nil {
 		state.InboxClaims = make(map[string]inboxClaimRecord)
+	}
+	if state.InboxTransitions == nil {
+		state.InboxTransitions = make(map[string]inboxTransitionRecord)
 	}
 	if state.Version < 9 {
 		identities := make([]string, 0, len(state.Inbox))

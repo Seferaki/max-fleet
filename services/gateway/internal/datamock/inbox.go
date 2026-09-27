@@ -40,6 +40,11 @@ type inboxClaimRecord struct {
 	Result    dataapi.InboxClaim `json:"result"`
 }
 
+type inboxTransitionRecord struct {
+	Signature string                  `json:"signature"`
+	Result    dataapi.QueueTransition `json:"result"`
+}
+
 const inboxLeaseDuration = 2 * time.Minute
 
 func (s *Server) authorizeWorker(next route) http.HandlerFunc {
