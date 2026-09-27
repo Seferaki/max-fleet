@@ -1,7 +1,6 @@
 package dataapi
 
 import (
-	"encoding/json"
 	"time"
 )
 
@@ -117,21 +116,37 @@ type Checkout struct {
 }
 
 type Trip struct {
-	ID               string            `json:"id"`
-	VehicleID        string            `json:"vehicle_id"`
-	EmployeeID       string            `json:"employee_id"`
-	CheckoutID       string            `json:"checkout_id"`
-	Status           string            `json:"status"`
-	StartedAt        time.Time         `json:"started_at"`
-	EndedAt          *time.Time        `json:"ended_at"`
-	ReturnID         *string           `json:"return_id"`
-	MissingData      []string          `json:"missing_data"`
-	BeforeInspection Inspection        `json:"before_inspection"`
-	AfterInspection  *Inspection       `json:"after_inspection"`
-	ParkingLocation  *ParkingLocation  `json:"parking_location"`
-	Issues           []json.RawMessage `json:"issues"`
-	Version          int64             `json:"version"`
-	UpdatedAt        time.Time         `json:"updated_at"`
+	ID               string           `json:"id"`
+	VehicleID        string           `json:"vehicle_id"`
+	EmployeeID       string           `json:"employee_id"`
+	CheckoutID       string           `json:"checkout_id"`
+	Status           string           `json:"status"`
+	StartedAt        time.Time        `json:"started_at"`
+	EndedAt          *time.Time       `json:"ended_at"`
+	ReturnID         *string          `json:"return_id"`
+	MissingData      []string         `json:"missing_data"`
+	BeforeInspection Inspection       `json:"before_inspection"`
+	AfterInspection  *Inspection      `json:"after_inspection"`
+	ParkingLocation  *ParkingLocation `json:"parking_location"`
+	Issues           []Issue          `json:"issues"`
+	Version          int64            `json:"version"`
+	UpdatedAt        time.Time        `json:"updated_at"`
+}
+
+type Issue struct {
+	ID             string    `json:"id"`
+	VehicleID      string    `json:"vehicle_id"`
+	AuthorID       string    `json:"author_id"`
+	Stage          string    `json:"stage"`
+	Category       string    `json:"category"`
+	Description    string    `json:"description"`
+	Status         string    `json:"status"`
+	BlocksIssuance bool      `json:"blocks_issuance"`
+	TripID         *string   `json:"trip_id"`
+	InspectionID   *string   `json:"inspection_id"`
+	AssetIDs       []string  `json:"asset_ids"`
+	Version        int64     `json:"version"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type Return struct {

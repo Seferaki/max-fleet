@@ -86,6 +86,14 @@ type InspectionUpdateInput struct {
 	CarLocked      *bool  `json:"car_locked,omitempty"`
 }
 
+type IssueCreateInput struct {
+	Category     string   `json:"category"`
+	Description  string   `json:"description"`
+	TripID       *string  `json:"trip_id,omitempty"`
+	InspectionID *string  `json:"inspection_id,omitempty"`
+	AssetIDs     []string `json:"asset_ids"`
+}
+
 func validFuel(level int) bool {
 	return level == 0 || level == 25 || level == 50 || level == 75 || level == 100
 }
@@ -156,6 +164,27 @@ func (c *Client) TripBeginReturn(ctx context.Context, actorMaxID, tripID string,
 
 func (c *Client) ReturnCancel(ctx context.Context, actorMaxID, returnID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[emptyPayload]{"return.cancel", returnID, version, emptyPayload{}})
+}
+
+func (c *Client) IssueCreate(ctx context.Context, actorMaxID, vehicleID string, vehicleVersion int64, input IssueCreateInput, key string, inbox *InboxLease) (CommandResult, error) {
+	if (input.TripID == nil) == (input.InspectionID == nil) || strings.TrimSpace(input.Description) == "" || len(input.Description) > 1000 || len(input.AssetIDs) > 3 ||
+		input.Category != "body_damage" && input.Category != "mechanical" && input.Category != "cleanliness" && input.Category != "keys" && input.Category != "other" {
+		return CommandResult{}, errors.New("data-api: invalid issue input")
+	}
+	if input.TripID != nil && !validUUID(*input.TripID) || input.InspectionID != nil && !validUUID(*input.InspectionID) {
+		return CommandResult{}, errors.New("data-api: invalid issue context")
+	}
+	seen := make(map[string]bool)
+	for _, id := range input.AssetIDs {
+		if !validUUID(id) || seen[id] {
+			return CommandResult{}, errors.New("data-api: invalid issue asset")
+		}
+		seen[id] = true
+	}
+	if input.AssetIDs == nil {
+		input.AssetIDs = []string{}
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[IssueCreateInput]{"issue.create", vehicleID, vehicleVersion, input})
 }
 
 func (c *Client) InspectionConfirmPhotos(ctx context.Context, actorMaxID, inspectionID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {

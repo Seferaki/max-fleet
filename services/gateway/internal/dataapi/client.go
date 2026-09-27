@@ -142,6 +142,13 @@ func (c *Client) Return(ctx context.Context, actorMaxID, returnID string) (Retur
 	return get[Return](ctx, c, "/returns/"+returnID, actorMaxID)
 }
 
+func (c *Client) Issue(ctx context.Context, actorMaxID, issueID string) (Issue, error) {
+	if !validUUID(issueID) {
+		return Issue{}, errors.New("data-api: invalid issue ID")
+	}
+	return get[Issue](ctx, c, "/issues/"+issueID, actorMaxID)
+}
+
 func get[T any](ctx context.Context, c *Client, path, actorMaxID string) (T, error) {
 	return request[T](ctx, c, http.MethodGet, path, actorMaxID, nil, "", "", nil, nil)
 }

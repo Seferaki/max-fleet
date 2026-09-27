@@ -22,6 +22,7 @@ type stateSnapshot struct {
 	Checkouts    map[string]dataapi.Checkout    `json:"checkouts"`
 	Trips        map[string]dataapi.Trip        `json:"trips"`
 	Returns      map[string]dataapi.Return      `json:"returns"`
+	Issues       map[string]dataapi.Issue       `json:"issues"`
 	Commands     map[string]commandRecord       `json:"commands"`
 	Photos       map[string]map[int]photoRecord `json:"photos"`
 	PhotoResults map[string]photoAttempt        `json:"photo_results"`
@@ -30,13 +31,14 @@ type stateSnapshot struct {
 
 func (s *Server) snapshot() stateSnapshot {
 	state := stateSnapshot{
-		Version:      5,
+		Version:      6,
 		SeedSHA:      fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)),
 		Vehicles:     append([]dataapi.Vehicle(nil), s.vehicles...),
 		Employees:    make(map[string]dataapi.Employee, len(s.employees)),
 		Checkouts:    make(map[string]dataapi.Checkout, len(s.checkouts)),
 		Trips:        make(map[string]dataapi.Trip, len(s.trips)),
 		Returns:      make(map[string]dataapi.Return, len(s.returns)),
+		Issues:       make(map[string]dataapi.Issue, len(s.issues)),
 		Commands:     make(map[string]commandRecord, len(s.commands)),
 		Photos:       make(map[string]map[int]photoRecord, len(s.photos)),
 		PhotoResults: make(map[string]photoAttempt, len(s.photoResults)),
@@ -49,10 +51,16 @@ func (s *Server) snapshot() stateSnapshot {
 		state.Employees[key] = value
 	}
 	for key, value := range s.trips {
+		copiedIssues := make([]dataapi.Issue, len(value.Issues))
+		copy(copiedIssues, value.Issues)
+		value.Issues = copiedIssues
 		state.Trips[key] = value
 	}
 	for key, value := range s.returns {
 		state.Returns[key] = value
+	}
+	for key, value := range s.issues {
+		state.Issues[key] = value
 	}
 	for key, value := range s.commands {
 		state.Commands[key] = value
@@ -85,6 +93,9 @@ func (s *Server) restore(state stateSnapshot) {
 	if state.Returns != nil {
 		s.returns = state.Returns
 	}
+	if state.Issues != nil {
+		s.issues = state.Issues
+	}
 	s.commands = state.Commands
 	s.photos = state.Photos
 	s.photoResults = state.PhotoResults
@@ -113,7 +124,7 @@ func (s *Server) loadSnapshot(path string) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var state stateSnapshot
-	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 5) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version == 5 && state.Returns == nil) {
+	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 6) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version == 6 && state.Issues == nil) {
 		return errors.New("data-mock: invalid snapshot; refusing to reset")
 	}
 	if state.Challenges == nil {
@@ -124,6 +135,9 @@ func (s *Server) loadSnapshot(path string) error {
 	}
 	if state.Returns == nil {
 		state.Returns = make(map[string]dataapi.Return)
+	}
+	if state.Issues == nil {
+		state.Issues = make(map[string]dataapi.Issue)
 	}
 	for _, slots := range state.Photos {
 		for _, photo := range slots {

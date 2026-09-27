@@ -1,7 +1,6 @@
 package datamock
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
@@ -74,7 +73,7 @@ func (s *Server) startCheckout(w http.ResponseWriter, requestID, actor string, c
 	checkout.Inspection.Version++
 	checkout.Inspection.UpdatedAt = now
 	s.checkouts[checkout.ID] = checkout
-	trip := dataapi.Trip{ID: tripID, VehicleID: checkout.VehicleID, EmployeeID: employee.ID, CheckoutID: checkout.ID, Status: "active", StartedAt: now, MissingData: []string{}, BeforeInspection: checkout.Inspection, Issues: []json.RawMessage{}, Version: 1, UpdatedAt: now}
+	trip := dataapi.Trip{ID: tripID, VehicleID: checkout.VehicleID, EmployeeID: employee.ID, CheckoutID: checkout.ID, Status: "active", StartedAt: now, MissingData: []string{}, BeforeInspection: checkout.Inspection, Issues: []dataapi.Issue{}, Version: 1, UpdatedAt: now}
 	s.trips[tripID] = trip
 	employee.ActiveTripID = &tripID
 	employee.Version++

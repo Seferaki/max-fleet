@@ -62,7 +62,7 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		return
 	}
 	command, ok := parseCommand(body)
-	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos" && command.Operation != "challenge.create" && command.Operation != "challenge.answer" && command.Operation != "checkout.accept_rules" && command.Operation != "inspection.update" && command.Operation != "checkout.set_no_new_issues" && command.Operation != "checkout.start" && command.Operation != "trip.begin_return" && command.Operation != "return.cancel" && command.Operation != "return.set_location" && command.Operation != "return.complete") {
+	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos" && command.Operation != "challenge.create" && command.Operation != "challenge.answer" && command.Operation != "checkout.accept_rules" && command.Operation != "inspection.update" && command.Operation != "checkout.set_no_new_issues" && command.Operation != "checkout.start" && command.Operation != "trip.begin_return" && command.Operation != "return.cancel" && command.Operation != "return.set_location" && command.Operation != "return.complete" && command.Operation != "issue.create") {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
@@ -111,8 +111,10 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		result, ok = s.cancelReturn(w, requestID, actor, command)
 	} else if command.Operation == "return.set_location" {
 		result, ok = s.setReturnLocation(w, requestID, actor, command)
-	} else {
+	} else if command.Operation == "return.complete" {
 		result, ok = s.completeReturn(w, requestID, actor, command)
+	} else {
+		result, ok = s.createIssue(w, requestID, actor, command)
 	}
 	if !ok {
 		return
