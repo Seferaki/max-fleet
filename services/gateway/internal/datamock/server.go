@@ -50,8 +50,11 @@ type Server struct {
 	vehicles     []dataapi.Vehicle
 	checkouts    map[string]dataapi.Checkout
 	commands     map[string]commandRecord
+	photos       map[string]map[int]photoRecord
+	photoResults map[string]photoAttempt
 	now          func() time.Time
 	saveSnapshot func(stateSnapshot) error
+	assetDir     string
 }
 
 func New(token string) (*Server, error) {
@@ -81,7 +84,7 @@ func newServer(token, snapshotPath string, now func() time.Time) (*Server, error
 		return nil, errors.New("data-mock: invalid synthetic seed")
 	}
 	stamp := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
-	s := &Server{token: token, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), commands: make(map[string]commandRecord), now: now}
+	s := &Server{token: token, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), now: now}
 	for i, item := range seed.Employees {
 		id := fmt.Sprintf("80000000-0000-4000-8000-%012d", i+1)
 		s.employees[item.MaxUserID] = dataapi.Employee{ID: id, MaxUserID: item.MaxUserID, DisplayName: item.DisplayName, Role: item.Role, CanStartTrip: item.CanStartTrip, Version: 1, UpdatedAt: stamp}
@@ -97,6 +100,7 @@ func newServer(token, snapshotPath string, now func() time.Time) (*Server, error
 		s.vehicles = append(s.vehicles, v)
 	}
 	if snapshotPath != "" {
+		s.assetDir = snapshotPath + ".assets"
 		s.saveSnapshot = func(state stateSnapshot) error { return atomicSave(snapshotPath, state) }
 		if err := s.loadSnapshot(snapshotPath); err != nil {
 			return nil, err
@@ -128,6 +132,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /internal/v1/state", s.authorize(true, s.requireEmployee(s.currentState)))
 	mux.HandleFunc("GET /internal/v1/checkouts/{id}", s.authorize(true, s.requireEmployee(s.checkout)))
 	mux.HandleFunc("GET /internal/v1/inspections/{id}", s.authorize(true, s.requireEmployee(s.inspection)))
+	mux.HandleFunc("POST /internal/v1/inspections/{id}/photos/{slot}", s.authorize(true, s.requireEmployee(s.uploadPhoto)))
 	mux.HandleFunc("GET /internal/v1/vehicles", s.authorize(true, s.requireEmployee(s.listVehicles)))
 	mux.HandleFunc("GET /internal/v1/vehicles/{id}", s.authorize(true, s.requireEmployee(s.vehicle)))
 	mux.HandleFunc("POST /internal/v1/commands", s.authorize(true, s.requireEmployee(s.execute)))
