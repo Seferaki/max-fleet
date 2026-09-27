@@ -220,6 +220,37 @@ func (c *Client) AdminTrips(ctx context.Context, actorMaxID string, filter Admin
 	return get[Page[Trip]](ctx, c, path, actorMaxID)
 }
 
+type AdminIssueFilter struct {
+	Status    string
+	VehicleID string
+	Limit     int
+	Cursor    string
+}
+
+func (c *Client) AdminIssues(ctx context.Context, actorMaxID string, filter AdminIssueFilter) (Page[Issue], error) {
+	if filter.Status != "" && filter.Status != "open" && filter.Status != "in_progress" && filter.Status != "resolved" && filter.Status != "known_nonblocking" || filter.VehicleID != "" && !validUUID(filter.VehicleID) || filter.Limit < 0 || filter.Limit > 50 || len(filter.Cursor) > 2048 {
+		return Page[Issue]{}, errors.New("data-api: invalid admin issues filter")
+	}
+	query := url.Values{}
+	if filter.Status != "" {
+		query.Set("status", filter.Status)
+	}
+	if filter.VehicleID != "" {
+		query.Set("vehicle_id", filter.VehicleID)
+	}
+	if filter.Limit > 0 {
+		query.Set("limit", strconv.Itoa(filter.Limit))
+	}
+	if filter.Cursor != "" {
+		query.Set("cursor", filter.Cursor)
+	}
+	path := "/admin/issues"
+	if len(query) != 0 {
+		path += "?" + query.Encode()
+	}
+	return get[Page[Issue]](ctx, c, path, actorMaxID)
+}
+
 func (c *Client) Return(ctx context.Context, actorMaxID, returnID string) (Return, error) {
 	if !validUUID(returnID) {
 		return Return{}, errors.New("data-api: invalid return ID")
