@@ -116,9 +116,27 @@ type Checkout struct {
 	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
+type Trip struct {
+	ID               string            `json:"id"`
+	VehicleID        string            `json:"vehicle_id"`
+	EmployeeID       string            `json:"employee_id"`
+	CheckoutID       string            `json:"checkout_id"`
+	Status           string            `json:"status"`
+	StartedAt        time.Time         `json:"started_at"`
+	EndedAt          *time.Time        `json:"ended_at"`
+	ReturnID         *string           `json:"return_id"`
+	MissingData      []string          `json:"missing_data"`
+	BeforeInspection Inspection        `json:"before_inspection"`
+	AfterInspection  *Inspection       `json:"after_inspection"`
+	ParkingLocation  *ParkingLocation  `json:"parking_location"`
+	Issues           []json.RawMessage `json:"issues"`
+	Version          int64             `json:"version"`
+	UpdatedAt        time.Time         `json:"updated_at"`
+}
+
 type CurrentState struct {
 	Checkout            *Checkout       `json:"checkout"`
-	Trip                json.RawMessage `json:"trip"`
+	Trip                *Trip           `json:"trip"`
 	Return              json.RawMessage `json:"return"`
 	NextStep            *string         `json:"next_step"`
 	ConversationVersion int64           `json:"conversation_version"`

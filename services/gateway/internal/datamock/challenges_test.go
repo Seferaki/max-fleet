@@ -2,6 +2,7 @@ package datamock
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -123,6 +124,67 @@ func TestTakeChallengePersistsAndRulesRequireAnswer(t *testing.T) {
 	if _, err := client.InspectionUpdate(ctx, driverID, updated.ID, updated.Version, dataapi.InspectionUpdateInput{FuelLevel: &invalidFuel}, "invalid-fuel-1", nil); err == nil {
 		t.Fatal("unsupported fuel level accepted")
 	}
+	_, err = client.CheckoutStart(ctx, driverID, hold.ID, withIssues.Version, "early-start-1", nil)
+	expectAPIError(t, err, "PHOTO_SET_INCOMPLETE")
+	photoVersion := updated.Version
+	for slot := 1; slot <= 8; slot++ {
+		photo, err := client.UploadInspectionPhoto(ctx, driverID, dataapi.InspectionPhotoInput{InspectionID: updated.ID, Slot: slot, Version: photoVersion, SourceEventKey: fmt.Sprintf("start-event-%d", slot), IdempotencyKey: fmt.Sprintf("start-photo-%d", slot), ContentType: "image/png", Image: syntheticPNG(t, uint8(slot))})
+		if err != nil {
+			t.Fatalf("start slot %d: %v", slot, err)
+		}
+		photoVersion = photo.Inspection.Version
+	}
+	_, err = client.CheckoutStart(ctx, driverID, hold.ID, withIssues.Version+8, "unconfirmed-start-1", nil)
+	expectAPIError(t, err, "INVALID_STATE")
+	if _, err := client.InspectionConfirmPhotos(ctx, driverID, updated.ID, photoVersion, "start-photo-confirm-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	beforeStart, err := client.Checkout(ctx, driverID, hold.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	save := restarted.saveSnapshot
+	restarted.saveSnapshot = func(stateSnapshot) error { return errors.New("injected snapshot failure") }
+	_, err = client.CheckoutStart(ctx, driverID, hold.ID, beforeStart.Version, "failed-start-1", nil)
+	expectAPIError(t, err, "TEMPORARY_FAILURE")
+	restarted.saveSnapshot = save
+	stillHolding, err := client.Checkout(ctx, driverID, hold.ID)
+	if err != nil || stillHolding.Status != "holding" || stillHolding.Version != beforeStart.Version || len(restarted.trips) != 0 {
+		t.Fatalf("failed save changed state: %+v %v", stillHolding, err)
+	}
+	started, err := client.CheckoutStart(ctx, driverID, hold.ID, beforeStart.Version, "start-trip-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trip, err := dataapi.DecodeAggregate[dataapi.Trip](started)
+	if err != nil || trip.Status != "active" || trip.BeforeInspection.Status != "finalized" || trip.BeforeInspection.PhotosConfirmedAt == nil {
+		t.Fatalf("trip: %+v %v", trip, err)
+	}
+	repeat, err := client.CheckoutStart(ctx, driverID, hold.ID, beforeStart.Version, "start-trip-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repeatedTrip, _ := dataapi.DecodeAggregate[dataapi.Trip](repeat)
+	if repeatedTrip.ID != trip.ID {
+		t.Fatal("duplicate start created another trip")
+	}
+	_, err = client.Trip(ctx, "8000000000000000002", trip.ID)
+	expectAPIError(t, err, "NOT_FOUND")
+	last, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	client = commandClient(t, last)
+	state, err := client.State(ctx, driverID)
+	if err != nil || state.Trip == nil || state.Trip.ID != trip.ID || state.Checkout != nil {
+		t.Fatalf("restored active trip: %+v %v", state, err)
+	}
+	me, err := client.Me(ctx, driverID)
+	if err != nil || me.Employee == nil || me.Employee.ActiveTripID == nil || *me.Employee.ActiveTripID != trip.ID {
+		t.Fatalf("restored active employee: %+v %v", me, err)
+	}
+	_, err = client.CheckoutCreate(ctx, driverID, "10000000-0000-4000-8000-000000000002", 1, "another-hold-1", nil)
+	expectAPIError(t, err, "USER_BUSY")
 }
 
 func TestTakeChallengeThreeErrorsAndTTL(t *testing.T) {

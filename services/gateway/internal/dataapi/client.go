@@ -128,6 +128,13 @@ func (c *Client) Inspection(ctx context.Context, actorMaxID, inspectionID string
 	return get[Inspection](ctx, c, "/inspections/"+inspectionID, actorMaxID)
 }
 
+func (c *Client) Trip(ctx context.Context, actorMaxID, tripID string) (Trip, error) {
+	if !validUUID(tripID) {
+		return Trip{}, errors.New("data-api: invalid trip ID")
+	}
+	return get[Trip](ctx, c, "/trips/"+tripID, actorMaxID)
+}
+
 func get[T any](ctx context.Context, c *Client, path, actorMaxID string) (T, error) {
 	return request[T](ctx, c, http.MethodGet, path, actorMaxID, nil, "", "", nil, nil)
 }

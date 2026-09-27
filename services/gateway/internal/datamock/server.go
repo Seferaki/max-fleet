@@ -50,6 +50,7 @@ type Server struct {
 	employees    map[string]dataapi.Employee
 	vehicles     []dataapi.Vehicle
 	checkouts    map[string]dataapi.Checkout
+	trips        map[string]dataapi.Trip
 	commands     map[string]commandRecord
 	photos       map[string]map[int]photoRecord
 	photoResults map[string]photoAttempt
@@ -87,7 +88,7 @@ func newServer(token, snapshotPath string, now func() time.Time) (*Server, error
 		return nil, errors.New("data-mock: invalid synthetic seed")
 	}
 	stamp := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
-	s := &Server{token: token, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), challenges: make(map[string]mockChallenge), now: now,
+	s := &Server{token: token, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), trips: make(map[string]dataapi.Trip), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), challenges: make(map[string]mockChallenge), now: now,
 		rules: dataapi.Rules{ID: "90000000-0000-4000-8000-000000000001", VersionLabel: "demo-v1", Body: seed.Rules}}
 	for i, item := range seed.Employees {
 		id := fmt.Sprintf("80000000-0000-4000-8000-%012d", i+1)
@@ -125,6 +126,8 @@ func (s *Server) Handler() http.Handler {
 		s.success(w, requestID, dataapi.Meta{ContractVersion: dataapi.ContractVersion, BuildSHA: "synthetic", Mode: "mock", Capabilities: []string{"read-fixtures"}})
 	}))
 	mux.HandleFunc("GET /internal/v1/me", s.authorize(true, func(w http.ResponseWriter, r *http.Request, requestID string) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		actor := r.Header.Get("X-Actor-Max-ID")
 		employee, found := s.employees[actor]
 		var own *dataapi.Employee
@@ -138,6 +141,7 @@ func (s *Server) Handler() http.Handler {
 	})))
 	mux.HandleFunc("GET /internal/v1/state", s.authorize(true, s.requireEmployee(s.currentState)))
 	mux.HandleFunc("GET /internal/v1/checkouts/{id}", s.authorize(true, s.requireEmployee(s.checkout)))
+	mux.HandleFunc("GET /internal/v1/trips/{id}", s.authorize(true, s.requireEmployee(s.trip)))
 	mux.HandleFunc("GET /internal/v1/inspections/{id}", s.authorize(true, s.requireEmployee(s.inspection)))
 	mux.HandleFunc("POST /internal/v1/inspections/{id}/photos/{slot}", s.authorize(true, s.requireEmployee(s.uploadPhoto)))
 	mux.HandleFunc("GET /internal/v1/vehicles", s.authorize(true, s.requireEmployee(s.listVehicles)))
@@ -176,7 +180,10 @@ func (s *Server) authorize(actorRequired bool, next route) http.HandlerFunc {
 
 func (s *Server) requireEmployee(next route) route {
 	return func(w http.ResponseWriter, r *http.Request, requestID string) {
-		if _, ok := s.employees[r.Header.Get("X-Actor-Max-ID")]; !ok {
+		s.mu.Lock()
+		_, ok := s.employees[r.Header.Get("X-Actor-Max-ID")]
+		s.mu.Unlock()
+		if !ok {
 			s.fail(w, requestID, http.StatusForbidden, "ACCESS_DENIED")
 			return
 		}
@@ -277,7 +284,33 @@ func (s *Server) currentState(w http.ResponseWriter, r *http.Request, requestID 
 			break
 		}
 	}
+	for _, trip := range s.trips {
+		if trip.EmployeeID == employee.ID && (trip.Status == "active" || trip.Status == "returning") {
+			current := trip
+			state.Trip = &current
+			step := "active_trip"
+			state.NextStep = &step
+			break
+		}
+	}
 	s.success(w, requestID, state)
+}
+
+func (s *Server) trip(w http.ResponseWriter, r *http.Request, requestID string) {
+	id := r.PathValue("id")
+	if !validUUID(id) {
+		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, found := s.trips[id]
+	employee := s.employees[r.Header.Get("X-Actor-Max-ID")]
+	if !found || current.EmployeeID != employee.ID && employee.Role != "admin" {
+		s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
+		return
+	}
+	s.success(w, requestID, current)
 }
 
 func (s *Server) checkout(w http.ResponseWriter, r *http.Request, requestID string) {

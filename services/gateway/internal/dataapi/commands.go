@@ -138,6 +138,10 @@ func (c *Client) CheckoutSetNoNewIssues(ctx context.Context, actorMaxID, checkou
 	}{true}})
 }
 
+func (c *Client) CheckoutStart(ctx context.Context, actorMaxID, checkoutID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[attestationPayload]{"checkout.start", checkoutID, version, attestationPayload{true}})
+}
+
 func (c *Client) InspectionConfirmPhotos(ctx context.Context, actorMaxID, inspectionID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[emptyPayload]{"inspection.confirm_photos", inspectionID, version, emptyPayload{}})
 }
