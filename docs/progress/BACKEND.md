@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "e729bd72-cef8-4dae-a0af-ac815fee04a9"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T19:34:16Z"
+heartbeat_utc: "2026-09-27T19:36:19Z"
 current_task: BE-01
-current_substep: "Клиент приватного asset content проверен; далее контрактные сценарии и недостающие маршруты"
-last_verified_code_commit: "6fe1793fe314e103dec346b88a3ea5aae64ff3b2"
+current_substep: "Последний finalized after-осмотр проверен; далее список trip и контрактные сценарии"
+last_verified_code_commit: "9e75f2f632ed9350acbdfec848cb10bf311bcc0d"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: выполнить контрактные сценарии client→mock, затем реализовать недостающие read/inbox/admin маршруты по плану"
+next_step: "BE-01: реализовать GET /trips client→mock с ACL/cursor, затем контрактные сценарии; BE-01 остаётся WIP"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `6fe1793fe314e103dec346b88a3ea5aae64ff3b2` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets и Compose; WIP | Сценарии контракта, недостающие маршруты |
+| BE-01 | IN_PROGRESS | `9e75f2f632ed9350acbdfec848cb10bf311bcc0d` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets и Compose; WIP | Trip list, сценарии контракта, недостающие маршруты |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `9e75f2f632ed9350acbdfec848cb10bf311bcc0d`. Client/mock читают обезличенный последний finalized after-осмотр машины, выбирая самый свежий completed return; draft и водитель/поездка не раскрываются. Тест проверил 404 до первого завершения, выбор свежего осмотра и отсутствие driver/trip в ответе. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Это mock; BE-01 WIP.
 
 - BE-01 code commit: `6fe1793fe314e103dec346b88a3ea5aae64ff3b2`. Go DataAPI client читает приватный `GET /assets/{id}/content` с actor/service headers, ограничивает ответ 10 MiB, проверяет MIME и повторяет 429/503 с тем же X-Request-ID. HTTP-тесты проверили retry, заголовки, неверный MIME, oversized body и некорректный actor. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Контрактные сценарии целиком и другие маршруты WIP.
 
