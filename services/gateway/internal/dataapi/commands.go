@@ -1,0 +1,127 @@
+package dataapi
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"math"
+	"net/url"
+	"strings"
+)
+
+// InboxLease is supplied only for a command arising from a durable inbox event.
+// The token is opaque and must never be logged.
+type InboxLease struct {
+	EventID string
+	Token   string
+}
+
+type CommandResult struct {
+	Operation         string          `json:"operation"`
+	Aggregate         json.RawMessage `json:"aggregate"`
+	Correct           *bool           `json:"correct"`
+	AttemptsRemaining *int            `json:"attempts_remaining"`
+	ChallengeProofID  *string         `json:"challenge_proof_id"`
+}
+
+// DecodeAggregate decodes the operation's confirmed aggregate into its DTO.
+func DecodeAggregate[T any](result CommandResult) (T, error) {
+	var value T
+	if len(result.Aggregate) == 0 || string(result.Aggregate) == "null" {
+		return value, errors.New("data-api: missing command aggregate")
+	}
+	if err := decodeStrict(result.Aggregate, &value); err != nil {
+		return value, err
+	}
+	return value, nil
+}
+
+type commandEnvelope[P any] struct {
+	Operation       string `json:"operation"`
+	TargetID        string `json:"target_id"`
+	ExpectedVersion int64  `json:"expected_version"`
+	Payload         P      `json:"payload"`
+}
+
+type emptyPayload struct{}
+
+type LocationInput struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	Source    string  `json:"source"`
+	Landmark  *string `json:"landmark,omitempty"`
+	Confirmed bool    `json:"confirmed"`
+}
+
+type attestationPayload struct {
+	Attestation bool `json:"attestation"`
+}
+
+// CheckoutCreate creates a 15-minute hold. Python/mock owns the availability transaction.
+func (c *Client) CheckoutCreate(ctx context.Context, actorMaxID, vehicleID string, vehicleVersion int64, key string, inbox *InboxLease) (CommandResult, error) {
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[emptyPayload]{"checkout.create", vehicleID, vehicleVersion, emptyPayload{}})
+}
+
+func (c *Client) CheckoutCancel(ctx context.Context, actorMaxID, checkoutID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[emptyPayload]{"checkout.cancel", checkoutID, version, emptyPayload{}})
+}
+
+func (c *Client) ReturnSetLocation(ctx context.Context, actorMaxID, returnID string, version int64, key string, inbox *InboxLease, location LocationInput) (CommandResult, error) {
+	if math.IsNaN(location.Latitude) || math.IsInf(location.Latitude, 0) || location.Latitude < -90 || location.Latitude > 90 || math.IsNaN(location.Longitude) || math.IsInf(location.Longitude, 0) || location.Longitude < -180 || location.Longitude > 180 || !location.Confirmed || (location.Source != "max_geo" && location.Source != "manual_map" && location.Source != "admin") || (location.Landmark != nil && len(*location.Landmark) > 500) {
+		return CommandResult{}, errors.New("data-api: invalid confirmed location")
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[LocationInput]{"return.set_location", returnID, version, location})
+}
+
+func (c *Client) ReturnComplete(ctx context.Context, actorMaxID, returnID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[attestationPayload]{"return.complete", returnID, version, attestationPayload{true}})
+}
+
+func executeCommand[P any](ctx context.Context, c *Client, actorMaxID, key string, inbox *InboxLease, command commandEnvelope[P]) (CommandResult, error) {
+	if !validMaxID(actorMaxID) || !validUUID(command.TargetID) || command.ExpectedVersion < 1 || !validKey(key) || !validInbox(inbox) {
+		return CommandResult{}, errors.New("data-api: invalid command identity, version or lease")
+	}
+	body, err := json.Marshal(command)
+	if err != nil {
+		return CommandResult{}, errors.New("data-api: invalid command body")
+	}
+	result, err := request[CommandResult](ctx, c, "POST", "/commands", actorMaxID, body, key, inbox)
+	if err != nil {
+		return CommandResult{}, err
+	}
+	if result.Operation != command.Operation || len(result.Aggregate) == 0 || string(result.Aggregate) == "null" {
+		return CommandResult{}, errors.New("data-api: invalid command result")
+	}
+	return result, nil
+}
+
+// OwnCommandResult resolves a timed-out command using the same actor and key.
+func (c *Client) OwnCommandResult(ctx context.Context, actorMaxID, key, operation string) (CommandResult, error) {
+	if !validMaxID(actorMaxID) || !validKey(key) || !knownOperation(operation) {
+		return CommandResult{}, errors.New("data-api: invalid command lookup")
+	}
+	result, err := get[CommandResult](ctx, c, "/commands/"+url.PathEscape(key)+"?operation="+url.QueryEscape(operation), actorMaxID)
+	if err != nil {
+		return CommandResult{}, err
+	}
+	if result.Operation != operation || len(result.Aggregate) == 0 || string(result.Aggregate) == "null" {
+		return CommandResult{}, errors.New("data-api: invalid command result")
+	}
+	return result, nil
+}
+
+func validKey(key string) bool {
+	return len(key) >= 8 && len(key) <= 200 && !strings.ContainsAny(key, "\r\n/\\?#")
+}
+
+func validInbox(inbox *InboxLease) bool {
+	return inbox == nil || (validUUID(inbox.EventID) && len(inbox.Token) > 0 && len(inbox.Token) <= 200 && !strings.ContainsAny(inbox.Token, "\r\n"))
+}
+
+func knownOperation(operation string) bool {
+	switch operation {
+	case "checkout.create", "checkout.cancel", "challenge.create", "challenge.answer", "checkout.accept_rules", "inspection.update", "inspection.confirm_photos", "checkout.set_no_new_issues", "checkout.start", "trip.begin_return", "return.cancel", "return.set_location", "return.complete", "issue.create", "vehicle.block", "vehicle.unblock", "vehicle.edit", "vehicle.correct_snapshot", "vehicle.annotate", "employee.grant", "employee.access", "issue.resolve", "trip.admin_close", "conversation.save":
+		return true
+	}
+	return false
+}

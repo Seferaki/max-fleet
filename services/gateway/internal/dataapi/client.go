@@ -104,6 +104,10 @@ func (c *Client) Vehicle(ctx context.Context, actorMaxID, vehicleID string) (Veh
 }
 
 func get[T any](ctx context.Context, c *Client, path, actorMaxID string) (T, error) {
+	return request[T](ctx, c, http.MethodGet, path, actorMaxID, nil, "", nil)
+}
+
+func request[T any](ctx context.Context, c *Client, method, path, actorMaxID string, body []byte, idempotencyKey string, inbox *InboxLease) (T, error) {
 	var zero T
 	if actorMaxID != "" && !validMaxID(actorMaxID) {
 		return zero, errors.New("data-api: invalid actor MAX ID")
@@ -122,7 +126,7 @@ func get[T any](ctx context.Context, c *Client, path, actorMaxID string) (T, err
 		u.RawQuery = parts[1]
 	}
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+		req, err := http.NewRequestWithContext(ctx, method, u.String(), bytes.NewReader(body))
 		if err != nil {
 			return zero, err
 		}
@@ -130,6 +134,16 @@ func get[T any](ctx context.Context, c *Client, path, actorMaxID string) (T, err
 		req.Header.Set("X-Contract-Version", ContractVersion)
 		req.Header.Set("X-Request-ID", requestID)
 		req.Header.Set("Accept", "application/json")
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		if idempotencyKey != "" {
+			req.Header.Set("Idempotency-Key", idempotencyKey)
+		}
+		if inbox != nil {
+			req.Header.Set("X-Inbox-Event-ID", inbox.EventID)
+			req.Header.Set("X-Inbox-Lease", inbox.Token)
+		}
 		if actorMaxID != "" {
 			req.Header.Set("X-Actor-Max-ID", actorMaxID)
 		}
