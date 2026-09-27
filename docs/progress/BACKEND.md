@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "e729bd72-cef8-4dae-a0af-ac815fee04a9"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T19:10:40Z"
+heartbeat_utc: "2026-09-27T19:14:06Z"
 current_task: BE-01
-current_substep: "Before issue сохраняется и отменяет hold; далее during/after issue"
-last_verified_code_commit: "af709c70cf7ecfd25b3d93afaeeca516c44cafd7"
+current_substep: "During/after issue сохраняются в trip; dirty return требует after issue"
+last_verified_code_commit: "714ad50bd65d1023070d9e410ac6fddeb2dc6436"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: расширить issue.create для active trip и after draft, потребовать issue при damage/dirty на return.complete; затем staged issue photos, contract scenarios и Compose"
+next_step: "BE-01: добавить staged issue photos/asset ACL и проверить damage+unsafe recovery, затем contract scenarios, Compose и оставшиеся маршруты mock"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `af709c70cf7ecfd25b3d93afaeeca516c44cafd7` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start, return draft/location/complete и before issue; WIP | During/after issue, scenarios, Compose |
+| BE-01 | IN_PROGRESS | `714ad50bd65d1023070d9e410ac6fddeb2dc6436` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return и before/during/after issue; WIP | Issue photos, scenarios, Compose |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `714ad50bd65d1023070d9e410ac6fddeb2dc6436`. `issue.create` поддерживает active trip и after draft, проверяет actor/vehicle version/context, сохраняет issue в trip без закрытия поездки, выставляет needs_review при сохранении статуса in_trip. `return.complete` при new_damage/dirty требует соответствующий after issue того же inspection; после сообщения возврат возможен, машина остаётся unavailable. Тесты проверили чужого actor, during stage, запрет dirty complete без after issue и завершение с блокировкой. `go test ./...`, `go test -count=3 ./internal/datamock`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Staged issue-фото, остальные маршруты и outbox отсутствуют; BE-01 WIP.
 
 - BE-01 code commit: `af709c70cf7ecfd25b3d93afaeeca516c44cafd7`. Типизированный client и mock поддерживают `issue.create` с before-inspection context и GET `/issues/{id}` для автора/admin. Mock проверяет actor/vehicle version/category/description, сохраняет open issue и одним snapshot переводит hold в rejected, before inspection в abandoned, машину в unavailable/needs_review. Повтор ключа возвращает тот же issue; failed-save 503 не оставляет ни issue, ни отменённого hold. Тесты проверили чужого actor, пустое описание, restart и запрет новой выдачи. `go test ./...`, `go test -count=3 ./internal/datamock`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Staged assets и during/after issue пока не реализованы; BE-01 WIP.
 
