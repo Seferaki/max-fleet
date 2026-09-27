@@ -5,19 +5,19 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: ACTIVE
+lock_state: HANDOFF
 owner: B
 session_id: "e729bd72-cef8-4dae-a0af-ac815fee04a9"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T19:38:07Z"
+heartbeat_utc: "2026-09-27T19:40:07Z"
 current_task: BE-01
-current_substep: "Список своих trips с cursor проверен; далее контрактные сценарии и админ-чтения"
+current_substep: "Проверен Docker runtime после обновления mock; локальные контейнеры остановлены, том сохранён"
 last_verified_code_commit: "d909cdc2bbf1371413350ec93bb59a6ba1ea3c1f"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: проверить контрактные сценарии client→mock и реализовать admin read/inbox маршруты; BE-01 остаётся WIP"
+next_step: "Захватить HANDOFF отдельным claim-коммитом; BE-01: исполнить контрактные сценарии client→mock, затем admin read/inbox маршруты; WIP"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- Передача B → HANDOFF после code commit `d909cdc2bbf1371413350ec93bb59a6ba1ea3c1f`. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` прошли на этом SHA. `.local/contract-venv/Scripts/python.exe contracts/validate.py` → OK: 2 OpenAPI, 36 data routes, 24 command examples, 7 иных examples, 44 сценария (это валидация файлов, не выполнение сценариев). Обычный `py contracts/validate.py` сначала не запустился из-за отсутствия `jsonschema` в системном Python; локальный venv успешно проверил. `docker compose -f deploy/compose.backend.yaml up --build -d` → exit 0, существующий snapshot v6 был принят новым mock v7, оба контейнера healthy; gateway live=200, ready=503. `docker compose ... down` без `-v` → exit 0, контейнеры остановлены, named volume оставлен. Реального MAX consumer не было. Для следующего ноутбука достаточен синтетический seed из Git; `.local/` Go/Python, Compose secret и volume не переносятся. Локальные секреты по имени: `data_api_token` для mock, позже `max_bot_token`; значения не публикуются. H-01 остаётся HUMAN_REQUIRED, проверка `scripts/enter-max-token.ps1 -Check` → False. BE-01 WIP, backend_ready_for_integration=false.
 
 - BE-01 code commit: `d909cdc2bbf1371413350ec93bb59a6ba1ea3c1f`. Client/mock реализуют `GET /trips?scope=mine` с limit 1…50, устойчивой сортировкой и cursor, привязанным к employee ID и limit. Тест проверил две страницы, чужую поездку и отказ при чужом cursor. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Остальные маршруты и все контрактные сценарии WIP.
 
@@ -198,3 +200,4 @@ human_required: [H-01]
 | 2026-09-27 13:53 | A → B | BE-01 / `f3e6f49` | Пользователь подтвердил остановку A; takeover через отдельный claim-коммит |
 | 2026-09-27 14:47 | B → HANDOFF | BE-01 / `058a6f7` | Проверены Go test/vet/build и Docker image; следующему исполнителю захватить очередь claim-коммитом |
 | 2026-09-27 14:55 | HANDOFF → B | BE-01 / `058a6f7` | Новая сессия B; отдельный claim-коммит до изменения кода |
+| 2026-09-27 19:40 | B → HANDOFF | BE-01 / `d909cdc` | Go test/vet/build, contract validation, Docker build/runtime проверены; локальные контейнеры остановлены, том сохранён |
