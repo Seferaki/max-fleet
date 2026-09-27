@@ -377,6 +377,15 @@ func (s *Server) inspection(w http.ResponseWriter, r *http.Request, requestID st
 			return
 		}
 	}
+	for _, draft := range s.returns {
+		if draft.Inspection.ID == id {
+			trip := s.trips[draft.TripID]
+			if trip.EmployeeID == employee.ID || employee.Role == "admin" {
+				s.success(w, requestID, draft.Inspection)
+				return
+			}
+		}
+	}
 	s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
 }
 

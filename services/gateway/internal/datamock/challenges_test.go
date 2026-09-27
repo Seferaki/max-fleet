@@ -259,6 +259,56 @@ func TestTakeChallengePersistsAndRulesRequireAnswer(t *testing.T) {
 	if err != nil || confirmedReturn.IntentConfirmedAt == nil || confirmedReturn.Step != "checklist" {
 		t.Fatalf("confirmed return intent: %+v %v", confirmedReturn, err)
 	}
+	tooLow := int64(12009)
+	_, err = client.InspectionUpdate(ctx, driverID, confirmedReturn.Inspection.ID, confirmedReturn.Inspection.Version, dataapi.InspectionUpdateInput{OdometerKM: &tooLow}, "after-low-odo", nil)
+	expectAPIError(t, err, "ODOMETER_ROLLBACK")
+	afterFuel, afterOdo := 50, int64(12025)
+	noDamage, clean, parking, keys, locked := false, true, true, true, true
+	afterResult, err := client.InspectionUpdate(ctx, driverID, confirmedReturn.Inspection.ID, confirmedReturn.Inspection.Version, dataapi.InspectionUpdateInput{FuelLevel: &afterFuel, OdometerKM: &afterOdo, NewDamage: &noDamage, CabinClean: &clean, ParkingAllowed: &parking, KeysReturned: &keys, CarLocked: &locked}, "after-data-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := dataapi.DecodeAggregate[dataapi.Inspection](afterResult)
+	if err != nil || after.Phase != "after" || after.OdometerKM == nil || *after.OdometerKM != afterOdo {
+		t.Fatalf("after data: %+v %v", after, err)
+	}
+	version := after.Version
+	for slot := 1; slot <= 7; slot++ {
+		photo, err := client.UploadInspectionPhoto(ctx, driverID, dataapi.InspectionPhotoInput{InspectionID: after.ID, Slot: slot, Version: version, SourceEventKey: fmt.Sprintf("after-event-%d", slot), IdempotencyKey: fmt.Sprintf("after-photo-%d", slot), ContentType: "image/png", Image: syntheticPNG(t, uint8(slot+20))})
+		if err != nil {
+			t.Fatalf("after slot %d: %v", slot, err)
+		}
+		version = photo.Inspection.Version
+	}
+	_, err = client.InspectionConfirmPhotos(ctx, driverID, after.ID, version, "confirm-after-seven", nil)
+	expectAPIError(t, err, "PHOTO_SET_INCOMPLETE")
+	eighth, err := client.UploadInspectionPhoto(ctx, driverID, dataapi.InspectionPhotoInput{InspectionID: after.ID, Slot: 8, Version: version, SourceEventKey: "after-event-8", IdempotencyKey: "after-photo-8", ContentType: "image/png", Image: syntheticPNG(t, 28)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmedAfterResult, err := client.InspectionConfirmPhotos(ctx, driverID, after.ID, eighth.Inspection.Version, "confirm-after-eight", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmedAfter, err := dataapi.DecodeAggregate[dataapi.Inspection](confirmedAfterResult)
+	if err != nil || confirmedAfter.PhotosConfirmedAt == nil || len(confirmedAfter.OccupiedSlots) != 8 {
+		t.Fatalf("confirmed after photos: %+v %v", confirmedAfter, err)
+	}
+	_, err = client.Inspection(ctx, "8000000000000000002", after.ID)
+	expectAPIError(t, err, "NOT_FOUND")
+	replacement, err := client.UploadInspectionPhoto(ctx, driverID, dataapi.InspectionPhotoInput{InspectionID: after.ID, Slot: 3, Version: confirmedAfter.Version, SourceEventKey: "after-replace-3", IdempotencyKey: "after-replace-key", ContentType: "image/png", Image: syntheticPNG(t, 99)})
+	if err != nil || replacement.Inspection.PhotosConfirmedAt != nil || len(replacement.Inspection.OccupiedSlots) != 8 {
+		t.Fatalf("after replacement: %+v %v", replacement, err)
+	}
+	last, err = NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	client = commandClient(t, last)
+	restoredAfter, err := client.Inspection(ctx, driverID, after.ID)
+	if err != nil || restoredAfter.PhotosConfirmedAt != nil || len(restoredAfter.OccupiedSlots) != 8 {
+		t.Fatalf("after replacement restart: %+v %v", restoredAfter, err)
+	}
 }
 
 func TestTakeChallengeThreeErrorsAndTTL(t *testing.T) {

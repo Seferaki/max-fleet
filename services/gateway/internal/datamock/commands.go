@@ -202,40 +202,61 @@ func (s *Server) cancelCheckout(w http.ResponseWriter, requestID, actor string, 
 func (s *Server) confirmPhotos(w http.ResponseWriter, requestID, actor string, command mockCommand) (dataapi.CommandResult, bool) {
 	var checkout dataapi.Checkout
 	var checkoutID string
+	var draft dataapi.Return
+	var returnID string
 	for id, candidate := range s.checkouts {
 		if candidate.Inspection.ID == command.TargetID {
 			checkout, checkoutID = candidate, id
 			break
 		}
 	}
-	if checkoutID == "" || checkout.EmployeeID != s.employees[actor].ID {
+	if checkoutID == "" {
+		for id, candidate := range s.returns {
+			if candidate.Inspection.ID == command.TargetID {
+				draft, returnID = candidate, id
+				break
+			}
+		}
+	}
+	var inspection *dataapi.Inspection
+	if checkoutID != "" && checkout.EmployeeID == s.employees[actor].ID {
+		inspection = &checkout.Inspection
+	} else if returnID != "" && s.trips[draft.TripID].EmployeeID == s.employees[actor].ID {
+		inspection = &draft.Inspection
+	} else {
 		s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
 		return dataapi.CommandResult{}, false
 	}
-	if checkout.Status == "expired" {
+	if checkoutID != "" && checkout.Status == "expired" {
 		s.failVersion(w, requestID, http.StatusConflict, "HOLD_EXPIRED", checkout.Inspection.Version)
 		return dataapi.CommandResult{}, false
 	}
-	if checkout.Status != "holding" || checkout.Inspection.Status != "draft" {
+	if checkoutID != "" && checkout.Status != "holding" || returnID != "" && (draft.Status != "draft" || draft.IntentConfirmedAt == nil || s.trips[draft.TripID].Status != "returning") || inspection.Status != "draft" {
 		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
 		return dataapi.CommandResult{}, false
 	}
-	if checkout.Inspection.Version != command.Version {
-		s.failVersion(w, requestID, http.StatusConflict, "STALE_VERSION", checkout.Inspection.Version)
+	if inspection.Version != command.Version {
+		s.failVersion(w, requestID, http.StatusConflict, "STALE_VERSION", inspection.Version)
 		return dataapi.CommandResult{}, false
 	}
-	if len(checkout.Inspection.MissingSlots) != 0 {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]any{"code": "PHOTO_SET_INCOMPLETE", "message": "PHOTO_SET_INCOMPLETE", "retryable": false, "details": map[string]any{"missing_slots": checkout.Inspection.MissingSlots}}, "request_id": requestID})
+	if len(inspection.MissingSlots) != 0 {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": map[string]any{"code": "PHOTO_SET_INCOMPLETE", "message": "PHOTO_SET_INCOMPLETE", "retryable": false, "details": map[string]any{"missing_slots": inspection.MissingSlots}}, "request_id": requestID})
 		return dataapi.CommandResult{}, false
 	}
 	now := s.now().UTC()
-	checkout.Inspection.PhotosConfirmedAt = &now
-	checkout.Inspection.Version++
-	checkout.Inspection.UpdatedAt = now
-	checkout.Version++
-	checkout.UpdatedAt = now
-	s.checkouts[checkoutID] = checkout
-	return commandResult("inspection.confirm_photos", checkout.Inspection), true
+	inspection.PhotosConfirmedAt = &now
+	inspection.Version++
+	inspection.UpdatedAt = now
+	if checkoutID != "" {
+		checkout.Version++
+		checkout.UpdatedAt = now
+		s.checkouts[checkoutID] = checkout
+	} else {
+		draft.Version++
+		draft.UpdatedAt = now
+		s.returns[returnID] = draft
+	}
+	return commandResult("inspection.confirm_photos", *inspection), true
 }
 
 func (s *Server) commandResult(w http.ResponseWriter, r *http.Request, requestID string) {

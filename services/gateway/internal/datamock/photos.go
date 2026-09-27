@@ -76,26 +76,41 @@ func (s *Server) uploadPhoto(w http.ResponseWriter, r *http.Request, requestID s
 	}
 	var checkout dataapi.Checkout
 	var checkoutID string
+	var draft dataapi.Return
+	var returnID string
 	for id, candidate := range s.checkouts {
 		if candidate.Inspection.ID == inspectionID {
 			checkout, checkoutID = candidate, id
 			break
 		}
 	}
-	if checkoutID == "" || checkout.EmployeeID != s.employees[actor].ID {
+	if checkoutID == "" {
+		for id, candidate := range s.returns {
+			if candidate.Inspection.ID == inspectionID {
+				draft, returnID = candidate, id
+				break
+			}
+		}
+	}
+	var inspection *dataapi.Inspection
+	if checkoutID != "" && checkout.EmployeeID == s.employees[actor].ID {
+		inspection = &checkout.Inspection
+	} else if returnID != "" && s.trips[draft.TripID].EmployeeID == s.employees[actor].ID {
+		inspection = &draft.Inspection
+	} else {
 		s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
 		return
 	}
-	if checkout.Status == "expired" {
+	if checkoutID != "" && checkout.Status == "expired" {
 		s.failVersion(w, requestID, http.StatusConflict, "HOLD_EXPIRED", checkout.Inspection.Version)
 		return
 	}
-	if checkout.Status != "holding" || checkout.Inspection.Status != "draft" {
+	if checkoutID != "" && checkout.Status != "holding" || returnID != "" && (draft.Status != "draft" || draft.IntentConfirmedAt == nil || s.trips[draft.TripID].Status != "returning") || inspection.Status != "draft" {
 		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
 		return
 	}
-	if checkout.Inspection.Version != version {
-		s.failVersion(w, requestID, http.StatusConflict, "STALE_VERSION", checkout.Inspection.Version)
+	if inspection.Version != version {
+		s.failVersion(w, requestID, http.StatusConflict, "STALE_VERSION", inspection.Version)
 		return
 	}
 	for _, existing := range s.photos[inspectionID] {
@@ -115,23 +130,29 @@ func (s *Server) uploadPhoto(w http.ResponseWriter, r *http.Request, requestID s
 		s.photos[inspectionID] = make(map[int]photoRecord)
 	}
 	s.photos[inspectionID][slot] = photoRecord{AssetID: assetID, SHA256: sha, SourceEventKey: sourceEventKey, ContentType: contentType}
-	checkout.Inspection.OccupiedSlots = []int{}
-	checkout.Inspection.MissingSlots = []int{}
+	inspection.OccupiedSlots = []int{}
+	inspection.MissingSlots = []int{}
 	for current := 1; current <= 8; current++ {
 		if _, found := s.photos[inspectionID][current]; found {
-			checkout.Inspection.OccupiedSlots = append(checkout.Inspection.OccupiedSlots, current)
+			inspection.OccupiedSlots = append(inspection.OccupiedSlots, current)
 		} else {
-			checkout.Inspection.MissingSlots = append(checkout.Inspection.MissingSlots, current)
+			inspection.MissingSlots = append(inspection.MissingSlots, current)
 		}
 	}
 	now := s.now().UTC()
-	checkout.Inspection.PhotosConfirmedAt = nil
-	checkout.Inspection.Version++
-	checkout.Inspection.UpdatedAt = now
-	checkout.Version++
-	checkout.UpdatedAt = now
-	s.checkouts[checkoutID] = checkout
-	result := dataapi.PhotoUploadResult{AssetID: assetID, SHA256: sha, Inspection: checkout.Inspection}
+	inspection.PhotosConfirmedAt = nil
+	inspection.Version++
+	inspection.UpdatedAt = now
+	if checkoutID != "" {
+		checkout.Version++
+		checkout.UpdatedAt = now
+		s.checkouts[checkoutID] = checkout
+	} else {
+		draft.Version++
+		draft.UpdatedAt = now
+		s.returns[returnID] = draft
+	}
+	result := dataapi.PhotoUploadResult{AssetID: assetID, SHA256: sha, Inspection: *inspection}
 	s.photoResults[identity] = photoAttempt{Signature: signature, Result: result}
 	if err := s.persist(); err != nil {
 		s.restore(before)
