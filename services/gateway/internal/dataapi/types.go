@@ -48,7 +48,7 @@ type Vehicle struct {
 	ManualBlocked          bool             `json:"manual_blocked"`
 	NeedsReview            bool             `json:"needs_review"`
 	CurrentParking         *ParkingLocation `json:"current_parking"`
-	CurrentFuel            *string          `json:"current_fuel"`
+	CurrentFuel            *int             `json:"current_fuel"`
 	CurrentOdometerKM      *int64           `json:"current_odometer_km"`
 	FuelConfirmedAt        *time.Time       `json:"fuel_confirmed_at"`
 	OdometerConfirmedAt    *time.Time       `json:"odometer_confirmed_at"`

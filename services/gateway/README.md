@@ -1,5 +1,5 @@
 # Каркас Go
 
-`cmd/gateway` и `cmd/data-mock` пока обслуживают только `/health/live` (200) и `/health/ready` (503). Это каркас S-03, не подключение к MAX, не реализация mock-контракта и не готовый сервис.
+`cmd/gateway` пока обслуживает только `/health/live` (200) и `/health/ready` (503). `cmd/data-mock` обслуживает `/meta`, `/me`, `/vehicles`, `/vehicles/{id}` из синтетического seed с проверкой service token, версии контракта и actor. Его `/health/ready` остаётся 503: бизнес-команды, snapshot и восстановление ещё не реализованы. `APP_ENV=production` запрещает запуск mock.
 
-Версия Go фиксируется в `go.mod`; официальный SDK MAX закреплён на `v2.4.1`. Локальные проверки после установки Go: из этого каталога `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock`. Реальные маршруты и readiness добавляются в BE-01/BE-02.
+Версия Go фиксируется в `go.mod`; официальный SDK MAX закреплён на `v2.4.1`. Локальные проверки после установки Go: из этого каталога `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock`. Для запуска mock задайте ровно один из `DATA_API_TOKEN` (только локальный dev) или `DATA_API_TOKEN_FILE` (предпочтительно, приватный файл). MAX и Python-сервис пока не подключены.

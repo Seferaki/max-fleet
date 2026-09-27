@@ -23,7 +23,12 @@ func Run(ctx context.Context, addr, component string) error {
 		_, _ = w.Write([]byte(`{"status":"unavailable"}`))
 	})
 
-	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	return Serve(ctx, addr, component, mux)
+}
+
+// Serve runs a component handler with the same graceful shutdown as the scaffold.
+func Serve(ctx context.Context, addr, component string, handler http.Handler) error {
+	server := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.ListenAndServe() }()
 	log.Printf("%s scaffold listening on %s", component, addr)
