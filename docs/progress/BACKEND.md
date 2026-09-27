@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "e729bd72-cef8-4dae-a0af-ac815fee04a9"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T19:32:21Z"
+heartbeat_utc: "2026-09-27T19:34:16Z"
 current_task: BE-01
-current_substep: "Mock authorized asset content проверен; далее типизированный клиент чтения"
-last_verified_code_commit: "2683c3e5b027bd3fb16ab9890adeed7bd0b4bb3c"
+current_substep: "Клиент приватного asset content проверен; далее контрактные сценарии и недостающие маршруты"
+last_verified_code_commit: "6fe1793fe314e103dec346b88a3ea5aae64ff3b2"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: добавить bounded клиент GET /assets/{id}/content и тесты ошибок; затем контрактные сценарии"
+next_step: "BE-01: выполнить контрактные сценарии client→mock, затем реализовать недостающие read/inbox/admin маршруты по плану"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `2683c3e5b027bd3fb16ab9890adeed7bd0b4bb3c` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets и Compose; WIP | Asset client, сценарии контракта, недостающие маршруты |
+| BE-01 | IN_PROGRESS | `6fe1793fe314e103dec346b88a3ea5aae64ff3b2` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets и Compose; WIP | Сценарии контракта, недостающие маршруты |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `6fe1793fe314e103dec346b88a3ea5aae64ff3b2`. Go DataAPI client читает приватный `GET /assets/{id}/content` с actor/service headers, ограничивает ответ 10 MiB, проверяет MIME и повторяет 429/503 с тем же X-Request-ID. HTTP-тесты проверили retry, заголовки, неверный MIME, oversized body и некорректный actor. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Контрактные сценарии целиком и другие маршруты WIP.
 
 - BE-01 code commit: `2683c3e5b027bd3fb16ab9890adeed7bd0b4bb3c`. Mock `GET /assets/{id}/content` читает приватный файл только автору фото или admin, для чужого actor возвращает 404, проверяет SHA и не кеширует ответ. Тесты проверили service token, ACL владельца/admin/чужого actor и ошибку исчезнувшего файла. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Go-клиент этого маршрута и весь набор контрактных сценариев ещё не готовы; BE-01 WIP.
 
