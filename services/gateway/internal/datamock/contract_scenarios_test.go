@@ -64,6 +64,28 @@ func (s scenarioContext) photoSet(count int) dataapi.Checkout {
 	return hold
 }
 
+func (s scenarioContext) readyReturn(damage, parkingAllowed bool) (dataapi.Trip, dataapi.Return) {
+	s.t.Helper()
+	tripID := "20000000-0000-4000-8000-000000000001"
+	returnID := "30000000-0000-4000-8000-000000000001"
+	inspectionID := "40000000-0000-4000-8000-000000000001"
+	employee := s.mock.employees[driverID]
+	employee.ActiveTripID = &tripID
+	s.mock.employees[driverID] = employee
+	s.mock.vehicles[0].Status = "in_trip"
+	beforeOdo, afterOdo, fuel := int64(12000), int64(12025), 50
+	clean, yes := true, true
+	trip := dataapi.Trip{ID: tripID, VehicleID: firstVehicleID, EmployeeID: employee.ID, Status: "returning", ReturnID: &returnID, BeforeInspection: dataapi.Inspection{OdometerKM: &beforeOdo}, Issues: []dataapi.Issue{}, Version: 2, UpdatedAt: s.now}
+	if damage {
+		trip.Issues = append(trip.Issues, dataapi.Issue{ID: "50000000-0000-4000-8000-000000000001", Stage: "after", InspectionID: &inspectionID, Category: "body_damage"})
+	}
+	s.mock.trips[tripID] = trip
+	draft := dataapi.Return{ID: returnID, TripID: tripID, Status: "draft", IntentConfirmedAt: &s.now, ParkingLocation: &dataapi.ParkingLocation{ID: "60000000-0000-4000-8000-000000000001", Latitude: 55.75, Longitude: 37.62, Source: "manual_map", ConfirmedAt: s.now}, Version: 1, UpdatedAt: s.now,
+		Inspection: dataapi.Inspection{ID: inspectionID, Phase: "after", Status: "draft", FuelLevel: &fuel, OdometerKM: &afterOdo, NewDamage: &damage, CabinClean: &clean, ParkingAllowed: &parkingAllowed, KeysReturned: &yes, CarLocked: &yes, OccupiedSlots: []int{1, 2, 3, 4, 5, 6, 7, 8}, MissingSlots: []int{}, PhotosConfirmedAt: &s.now, Version: 1, UpdatedAt: s.now}}
+	s.mock.returns[returnID] = draft
+	return trip, draft
+}
+
 func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "contracts", "scenarios", "v1.json"))
 	if err != nil {
@@ -239,6 +261,34 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 			return err
 		},
+		"return.success": func(s scenarioContext) error {
+			trip, draft := s.readyReturn(false, true)
+			result, err := s.client.ReturnComplete(s.ctx, driverID, draft.ID, draft.Version, "scenario-return-success", nil)
+			if err != nil {
+				return err
+			}
+			completed, err := dataapi.DecodeAggregate[dataapi.Return](result)
+			if err == nil && (completed.Status != "completed" || s.mock.trips[trip.ID].Status != "completed" || s.mock.vehicles[0].Status != "available") {
+				s.t.Fatal("successful return did not release vehicle")
+			}
+			return err
+		},
+		"return.damage": func(s scenarioContext) error {
+			trip, draft := s.readyReturn(true, true)
+			_, err := s.client.ReturnComplete(s.ctx, driverID, draft.ID, draft.Version, "scenario-return-damage", nil)
+			if err == nil && (s.mock.trips[trip.ID].Status != "completed" || s.mock.vehicles[0].Status != "unavailable" || !s.mock.vehicles[0].NeedsReview) {
+				s.t.Fatal("damage return released vehicle")
+			}
+			return err
+		},
+		"return.unsafe": func(s scenarioContext) error {
+			trip, draft := s.readyReturn(false, false)
+			_, err := s.client.ReturnComplete(s.ctx, driverID, draft.ID, draft.Version, "scenario-return-unsafe", nil)
+			if s.mock.trips[trip.ID].Status != "returning" || s.mock.returns[draft.ID].Status != "draft" {
+				s.t.Fatal("unsafe return completed trip")
+			}
+			return err
+		},
 		"schema.same-key-different-body": func(s scenarioContext) error {
 			s.hold("scenario-same-key")
 			_, err := s.client.CheckoutCreate(s.ctx, driverID, "10000000-0000-4000-8000-000000000002", 1, "scenario-same-key", nil)
@@ -283,7 +333,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 		})
 	}
-	if len(runs) != 15 {
+	if len(runs) != 18 {
 		t.Fatal("scenario runner count changed")
 	}
 	for id := range runs {

@@ -43,7 +43,7 @@ func (s *Server) completeReturn(w http.ResponseWriter, requestID, actor string, 
 		return dataapi.CommandResult{}, false
 	}
 	if !*inspection.ParkingAllowed || !*inspection.KeysReturned || !*inspection.CarLocked {
-		s.fail(w, requestID, http.StatusConflict, "UNSAFE_RETURN")
+		s.fail(w, requestID, http.StatusUnprocessableEntity, "UNSAFE_RETURN")
 		return dataapi.CommandResult{}, false
 	}
 	if trip.BeforeInspection.OdometerKM != nil && *inspection.OdometerKM < *trip.BeforeInspection.OdometerKM {
