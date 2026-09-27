@@ -171,3 +171,107 @@ func TestIntegrationLeaseSaveFailureAndV10Upgrade(t *testing.T) {
 		t.Fatalf("lease after storage recovery: %d", status)
 	}
 }
+
+func TestIntegrationCheckpointRequiresDurableEventsAndCAS(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	clock := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
+	server, err := NewWithSnapshotAndWorkerToken("service-token", "worker-token", path, func() time.Time { return clock })
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "/internal/v1/integrations/demo-bot"
+	status, body := integrationRequest(t, server.Handler(), http.MethodPost, base+"/lease", "worker-token", "1.0", "lease-key-001", map[string]any{"worker_id": "poller-a", "expected_version": 1})
+	lease := integrationData[dataapi.IntegrationLease](t, body)
+	if status != http.StatusOK {
+		t.Fatalf("lease: %d", status)
+	}
+	checkpoint := map[string]any{"lease_token": lease.LeaseToken, "expected_version": 2, "previous_marker": nil, "new_marker": "marker-001", "stored_event_ids": []string{"22222222-2222-4222-8222-222222222222"}}
+	status, body = integrationRequest(t, server.Handler(), http.MethodPost, base+"/checkpoint", "worker-token", "1.0", "checkpoint-key-001", checkpoint)
+	if status != http.StatusConflict || integrationErrorCode(t, body) != "COMMAND_IN_PROGRESS" {
+		t.Fatalf("unstored event advanced marker: %d", status)
+	}
+	status, body = sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "store-key-001", "1.0")
+	if status != http.StatusOK {
+		t.Fatalf("store inbox: %d", status)
+	}
+	checkpoint["stored_event_ids"] = []string{storedInbox(t, body).ID}
+	checkpoint["expected_version"] = 1
+	status, body = integrationRequest(t, server.Handler(), http.MethodPost, base+"/checkpoint", "worker-token", "1.0", "checkpoint-key-001", checkpoint)
+	if status != http.StatusConflict || integrationErrorCode(t, body) != "STALE_VERSION" {
+		t.Fatalf("stale version advanced marker: %d", status)
+	}
+	checkpoint["expected_version"] = 2
+	checkpoint["previous_marker"] = "wrong"
+	status, body = integrationRequest(t, server.Handler(), http.MethodPost, base+"/checkpoint", "worker-token", "1.0", "checkpoint-key-001", checkpoint)
+	if status != http.StatusConflict || integrationErrorCode(t, body) != "STALE_VERSION" {
+		t.Fatalf("wrong previous marker advanced: %d", status)
+	}
+	checkpoint["previous_marker"] = nil
+	checkpoint["lease_token"] = "stale-token"
+	status, body = integrationRequest(t, server.Handler(), http.MethodPost, base+"/checkpoint", "worker-token", "1.0", "checkpoint-key-001", checkpoint)
+	if status != http.StatusConflict || integrationErrorCode(t, body) != "LEASE_EXPIRED" {
+		t.Fatalf("stale token advanced marker: %d", status)
+	}
+	checkpoint["lease_token"] = lease.LeaseToken
+	status, body = integrationRequest(t, server.Handler(), http.MethodPost, base+"/checkpoint", "worker-token", "1.0", "checkpoint-key-001", checkpoint)
+	confirmed := integrationData[dataapi.Integration](t, body)
+	if status != http.StatusOK || confirmed.Marker == nil || *confirmed.Marker != "marker-001" || confirmed.Version != 3 {
+		t.Fatalf("checkpoint: %d %+v", status, confirmed)
+	}
+	restarted, err := NewWithSnapshotAndWorkerToken("service-token", "worker-token", path, func() time.Time { return clock })
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, base+"/checkpoint", "worker-token", "1.0", "checkpoint-key-001", checkpoint)
+	replayed := integrationData[dataapi.Integration](t, body)
+	if status != http.StatusOK || replayed.Version != 3 || replayed.Marker == nil || *replayed.Marker != "marker-001" {
+		t.Fatalf("restart replay: %d %+v", status, replayed)
+	}
+	checkpoint["new_marker"] = "marker-002"
+	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, base+"/checkpoint", "worker-token", "1.0", "checkpoint-key-001", checkpoint)
+	if status != http.StatusConflict || integrationErrorCode(t, body) != "IDEMPOTENCY_CONFLICT" {
+		t.Fatalf("changed replay accepted: %d", status)
+	}
+	clock = clock.Add(integrationLeaseDuration + time.Second)
+	checkpoint["new_marker"] = "marker-001"
+	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, base+"/checkpoint", "worker-token", "1.0", "checkpoint-key-001", checkpoint)
+	if status != http.StatusConflict || integrationErrorCode(t, body) != "LEASE_EXPIRED" {
+		t.Fatalf("expired token replay accepted: %d", status)
+	}
+}
+
+func TestIntegrationCheckpointSaveFailureAndV11Upgrade(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	server, err := NewWithSnapshotAndWorkerToken("service-token", "worker-token", path, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "/internal/v1/integrations/demo-bot"
+	status, body := integrationRequest(t, server.Handler(), http.MethodPost, base+"/lease", "worker-token", "1.0", "lease-key-001", map[string]any{"worker_id": "poller-a", "expected_version": 1})
+	lease := integrationData[dataapi.IntegrationLease](t, body)
+	if status != http.StatusOK {
+		t.Fatalf("lease: %d", status)
+	}
+	previous := server.snapshot()
+	previous.Version = 11
+	previous.IntegrationCheckpoints = nil
+	if err := atomicSave(path, previous); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := NewWithSnapshotAndWorkerToken("service-token", "worker-token", path, time.Now)
+	if err != nil || restarted.integrationCheckpoints == nil {
+		t.Fatalf("v11 upgrade: %v", err)
+	}
+	checkpoint := map[string]any{"lease_token": lease.LeaseToken, "expected_version": 2, "previous_marker": nil, "new_marker": "marker-001", "stored_event_ids": []string{}}
+	save := restarted.saveSnapshot
+	restarted.saveSnapshot = func(stateSnapshot) error { return errors.New("synthetic disk failure") }
+	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, base+"/checkpoint", "worker-token", "1.0", "checkpoint-key-001", checkpoint)
+	if status != http.StatusServiceUnavailable || integrationErrorCode(t, body) != "DATABASE_UNAVAILABLE" || restarted.integrations["demo-bot"].Data.Marker != nil || restarted.integrations["demo-bot"].Data.Version != 2 || len(restarted.integrationCheckpoints) != 0 {
+		t.Fatalf("failed snapshot advanced marker: %d", status)
+	}
+	restarted.saveSnapshot = save
+	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, base+"/checkpoint", "worker-token", "1.0", "checkpoint-key-001", checkpoint)
+	if status != http.StatusOK || integrationData[dataapi.Integration](t, body).Version != 3 {
+		t.Fatalf("checkpoint after storage recovery: %d", status)
+	}
+}
