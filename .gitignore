@@ -19,3 +19,30 @@ Thumbs.db
 # Frontend dependencies/build output
 node_modules/
 coverage/
+
+# Python / local tooling
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.local/
+
+# Private credentials, runtime data, backups and local reports
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.dump
+*.sql.gz
+*.sqlite*
+/data/
+/backups/
+/artifacts/
+/test-results/
+/playwright-report/
+compose.override.yaml
+compose.override.yml
