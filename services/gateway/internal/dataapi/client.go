@@ -110,6 +110,13 @@ func (c *Client) Vehicle(ctx context.Context, actorMaxID, vehicleID string) (Veh
 	return get[Vehicle](ctx, c, "/vehicles/"+vehicleID, actorMaxID)
 }
 
+func (c *Client) PreviousInspection(ctx context.Context, actorMaxID, vehicleID string) (Inspection, error) {
+	if !validUUID(vehicleID) {
+		return Inspection{}, errors.New("data-api: invalid vehicle ID")
+	}
+	return get[Inspection](ctx, c, "/vehicles/"+vehicleID+"/previous-inspection", actorMaxID)
+}
+
 func (c *Client) State(ctx context.Context, actorMaxID string) (CurrentState, error) {
 	return get[CurrentState](ctx, c, "/state", actorMaxID)
 }

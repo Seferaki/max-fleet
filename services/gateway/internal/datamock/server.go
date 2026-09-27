@@ -154,6 +154,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /internal/v1/assets/{id}/content", s.authorize(true, s.requireEmployee(s.assetContent)))
 	mux.HandleFunc("GET /internal/v1/vehicles", s.authorize(true, s.requireEmployee(s.listVehicles)))
 	mux.HandleFunc("GET /internal/v1/vehicles/{id}", s.authorize(true, s.requireEmployee(s.vehicle)))
+	mux.HandleFunc("GET /internal/v1/vehicles/{id}/previous-inspection", s.authorize(true, s.requireEmployee(s.previousInspection)))
 	mux.HandleFunc("POST /internal/v1/commands", s.authorize(true, s.requireEmployee(s.execute)))
 	mux.HandleFunc("GET /internal/v1/commands/{key}", s.authorize(true, s.requireEmployee(s.commandResult)))
 	return mux
