@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01 подготовила безопасный локальный ввод и демонстрационный seed; код приложения ещё не написан. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01 и S-02 выполнены; код приложения ещё не написан. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "b78b0297-a9fa-4023-a429-3c2df2f65cfe"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T12:34:15Z"
-current_task: S-02
-current_substep: "Добавить fixtures, сценарии и проверить соответствие всех примеров OpenAPI"
-last_verified_code_commit: "db17a4fb9648de8704860c2c3a32c78affda3c78"
-checkpoint_state: WIP
-contract_commit: null
+heartbeat_utc: "2026-09-27T12:48:29Z"
+current_task: S-03
+current_substep: "Воспроизводимый каркас Go/React и команды проверки"
+last_verified_code_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
+checkpoint_state: VERIFIED
+contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "S-02: добавить fixtures/сценарии, описание внешней карты и MAX SDK; проверить schema validation и contract gate"
+next_step: "S-03: подготовить Go module (SDK v2.4.1, Go 1.24), React/Vite каркас и воспроизводимую проверку; Docker Engine сейчас недоступен"
 human_required: [H-01]
 ```
 
@@ -26,8 +26,8 @@ human_required: [H-01]
 | ID | Статус | Commit / доказательство | Следующий подшаг / блокер |
 |---|---|---|---|
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
-| S-02 | IN_PROGRESS | `db17a4fb9648de8704860c2c3a32c78affda3c78` — 36 маршрутов, 24 команды; WIP | Fixtures, сценарии, внешний API карты, SDK и contract gate |
-| S-03 | TODO | — | См. план |
+| S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
+| S-03 | IN_PROGRESS | — | Go/React каркас, toolchains, bootstrap, CI |
 | BE-01 | TODO | — | См. план |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
@@ -60,6 +60,13 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- S-02 code commit: `aa56f0e05b3c2458eee1fe88550d183ece9075af`; версии обоих OpenAPI — `1.0`. `py contracts/validate.py` → OK: 2 OpenAPI, 36 внутренних маршрутов, 24 command examples, 7 иных examples и 44 сценария. `npx --yes @redocly/cli@2.54.3 lint contracts/data-api.openapi.yaml contracts/map-api.openapi.yaml --config redocly.yaml --format=stylish` → обе схемы valid, предупреждений нет. Сопоставление исходной таблицы в `docs/API_CONTRACT.md` с OpenAPI → все 24 операции совпали.
+- Проверен исходный SDK `github.com/max-messenger/max-bot-api-client-go/v2` на теге `v2.4.1`, commit `b3b7025d53ee2a81b896a0b73ae8b02c672900d6`: имена событий, message/callback ID, image/location и dialog type. В `go.mod` SDK требует Go 1.24; локальный `go` CLI отсутствует, сборка SDK не заявлена.
+- Контракт опубликован в рабочей backend-ветке. Data/QA-ветки пока отсутствуют; им нужен тот же contract commit. Сценарии не запускались на mock/Python, которых пока нет. Docker Engine по-прежнему недоступен; Go build и контейнерный build не проводились.
+- Следующее действие: S-03, затем BE-01. H-01 остаётся независимым human gate для реального MAX.
+
+### Предыдущий S-02 checkpoint
 
 - S-02 code commit: `db17a4fb9648de8704860c2c3a32c78affda3c78`. `py contracts/build_openapi.py` и `openapi-spec-validator 0.9.0` → valid: 36 маршрутов, 24 discriminated-команды, 106 схем. Сверены категории/статусы замечаний с `docs/DATABASE.md`. Описаны фото 8 слотов, версии, очередь inbox/polling/delivery, actor и service/worker tokens. Состояние WIP: fixtures, сценарии и проверка MAX SDK ещё не сделаны.
 - Следующий подшаг: добавить проверяемые JSON-примеры и сценарии, закрепить внешний маршрут карты, проверить схемы и опубликовать contract gate.
