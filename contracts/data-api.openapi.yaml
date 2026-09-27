@@ -1,0 +1,2589 @@
+openapi: 3.1.0
+info:
+  title: MAX Fleet Data API
+  version: '1.0'
+  description: Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID
+    и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом
+    запросе. Версия 1.0 заморожена после contract gate.
+servers:
+- url: http://data-api:8000
+- url: http://data-mock:8000
+tags:
+- name: read
+- name: commands
+- name: photos
+- name: inbox
+- name: integration
+- name: notifications
+- name: health
+components:
+  securitySchemes:
+    DataBearer:
+      type: http
+      scheme: bearer
+      description: DATA_API_TOKEN; только Go.
+    WorkerBearer:
+      type: http
+      scheme: bearer
+      description: WORKER_API_TOKEN; отдельный секрет worker.
+  parameters:
+    ContractVersion:
+      name: X-Contract-Version
+      in: header
+      required: true
+      schema:
+        const: '1.0'
+    RequestID:
+      name: X-Request-ID
+      in: header
+      required: true
+      schema:
+        $ref: '#/components/schemas/UUID'
+    ActorMaxID:
+      name: X-Actor-Max-ID
+      in: header
+      required: true
+      schema:
+        $ref: '#/components/schemas/MaxID'
+      description: Только проверенный Go actor; клиентский заголовок не копировать.
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 200
+      description: 'Стабилен при retry. Область: actor + ключ для команд, route + ключ для worker; тот же ключ с
+        другим body → 409.'
+    PathID:
+      name: id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/UUID'
+    PathSlot:
+      name: slot
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/PhotoSlot'
+  schemas:
+    UUID:
+      type: string
+      format: uuid
+    Timestamp:
+      type: string
+      format: date-time
+      description: RFC3339 UTC
+    MaxID:
+      type: string
+      pattern: ^[1-9][0-9]{0,18}$
+    Version:
+      type: integer
+      minimum: 1
+    FuelLevel:
+      type: integer
+      enum:
+      - 0
+      - 25
+      - 50
+      - 75
+      - 100
+    PhotoSlot:
+      type: integer
+      minimum: 1
+      maximum: 8
+    ErrorCode:
+      type: string
+      enum:
+      - INVALID_REQUEST
+      - UNSUPPORTED_EVENT
+      - INVALID_SERVICE_TOKEN
+      - ACCESS_DENIED
+      - ADMIN_REQUIRED
+      - CANNOT_START_TRIP
+      - NOT_FOUND
+      - VEHICLE_UNAVAILABLE
+      - USER_BUSY
+      - STALE_VERSION
+      - HOLD_EXPIRED
+      - INVALID_STATE
+      - IDEMPOTENCY_CONFLICT
+      - COMMAND_IN_PROGRESS
+      - FILE_TOO_LARGE
+      - UNSUPPORTED_MEDIA
+      - PHOTO_SET_INCOMPLETE
+      - DUPLICATE_PHOTO
+      - ODOMETER_ROLLBACK
+      - LOCATION_REQUIRED
+      - UNSAFE_RETURN
+      - CHALLENGE_INVALID
+      - CHALLENGE_EXPIRED
+      - RULES_REQUIRED
+      - RATE_LIMITED
+      - DATABASE_UNAVAILABLE
+      - STORAGE_UNAVAILABLE
+      - TEMPORARY_FAILURE
+      - LEASE_EXPIRED
+      - CONTRACT_VERSION_UNSUPPORTED
+    Error:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+          maxLength: 500
+        retryable:
+          type: boolean
+        details:
+          type: object
+          additionalProperties: false
+          properties:
+            current_version:
+              oneOf:
+              - $ref: '#/components/schemas/Version'
+              - type: 'null'
+            missing_slots:
+              type: array
+              items:
+                $ref: '#/components/schemas/PhotoSlot'
+              maxItems: 8
+      required:
+      - code
+      - message
+      - retryable
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        error:
+          $ref: '#/components/schemas/Error'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - error
+      - request_id
+    ParkingLocation:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        source:
+          type: string
+          enum:
+          - max_geo
+          - manual_map
+          - admin
+          - seed
+        landmark:
+          oneOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+        confirmed_at:
+          $ref: '#/components/schemas/Timestamp'
+      required:
+      - id
+      - latitude
+      - longitude
+      - source
+      - landmark
+      - confirmed_at
+    Employee:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        max_user_id:
+          $ref: '#/components/schemas/MaxID'
+        display_name:
+          type: string
+          maxLength: 200
+        role:
+          type: string
+          enum:
+          - employee
+          - admin
+        can_start_trip:
+          type: boolean
+        active_trip_id:
+          oneOf:
+          - $ref: '#/components/schemas/UUID'
+          - type: 'null'
+        version:
+          $ref: '#/components/schemas/Version'
+        updated_at:
+          $ref: '#/components/schemas/Timestamp'
+      required:
+      - id
+      - max_user_id
+      - display_name
+      - role
+      - can_start_trip
+      - active_trip_id
+      - version
+      - updated_at
+    Me:
+      type: object
+      additionalProperties: false
+      properties:
+        allowed:
+          type: boolean
+        max_user_id:
+          $ref: '#/components/schemas/MaxID'
+        employee:
+          oneOf:
+          - $ref: '#/components/schemas/Employee'
+          - type: 'null'
+      required:
+      - allowed
+      - max_user_id
+      - employee
+    Vehicle:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        plate:
+          type: string
+          maxLength: 20
+        make:
+          type: string
+          maxLength: 100
+        model:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 1000
+        key_instructions:
+          type: string
+          maxLength: 1000
+        status:
+          type: string
+          enum:
+          - available
+          - holding
+          - in_trip
+          - unavailable
+        manual_blocked:
+          type: boolean
+        needs_review:
+          type: boolean
+        current_parking:
+          oneOf:
+          - $ref: '#/components/schemas/ParkingLocation'
+          - type: 'null'
+        current_fuel:
+          oneOf:
+          - $ref: '#/components/schemas/FuelLevel'
+          - type: 'null'
+        current_odometer_km:
+          oneOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+        fuel_confirmed_at:
+          oneOf:
+          - $ref: '#/components/schemas/Timestamp'
+          - type: 'null'
+        odometer_confirmed_at:
+          oneOf:
+          - $ref: '#/components/schemas/Timestamp'
+          - type: 'null'
+        known_nonblocking_issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/UUID'
+        version:
+          $ref: '#/components/schemas/Version'
+        updated_at:
+          $ref: '#/components/schemas/Timestamp'
+      required:
+      - id
+      - plate
+      - make
+      - model
+      - description
+      - key_instructions
+      - status
+      - manual_blocked
+      - needs_review
+      - current_parking
+      - current_fuel
+      - current_odometer_km
+      - fuel_confirmed_at
+      - odometer_confirmed_at
+      - known_nonblocking_issues
+      - version
+      - updated_at
+    Inspection:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        phase:
+          type: string
+          enum:
+          - before
+          - after
+        status:
+          type: string
+          enum:
+          - draft
+          - finalized
+          - abandoned
+        fuel_level:
+          oneOf:
+          - $ref: '#/components/schemas/FuelLevel'
+          - type: 'null'
+        odometer_km:
+          oneOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+        new_damage:
+          oneOf:
+          - type: boolean
+          - type: 'null'
+        cabin_clean:
+          oneOf:
+          - type: boolean
+          - type: 'null'
+        parking_allowed:
+          oneOf:
+          - type: boolean
+          - type: 'null'
+        keys_returned:
+          oneOf:
+          - type: boolean
+          - type: 'null'
+        car_locked:
+          oneOf:
+          - type: boolean
+          - type: 'null'
+        occupied_slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/PhotoSlot'
+          maxItems: 8
+        missing_slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/PhotoSlot'
+          maxItems: 8
+        photos_confirmed_at:
+          oneOf:
+          - $ref: '#/components/schemas/Timestamp'
+          - type: 'null'
+        version:
+          $ref: '#/components/schemas/Version'
+        updated_at:
+          $ref: '#/components/schemas/Timestamp'
+      required:
+      - id
+      - phase
+      - status
+      - fuel_level
+      - odometer_km
+      - new_damage
+      - cabin_clean
+      - parking_allowed
+      - keys_returned
+      - car_locked
+      - occupied_slots
+      - missing_slots
+      - photos_confirmed_at
+      - version
+      - updated_at
+    Checkout:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        vehicle_id:
+          $ref: '#/components/schemas/UUID'
+        employee_id:
+          $ref: '#/components/schemas/UUID'
+        status:
+          type: string
+          enum:
+          - holding
+          - started
+          - cancelled
+          - expired
+          - rejected
+        step:
+          type: string
+          maxLength: 80
+        expires_at:
+          $ref: '#/components/schemas/Timestamp'
+        intent_confirmed_at:
+          oneOf:
+          - $ref: '#/components/schemas/Timestamp'
+          - type: 'null'
+        rules_version_id:
+          oneOf:
+          - $ref: '#/components/schemas/UUID'
+          - type: 'null'
+        rules_accepted_at:
+          oneOf:
+          - $ref: '#/components/schemas/Timestamp'
+          - type: 'null'
+        no_new_issues:
+          oneOf:
+          - type: boolean
+          - type: 'null'
+        inspection:
+          $ref: '#/components/schemas/Inspection'
+        version:
+          $ref: '#/components/schemas/Version'
+        updated_at:
+          $ref: '#/components/schemas/Timestamp'
+      required:
+      - id
+      - vehicle_id
+      - employee_id
+      - status
+      - step
+      - expires_at
+      - intent_confirmed_at
+      - rules_version_id
+      - rules_accepted_at
+      - no_new_issues
+      - inspection
+      - version
+      - updated_at
+    Return:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        trip_id:
+          $ref: '#/components/schemas/UUID'
+        status:
+          type: string
+          enum:
+          - draft
+          - cancelled
+          - completed
+          - admin_closed
+        step:
+          type: string
+          maxLength: 80
+        intent_confirmed_at:
+          oneOf:
+          - $ref: '#/components/schemas/Timestamp'
+          - type: 'null'
+        parking_location:
+          oneOf:
+          - $ref: '#/components/schemas/ParkingLocation'
+          - type: 'null'
+        inspection:
+          $ref: '#/components/schemas/Inspection'
+        version:
+          $ref: '#/components/schemas/Version'
+        updated_at:
+          $ref: '#/components/schemas/Timestamp'
+      required:
+      - id
+      - trip_id
+      - status
+      - step
+      - intent_confirmed_at
+      - parking_location
+      - inspection
+      - version
+      - updated_at
+    Trip:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        vehicle_id:
+          $ref: '#/components/schemas/UUID'
+        employee_id:
+          $ref: '#/components/schemas/UUID'
+        checkout_id:
+          $ref: '#/components/schemas/UUID'
+        status:
+          type: string
+          enum:
+          - active
+          - returning
+          - completed
+          - closed_by_admin
+        started_at:
+          $ref: '#/components/schemas/Timestamp'
+        ended_at:
+          oneOf:
+          - $ref: '#/components/schemas/Timestamp'
+          - type: 'null'
+        return_id:
+          oneOf:
+          - $ref: '#/components/schemas/UUID'
+          - type: 'null'
+        missing_data:
+          type: array
+          items:
+            type: string
+            maxLength: 80
+        version:
+          $ref: '#/components/schemas/Version'
+        updated_at:
+          $ref: '#/components/schemas/Timestamp'
+      required:
+      - id
+      - vehicle_id
+      - employee_id
+      - checkout_id
+      - status
+      - started_at
+      - ended_at
+      - return_id
+      - missing_data
+      - version
+      - updated_at
+    Issue:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        vehicle_id:
+          $ref: '#/components/schemas/UUID'
+        author_id:
+          $ref: '#/components/schemas/UUID'
+        category:
+          type: string
+          enum:
+          - body_damage
+          - mechanical
+          - dirty
+          - keys
+          - other
+        description:
+          type: string
+          maxLength: 1000
+        status:
+          type: string
+          enum:
+          - new
+          - in_progress
+          - resolved
+          - known_nonblocking
+        trip_id:
+          oneOf:
+          - $ref: '#/components/schemas/UUID'
+          - type: 'null'
+        inspection_id:
+          oneOf:
+          - $ref: '#/components/schemas/UUID'
+          - type: 'null'
+        asset_ids:
+          type: array
+          items:
+            $ref: '#/components/schemas/UUID'
+          maxItems: 3
+        version:
+          $ref: '#/components/schemas/Version'
+        updated_at:
+          $ref: '#/components/schemas/Timestamp'
+      required:
+      - id
+      - vehicle_id
+      - author_id
+      - category
+      - description
+      - status
+      - trip_id
+      - inspection_id
+      - asset_ids
+      - version
+      - updated_at
+    Challenge:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        purpose:
+          type: string
+          enum:
+          - checkout
+          - return
+          - admin
+        question:
+          type: string
+          maxLength: 200
+        options:
+          type: array
+          items:
+            type: string
+            maxLength: 100
+          maxItems: 4
+        expires_at:
+          $ref: '#/components/schemas/Timestamp'
+        attempts_remaining:
+          type: integer
+          minimum: 0
+          maximum: 3
+      required:
+      - id
+      - purpose
+      - question
+      - options
+      - expires_at
+      - attempts_remaining
+    Rules:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        version_label:
+          type: string
+          maxLength: 50
+        body:
+          type: string
+          maxLength: 10000
+      required:
+      - id
+      - version_label
+      - body
+    CurrentState:
+      type: object
+      additionalProperties: false
+      properties:
+        checkout:
+          oneOf:
+          - $ref: '#/components/schemas/Checkout'
+          - type: 'null'
+        trip:
+          oneOf:
+          - $ref: '#/components/schemas/Trip'
+          - type: 'null'
+        return:
+          oneOf:
+          - $ref: '#/components/schemas/Return'
+          - type: 'null'
+        next_step:
+          oneOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+        conversation_version:
+          $ref: '#/components/schemas/Version'
+      required:
+      - checkout
+      - trip
+      - return
+      - next_step
+      - conversation_version
+    Meta:
+      type: object
+      additionalProperties: false
+      properties:
+        contract_version:
+          const: '1.0'
+        build_sha:
+          type: string
+          maxLength: 64
+        mode:
+          type: string
+          enum:
+          - mock
+          - real
+        capabilities:
+          type: array
+          items:
+            type: string
+            maxLength: 80
+      required:
+      - contract_version
+      - build_sha
+      - mode
+      - capabilities
+    AdminSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        available:
+          type: integer
+          minimum: 0
+        holding:
+          type: integer
+          minimum: 0
+        active_trips:
+          type: integer
+          minimum: 0
+        returning:
+          type: integer
+          minimum: 0
+        needs_review:
+          type: integer
+          minimum: 0
+      required:
+      - available
+      - holding
+      - active_trips
+      - returning
+      - needs_review
+    PhotoUploadResult:
+      type: object
+      additionalProperties: false
+      properties:
+        asset_id:
+          $ref: '#/components/schemas/UUID'
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        inspection:
+          $ref: '#/components/schemas/Inspection'
+      required:
+      - asset_id
+      - sha256
+      - inspection
+    StagedAsset:
+      type: object
+      additionalProperties: false
+      properties:
+        asset_id:
+          $ref: '#/components/schemas/UUID'
+        expires_at:
+          $ref: '#/components/schemas/Timestamp'
+      required:
+      - asset_id
+      - expires_at
+    VehiclePage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vehicle'
+        next_cursor:
+          oneOf:
+          - type: string
+            maxLength: 2048
+          - type: 'null'
+      required:
+      - items
+      - next_cursor
+    TripPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Trip'
+        next_cursor:
+          oneOf:
+          - type: string
+            maxLength: 2048
+          - type: 'null'
+      required:
+      - items
+      - next_cursor
+    IssuePage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Issue'
+        next_cursor:
+          oneOf:
+          - type: string
+            maxLength: 2048
+          - type: 'null'
+      required:
+      - items
+      - next_cursor
+    EmployeePage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Employee'
+        next_cursor:
+          oneOf:
+          - type: string
+            maxLength: 2048
+          - type: 'null'
+      required:
+      - items
+      - next_cursor
+    MetaResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/Meta'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    MeResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/Me'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    CurrentStateResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/CurrentState'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    CheckoutResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/Checkout'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    ReturnResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/Return'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    RulesResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/Rules'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    VehicleResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/Vehicle'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    InspectionResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/Inspection'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    TripResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/Trip'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    IssueResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/Issue'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    EmployeeResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/Employee'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    AdminSummaryResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminSummary'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    PhotoUploadResultResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/PhotoUploadResult'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    StagedAssetResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/StagedAsset'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    ChallengeResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/Challenge'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    VehiclePageResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/VehiclePage'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    TripPageResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/TripPage'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    IssuePageResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/IssuePage'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+    EmployeePageResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/EmployeePage'
+        request_id:
+          $ref: '#/components/schemas/UUID'
+      required:
+      - data
+      - request_id
+paths:
+  /internal/v1/meta:
+    get:
+      tags:
+      - read
+      operationId: getMeta
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetaResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/me:
+    get:
+      tags:
+      - read
+      operationId: getMe
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/state:
+    get:
+      tags:
+      - read
+      operationId: getCurrentState
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentStateResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/checkouts/{id}:
+    get:
+      tags:
+      - read
+      operationId: getCheckout
+      description: Только своё оформление либо разрешённый admin-контекст.
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/returns/{id}:
+    get:
+      tags:
+      - read
+      operationId: getReturn
+      description: Только собственный возврат либо разрешённый admin-контекст.
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReturnResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/rules/current:
+    get:
+      tags:
+      - read
+      operationId: getCurrentRules
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RulesResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/vehicles:
+    get:
+      tags:
+      - read
+      operationId: listVehicles
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      - name: available
+        in: query
+        required: false
+        schema:
+          type: boolean
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 2048
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VehiclePageResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/vehicles/{id}:
+    get:
+      tags:
+      - read
+      operationId: getVehicle
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VehicleResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/vehicles/{id}/previous-inspection:
+    get:
+      tags:
+      - read
+      operationId: getPreviousInspection
+      description: Обезличенная проекция только последнего finalized after-осмотра; не раскрывать автора, чужую
+        поездку и произвольные asset ID.
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InspectionResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/trips:
+    get:
+      tags:
+      - read
+      operationId: listMyTrips
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      - name: scope
+        in: query
+        required: true
+        schema:
+          const: mine
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 2048
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripPageResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/trips/{id}:
+    get:
+      tags:
+      - read
+      operationId: getTrip
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/inspections/{id}:
+    get:
+      tags:
+      - read
+      operationId: getInspection
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InspectionResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/admin/summary:
+    get:
+      tags:
+      - read
+      operationId: getAdminSummary
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSummaryResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/admin/trips:
+    get:
+      tags:
+      - read
+      operationId: listAdminTrips
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      - name: state
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - active
+          - returning
+          - completed
+          - closed_by_admin
+      - name: employee_id
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/UUID'
+      - name: vehicle_id
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/UUID'
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 2048
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripPageResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/admin/employees:
+    get:
+      tags:
+      - read
+      operationId: listAdminEmployees
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 2048
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeePageResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/admin/issues:
+    get:
+      tags:
+      - read
+      operationId: listAdminIssues
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - new
+          - in_progress
+          - resolved
+          - known_nonblocking
+      - name: vehicle_id
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/UUID'
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 2048
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuePageResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/issues/{id}:
+    get:
+      tags:
+      - read
+      operationId: getIssue
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/admin/employees/{id}:
+    get:
+      tags:
+      - read
+      operationId: getAdminEmployee
+      description: ''
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: Подтверждённое состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeResponse'
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
