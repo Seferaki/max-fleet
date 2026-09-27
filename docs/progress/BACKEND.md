@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03 выполнены; mock покрывает основные сценарии поездки и возврата, durable inbox ingest, но lease-маршруты очередей и часть команд ещё отсутствуют. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03 выполнены; mock покрывает основные сценарии поездки и возврата, durable inbox и polling lease, но marker checkpoint, notifications и часть команд ещё отсутствуют. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "de2e37a7-1a31-4a70-81c1-a9988c8c22bf"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T23:11:45Z"
+heartbeat_utc: "2026-09-27T23:17:53Z"
 current_task: BE-01
-current_substep: "Typed WorkerClient проверен; далее integrations/notifications"
-last_verified_code_commit: "ed954e0aa865785e37c2ccea1549e7284492b591"
+current_substep: "Polling integration lease проверен; далее marker checkpoint"
+last_verified_code_commit: "0f1bbaf14b13b2f06d68c0bdc799ed30ba827912"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: реализовать integrations lease/checkpoint и notifications claim/ack/retry; затем расширить исполняемый contract runner и восстановление; WIP"
+next_step: "BE-01: реализовать integrations checkpoint с CAS marker и durable stored_event_ids, затем notifications claim/ack/retry; WIP"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `0f1bbaf14b13b2f06d68c0bdc799ed30ba827912`. Persistent mock обслуживает `GET /integrations/demo-bot` и `POST /integrations/demo-bot/lease` с отдельным WorkerBearer, expected_version, single-poller арендой 2 минуты, идемпотентным повтором до expiry, продлением только тем же worker и fencing устаревшего token. Snapshot v11 хранит состояние/ключи, v10 мигрирует синтетическую интеграцию; failed save откатывает память и даёт 503. `go test ./internal/datamock -run '^TestIntegrationLease' -count=1 -v` → 2 PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `docker build -f services/gateway/Dockerfile.data-mock -t max-fleet-data-mock:integration-lease services/gateway` → exit 0. [CI предыдущего typed WorkerClient checkpoint](https://github.com/Seferaki/max-fleet/actions/runs/36357891863) → пять jobs success; CI этого SHA ещё не проверен. Marker checkpoint и notifications WIP; реальный MAX/Python не проверены.
 
 - BE-01 code commit: `ed954e0aa865785e37c2ccea1549e7284492b591`. Отдельный `dataapi.WorkerClient` использует WorkerBearer без X-Actor-Max-ID, те же request ID, Idempotency-Key и bounded retry transport, что и actor client. Методы `StoreInbox`, `ClaimInbox`, `AckInbox`, `RetryInbox` типизированы. `go test ./internal/dataapi ./internal/datamock -run 'TestWorkerClient' -count=1 -v` → 3 PASS: стабильные headers/body при 503, invalid input до сети, полный цикл с отдельным mock и отказ service token на worker route. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `... -Direction docker` → три image build exit 0. [CI предыдущего fenced inbox checkpoint](https://github.com/Seferaki/max-fleet/actions/runs/36357678244) → пять jobs success; CI нового SHA ещё не проверен. Integrations/notifications и часть 44 runner-сценариев остаются WIP.
 
