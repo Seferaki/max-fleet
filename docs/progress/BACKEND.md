@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "cb546f02-a21d-4237-a7fa-726329b9b908"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T19:57:44Z"
+heartbeat_utc: "2026-09-27T19:59:51Z"
 current_task: BE-01
-current_substep: "21 из 44 контрактных сценариев исполнен client→mock; далее недостающие маршруты"
-last_verified_code_commit: "9efe7df0d758610da057488046e82b77f04a0d5c"
+current_substep: "Admin summary client/mock проверен; 22/44 сценария исполнены"
+last_verified_code_commit: "b0ce55728fb7882038feae872b2c42684f200328"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: реализовать admin read/inbox маршруты по контракту, затем продолжить исполняемые сценарии; WIP"
+next_step: "BE-01: реализовать admin trips/employees/issues read с ACL/pagination, затем inbox маршруты; WIP"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `9efe7df0d758610da057488046e82b77f04a0d5c` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets и Compose; WIP | 21/44 сценариев исполнен; admin/inbox маршруты |
+| BE-01 | IN_PROGRESS | `b0ce55728fb7882038feae872b2c42684f200328` — клиент, mock-чтения/recovery, hold/snapshot, 8+8 фото, math take/return, правила, start/return, issues/assets, admin summary и Compose; WIP | 22/44 сценария исполнены; admin/inbox маршруты |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `b0ce55728fb7882038feae872b2c42684f200328`. Client/mock реализуют `GET /admin/summary`: 6 счётчиков available/holding/active_trips/returning/needs_review/open_issues, роль admin проверяется в данных; обычный employee получает 403. Тест прошёл состояния seed, hold и before issue, проверил освобождение holding и рост needs_review/open_issues. Контрактный identity.admin теперь исполняется; всего 22/44 выбранных кейса PASS. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Остальные admin/inbox маршруты WIP.
 
 - BE-01 code commit: `9efe7df0d758610da057488046e82b77f04a0d5c`. Runner добавил identity.wrong-owner, return.cancel-new и schema.stale. После cancel новый return и inspection ID, 8 слотов пустые и точка не наследуется; чужой водитель получает 404, устаревшая версия — 409 без завершения trip. 21/44 кейсов PASS. `go test -run TestContractScenarioSubsetAgainstHTTPMock -v ./internal/datamock`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Остальные 23 кейса runner не исполнил; BE-01 WIP.
 
