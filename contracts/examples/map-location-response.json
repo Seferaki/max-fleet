@@ -1,0 +1,10 @@
+{
+  "data": {
+    "return_id": "60000000-0000-4000-8000-000000000002",
+    "return_version": 3,
+    "point": {"latitude": 55.752, "longitude": 37.622},
+    "source": "manual_map",
+    "selected": true
+  },
+  "request_id": "a0000000-0000-4000-8000-000000000005"
+}

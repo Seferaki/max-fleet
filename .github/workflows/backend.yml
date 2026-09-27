@@ -1,0 +1,71 @@
+name: backend
+
+on:
+  push:
+    branches: [codex/backend]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Проверить tracked-файлы без вывода содержимого
+        run: python3 scripts/check-secrets.py --tracked
+
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.1'
+      - run: python -m pip install -r contracts/requirements-dev.txt
+      - run: python contracts/validate.py
+      - run: npx --yes @redocly/cli@2.54.3 lint contracts/data-api.openapi.yaml contracts/map-api.openapi.yaml --config redocly.yaml --format=stylish
+
+  gateway:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/gateway/go.mod
+          cache-dependency-path: services/gateway/go.sum
+      - run: go test ./...
+      - run: go vet ./...
+      - run: go build ./cmd/gateway ./cmd/data-mock
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.1'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: docker build -f services/gateway/Dockerfile.gateway -t max-fleet-gateway:scaffold services/gateway
+      - run: docker build -f services/gateway/Dockerfile.data-mock -t max-fleet-data-mock:scaffold services/gateway
+      - run: docker build -f web/Dockerfile -t max-fleet-web:scaffold web

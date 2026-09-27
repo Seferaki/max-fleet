@@ -1,0 +1,168 @@
+openapi: 3.1.0
+info:
+  title: MAX Fleet map API (Go)
+  version: '1.0'
+  description: >-
+    Внешний API экрана ручного выбора парковки. Go проверяет подлинность raw MAX
+    WebApp.initData, auth_date не старше 1 часа и опережение часов не более 60 с
+    при каждом запросе; сравнение HMAC постоянного времени. Actor берётся только
+    из подписанных данных. Сотрудник может читать и менять только свой draft return.
+    Python повторно проверяет владение и expected_version. Центр карты не является
+    выбранной точкой; selected=false до явного действия пользователя.
+servers:
+  - url: /
+security:
+  - MaxInitData: []
+paths:
+  /api/v1/returns/{id}/context:
+    get:
+      operationId: getReturnMapContext
+      summary: Получить контекст карты возврата
+      parameters:
+        - $ref: '#/components/parameters/ReturnID'
+      responses:
+        '200':
+          description: Контекст доступного черновика
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContextResponse'
+        '401': { $ref: '#/components/responses/InvalidInitData' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaleVersion' }
+  /api/v1/returns/{id}/location:
+    post:
+      operationId: saveManualMapLocation
+      summary: Сохранить выбранную точку парковки
+      description: >-
+        Повторять с тем же Idempotency-Key после timeout. Только явно выбранная
+        пользователем точка; нет GPS и разрешения на геолокацию — не препятствие.
+        При временной ошибке UI удерживает выбранный маркер и позволяет повторить.
+      parameters:
+        - $ref: '#/components/parameters/ReturnID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationRequest'
+      responses:
+        '200':
+          description: Подтверждённое сохранение черновика
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/InvalidInitData' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/StaleVersion' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+components:
+  securitySchemes:
+    MaxInitData:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: >-
+        Authorization: MaxInitData <raw WebApp.initData>. Передача в query запрещена;
+        не логировать, не сохранять в VITE_*, не доверять initDataUnsafe.
+  parameters:
+    ReturnID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 200 }
+  schemas:
+    Point:
+      type: object
+      additionalProperties: false
+      required: [latitude, longitude]
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+    Context:
+      type: object
+      additionalProperties: false
+      required: [return_id, return_version, selected, selected_point, initial_center]
+      properties:
+        return_id: { type: string, format: uuid }
+        return_version: { type: integer, minimum: 1 }
+        selected: { type: boolean }
+        selected_point:
+          oneOf:
+            - $ref: '#/components/schemas/Point'
+            - { type: 'null' }
+        initial_center:
+          $ref: '#/components/schemas/Point'
+    ContextResponse:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: '#/components/schemas/Context' }
+        request_id: { type: string, format: uuid }
+    LocationRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, latitude, longitude, confirmed]
+      properties:
+        expected_version: { type: integer, minimum: 1 }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        landmark: { type: string, maxLength: 500 }
+        confirmed: { const: true }
+    Location:
+      type: object
+      additionalProperties: false
+      required: [return_id, return_version, point, source, selected]
+      properties:
+        return_id: { type: string, format: uuid }
+        return_version: { type: integer, minimum: 1 }
+        point: { $ref: '#/components/schemas/Point' }
+        source: { const: manual_map }
+        selected: { const: true }
+    LocationResponse:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data: { $ref: '#/components/schemas/Location' }
+        request_id: { type: string, format: uuid }
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error, request_id]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, retryable]
+          properties:
+            code:
+              enum: [INVALID_REQUEST, INVALID_INIT_DATA, NOT_FOUND, STALE_VERSION, TEMPORARY_FAILURE]
+            message: { type: string, maxLength: 500 }
+            retryable: { type: boolean }
+        request_id: { type: string, format: uuid }
+  responses:
+    InvalidRequest:
+      description: Неверный ввод
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    InvalidInitData:
+      description: Подпись или срок initData недействительны
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    NotFound:
+      description: Чужой или отсутствующий возврат
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    StaleVersion:
+      description: Состояние возврата изменилось
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    Unavailable:
+      description: Временная ошибка сохранения; точка остаётся в UI
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }

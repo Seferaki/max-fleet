@@ -1,0 +1,10 @@
+{
+  "data": {
+    "return_id": "60000000-0000-4000-8000-000000000002",
+    "return_version": 2,
+    "selected": false,
+    "selected_point": null,
+    "initial_center": {"latitude": 55.751, "longitude": 37.621}
+  },
+  "request_id": "a0000000-0000-4000-8000-000000000004"
+}

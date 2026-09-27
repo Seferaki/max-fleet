@@ -1,6 +1,7 @@
 # Go
 /bin/
 /dist/
+web/dist/
 *.exe
 *.test
 *.out

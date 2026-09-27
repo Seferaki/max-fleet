@@ -1,6 +1,6 @@
 # Настройка, Docker и минимальные действия человека
 
-Сейчас это инструкции к будущей реализации, не отчёт о работающем окружении. Скрипты и Compose создаются в S-03, BE-11, DE-01 и INT-01. Агент выполняет технические шаги сам; человек нужен для своих аккаунтов, приватных данных, оплаты/решений владельца и устройств.
+S-03 добавила локальные `scripts/bootstrap.ps1`, `scripts/bootstrap.sh`, `scripts/verify.ps1`, `scripts/verify.sh` и Dockerfile каркаса. Они не означают готовность приложения: Compose и доменные сервисы появятся в BE-01, DE-01 и INT. Агент выполняет технические шаги сам; человек нужен для своих аккаунтов, приватных данных, оплаты/решений владельца и устройств.
 
 ## 1. Human gates
 
@@ -78,6 +78,10 @@ HUMAN_REQUIRED: H-01
 5. Проверяет git check-ignore для secret paths внутри repo; staged files и secret scan. .dockerignore также исключает .env/secrets/backup.
 6. При смене ноутбука человек один раз заполняет локальные secrets либо пользуется согласованным приватным менеджером; Git переносит только код.
 7. При подозрении на попадание токена в Git/лог сначала отозвать/заменить у провайдера, затем убрать источник утечки. Простое удаление последнего файла не удаляет историю.
+
+На Windows агент запускает `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap.ps1`: восемь случайных service/DB/storage секретов создаются в `%LOCALAPPDATA%\MAXFleet\secrets` с ACL текущего пользователя, существующие не перезаписываются. Токен MAX вводит владелец отдельно через `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/enter-max-token.ps1 -Enter`; `-Check` показывает только наличие. На Unix `sh scripts/bootstrap.sh` создаёт те же service/DB/storage секреты в `${XDG_DATA_HOME:-$HOME/.local/share}/max-fleet/secrets` с правами 700/600. Реальные DATABASE_URL и seed оформляются позже вместе с Python, значения не копируются в чат.
+
+Проверки: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` либо `sh scripts/verify.sh all`. Направления: `contract`, `gateway`, `web`, `docker`. Отсутствующий инструмент/Engine даёт ошибку, а не зелёный результат. Для pre-commit проверки выбранных файлов: `py scripts/check-secrets.py --staged`; CI сканирует tracked-файлы без печати содержимого.
 
 Не отправлять настоящие фото/PII в CI artifacts, public Issues/PR или сторонние сервисы проверки. Локальные секреты этим пакетом документации не создавались.
 
