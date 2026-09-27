@@ -309,6 +309,29 @@ func TestTakeChallengePersistsAndRulesRequireAnswer(t *testing.T) {
 	if err != nil || restoredAfter.PhotosConfirmedAt != nil || len(restoredAfter.OccupiedSlots) != 8 {
 		t.Fatalf("after replacement restart: %+v %v", restoredAfter, err)
 	}
+	returnForLocation, err := client.Return(ctx, driverID, fresh.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	point := dataapi.LocationInput{Latitude: 55.75, Longitude: 37.62, Source: "manual_map", Confirmed: true}
+	_, err = client.ReturnSetLocation(ctx, driverID, fresh.ID, returnForLocation.Version-1, "stale-location-1", nil, point)
+	expectAPIError(t, err, "STALE_VERSION")
+	_, err = client.ReturnSetLocation(ctx, driverID, fresh.ID, returnForLocation.Version, "unconfirmed-location-1", nil, dataapi.LocationInput{Latitude: 55.75, Longitude: 37.62, Source: "manual_map"})
+	if err == nil {
+		t.Fatal("unconfirmed point accepted")
+	}
+	_, err = client.ReturnSetLocation(ctx, driverID, fresh.ID, returnForLocation.Version, "fake-admin-location-1", nil, dataapi.LocationInput{Latitude: 55.75, Longitude: 37.62, Source: "admin", Confirmed: true})
+	expectAPIError(t, err, "ACCESS_DENIED")
+	locationResult, err := client.ReturnSetLocation(ctx, driverID, fresh.ID, returnForLocation.Version, "manual-location-1", nil, point)
+	if err != nil {
+		t.Fatal(err)
+	}
+	located, err := dataapi.DecodeAggregate[dataapi.Return](locationResult)
+	if err != nil || located.ParkingLocation == nil || located.ParkingLocation.Source != "manual_map" || located.ParkingLocation.Latitude != point.Latitude {
+		t.Fatalf("manual location: %+v %v", located, err)
+	}
+	_, err = client.ReturnSetLocation(ctx, "8000000000000000002", fresh.ID, located.Version, "foreign-location-1", nil, point)
+	expectAPIError(t, err, "NOT_FOUND")
 }
 
 func TestTakeChallengeThreeErrorsAndTTL(t *testing.T) {
