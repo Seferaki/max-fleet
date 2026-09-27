@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "de2e37a7-1a31-4a70-81c1-a9988c8c22bf"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T23:01:35Z"
+heartbeat_utc: "2026-09-27T23:07:53Z"
 current_task: BE-01
-current_substep: "Inbox claim с actor order проверен; далее ack/retry и fencing в командах"
-last_verified_code_commit: "908caa149d903335bdfb5701849feb882c837e4c"
+current_substep: "Inbox ingest/claim/ack/retry и command fencing проверены; далее Worker HTTP client"
+last_verified_code_commit: "a3aaaba3ef0d743055cb812b41647cf1bfecc3b2"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: добавить inbox ack/retry с текущим lease token и проверку fencing в доменных командах; затем worker client, notifications/integrations; WIP"
+next_step: "BE-01: добавить typed Worker HTTP client для inbox; затем integrations/notifications и расширить исполняемый contract runner; WIP"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `908caa149d903335bdfb5701849feb882c837e4c` — durable inbox ingest/claim; прежние клиент/mock-сценарии; WIP | 22/44 runner-сценария; ack/retry/fencing, notification/integration маршруты |
+| BE-01 | IN_PROGRESS | `a3aaaba3ef0d743055cb812b41647cf1bfecc3b2` — durable inbox ingest/claim/ack/retry и command fencing; WIP | 22/44 runner-сценария; Worker client, notification/integration маршруты |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `a3aaaba3ef0d743055cb812b41647cf1bfecc3b2`. Mock `POST /inbox/{id}/ack|retry` принимает только текущий lease token до срока, сохраняет переход в snapshot v10 и повторяет ответ по тому же Idempotency-Key; после пяти неудачных попыток event → dead. Доменная команда с X-Inbox-Event-ID/X-Inbox-Lease под той же mutex проверяет actor и действующий token до replay/idempotency и мутации: старый worker получает 409 `LEASE_EXPIRED`. `go test ./internal/datamock -run '^TestInbox' -count=1 -v` → 12 PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `docker build -f services/gateway/Dockerfile.data-mock -t max-fleet-data-mock:lease services/gateway` → exit 0. Тесты проверили неверный/устаревший token, другого actor, retry scheduling, dead, restart, failed save и загрузку v9 snapshot. [CI предыдущего claim checkpoint](https://github.com/Seferaki/max-fleet/actions/runs/36357314465) → пять jobs success; CI для нового SHA ещё не проверен. Worker-клиент/notification/integration маршруты не реализованы; BE-01 WIP.
 
 - BE-01 code commit: `908caa149d903335bdfb5701849feb882c837e4c`. Mock `POST /inbox/claim` выдаёт аренду на 2 минуты, не более одного события для одного actor в пачке и только самое раннее незавершённое событие actor. Повтор с тем же Idempotency-Key возвращает прежние токены до истечения; после истечения нужен новый ключ, старый token не переиспользуется. Порядок ingest записан последовательным номером в snapshot v9; v8 восстанавливается детерминированно. `go test ./internal/datamock -run '^TestInbox' -count=1 -v` → 7 PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `docker build -f services/gateway/Dockerfile.data-mock -t max-fleet-data-mock:claim services/gateway` → exit 0. Проверены restart, actor order, expiry, duplicate, save failure, v8 migration. [CI предыдущего inbox checkpoint](https://github.com/Seferaki/max-fleet/actions/runs/36356927856): все пять jobs success; CI для claim ещё не проверен. Ack/retry и fencing в доменных командах пока отсутствуют, BE-01 WIP.
 
