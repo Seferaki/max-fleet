@@ -160,6 +160,31 @@ func (c *Client) AdminSummary(ctx context.Context, actorMaxID string) (AdminSumm
 	return get[AdminSummary](ctx, c, "/admin/summary", actorMaxID)
 }
 
+func (c *Client) AdminEmployees(ctx context.Context, actorMaxID string, limit int, cursor string) (Page[Employee], error) {
+	if limit < 0 || limit > 50 || len(cursor) > 2048 {
+		return Page[Employee]{}, errors.New("data-api: invalid employees page")
+	}
+	query := url.Values{}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	if cursor != "" {
+		query.Set("cursor", cursor)
+	}
+	path := "/admin/employees"
+	if len(query) != 0 {
+		path += "?" + query.Encode()
+	}
+	return get[Page[Employee]](ctx, c, path, actorMaxID)
+}
+
+func (c *Client) AdminEmployee(ctx context.Context, actorMaxID, employeeID string) (Employee, error) {
+	if !validUUID(employeeID) {
+		return Employee{}, errors.New("data-api: invalid employee ID")
+	}
+	return get[Employee](ctx, c, "/admin/employees/"+employeeID, actorMaxID)
+}
+
 func (c *Client) Return(ctx context.Context, actorMaxID, returnID string) (Return, error) {
 	if !validUUID(returnID) {
 		return Return{}, errors.New("data-api: invalid return ID")
