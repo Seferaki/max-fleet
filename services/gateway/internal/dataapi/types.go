@@ -37,6 +37,17 @@ type Rules struct {
 	Body         string `json:"body"`
 }
 
+type Challenge struct {
+	ID                string    `json:"id"`
+	Purpose           string    `json:"purpose"`
+	Question          string    `json:"question"`
+	Options           []int     `json:"options"`
+	ExpiresAt         time.Time `json:"expires_at"`
+	AttemptsRemaining int       `json:"attempts_remaining"`
+	Version           int64     `json:"version"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
 type ParkingLocation struct {
 	ID          string    `json:"id"`
 	Latitude    float64   `json:"latitude"`

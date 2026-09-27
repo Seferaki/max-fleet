@@ -57,6 +57,25 @@ type attestationPayload struct {
 	Attestation bool `json:"attestation"`
 }
 
+type challengeIntent struct {
+	Operation       string `json:"operation"`
+	TargetID        string `json:"target_id"`
+	ExpectedVersion int64  `json:"expected_version"`
+}
+
+type challengeCreatePayload struct {
+	Purpose       string          `json:"purpose"`
+	IntentPayload challengeIntent `json:"intent_payload"`
+}
+
+type challengeAnswerPayload struct {
+	SelectedOption int `json:"selected_option"`
+}
+
+type acceptRulesPayload struct {
+	RulesVersionID string `json:"rules_version_id"`
+}
+
 // CheckoutCreate creates a 15-minute hold. Python/mock owns the availability transaction.
 func (c *Client) CheckoutCreate(ctx context.Context, actorMaxID, vehicleID string, vehicleVersion int64, key string, inbox *InboxLease) (CommandResult, error) {
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[emptyPayload]{"checkout.create", vehicleID, vehicleVersion, emptyPayload{}})
@@ -64,6 +83,29 @@ func (c *Client) CheckoutCreate(ctx context.Context, actorMaxID, vehicleID strin
 
 func (c *Client) CheckoutCancel(ctx context.Context, actorMaxID, checkoutID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[emptyPayload]{"checkout.cancel", checkoutID, version, emptyPayload{}})
+}
+
+// ChallengeCreateTake binds a math question to the current hold and vehicle intent.
+func (c *Client) ChallengeCreateTake(ctx context.Context, actorMaxID, checkoutID string, checkoutVersion int64, vehicleID string, vehicleVersion int64, key string, inbox *InboxLease) (CommandResult, error) {
+	if !validUUID(vehicleID) || vehicleVersion < 1 {
+		return CommandResult{}, errors.New("data-api: invalid vehicle intent")
+	}
+	payload := challengeCreatePayload{Purpose: "take", IntentPayload: challengeIntent{Operation: "checkout.create", TargetID: vehicleID, ExpectedVersion: vehicleVersion}}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[challengeCreatePayload]{"challenge.create", checkoutID, checkoutVersion, payload})
+}
+
+func (c *Client) ChallengeAnswer(ctx context.Context, actorMaxID, challengeID string, version int64, selectedOption int, key string, inbox *InboxLease) (CommandResult, error) {
+	if selectedOption < 0 || selectedOption > 3 {
+		return CommandResult{}, errors.New("data-api: invalid challenge option")
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[challengeAnswerPayload]{"challenge.answer", challengeID, version, challengeAnswerPayload{selectedOption}})
+}
+
+func (c *Client) CheckoutAcceptRules(ctx context.Context, actorMaxID, checkoutID string, version int64, rulesVersionID string, key string, inbox *InboxLease) (CommandResult, error) {
+	if !validUUID(rulesVersionID) {
+		return CommandResult{}, errors.New("data-api: invalid rules version")
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[acceptRulesPayload]{"checkout.accept_rules", checkoutID, version, acceptRulesPayload{rulesVersionID}})
 }
 
 func (c *Client) InspectionConfirmPhotos(ctx context.Context, actorMaxID, inspectionID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
