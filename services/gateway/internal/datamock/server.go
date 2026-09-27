@@ -21,7 +21,8 @@ import (
 var syntheticSeed []byte
 
 type seedFile struct {
-	DemoOnly  bool `json:"demo_only"`
+	DemoOnly  bool   `json:"demo_only"`
+	Rules     string `json:"rules"`
 	Employees []struct {
 		MaxUserID    string `json:"max_user_id"`
 		DisplayName  string `json:"display_name"`
@@ -52,6 +53,7 @@ type Server struct {
 	commands     map[string]commandRecord
 	photos       map[string]map[int]photoRecord
 	photoResults map[string]photoAttempt
+	rules        dataapi.Rules
 	now          func() time.Time
 	saveSnapshot func(stateSnapshot) error
 	assetDir     string
@@ -80,11 +82,12 @@ func newServer(token, snapshotPath string, now func() time.Time) (*Server, error
 		return nil, errors.New("data-mock: clock required")
 	}
 	var seed seedFile
-	if err := json.Unmarshal(syntheticSeed, &seed); err != nil || !seed.DemoOnly || len(seed.Vehicles) != 10 {
+	if err := json.Unmarshal(syntheticSeed, &seed); err != nil || !seed.DemoOnly || seed.Rules == "" || len(seed.Vehicles) != 10 {
 		return nil, errors.New("data-mock: invalid synthetic seed")
 	}
 	stamp := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
-	s := &Server{token: token, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), now: now}
+	s := &Server{token: token, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), now: now,
+		rules: dataapi.Rules{ID: "90000000-0000-4000-8000-000000000001", VersionLabel: "demo-v1", Body: seed.Rules}}
 	for i, item := range seed.Employees {
 		id := fmt.Sprintf("80000000-0000-4000-8000-%012d", i+1)
 		s.employees[item.MaxUserID] = dataapi.Employee{ID: id, MaxUserID: item.MaxUserID, DisplayName: item.DisplayName, Role: item.Role, CanStartTrip: item.CanStartTrip, Version: 1, UpdatedAt: stamp}
@@ -129,6 +132,9 @@ func (s *Server) Handler() http.Handler {
 		}
 		s.success(w, requestID, dataapi.Me{Allowed: found, MaxUserID: actor, Employee: own})
 	}))
+	mux.HandleFunc("GET /internal/v1/rules/current", s.authorize(true, s.requireEmployee(func(w http.ResponseWriter, _ *http.Request, requestID string) {
+		s.success(w, requestID, s.rules)
+	})))
 	mux.HandleFunc("GET /internal/v1/state", s.authorize(true, s.requireEmployee(s.currentState)))
 	mux.HandleFunc("GET /internal/v1/checkouts/{id}", s.authorize(true, s.requireEmployee(s.checkout)))
 	mux.HandleFunc("GET /internal/v1/inspections/{id}", s.authorize(true, s.requireEmployee(s.inspection)))

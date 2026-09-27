@@ -40,6 +40,10 @@ func TestClientReadsSyntheticFixtures(t *testing.T) {
 	if err != nil || !me.Allowed || me.Employee == nil || me.Employee.Role != "employee" {
 		t.Fatalf("me: %+v %v", me, err)
 	}
+	rules, err := client.CurrentRules(ctx, driverID)
+	if err != nil || rules.ID != "90000000-0000-4000-8000-000000000001" || rules.Body == "" {
+		t.Fatalf("current rules: %+v %v", rules, err)
+	}
 	unknown, err := client.Me(ctx, "900001")
 	if err != nil || unknown.Allowed || unknown.Employee != nil || unknown.MaxUserID != "900001" {
 		t.Fatalf("unknown: %+v %v", unknown, err)
@@ -80,6 +84,10 @@ func TestMockAuthorizationAndVersion(t *testing.T) {
 	_, err = client.State(context.Background(), "900001")
 	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusForbidden {
 		t.Fatalf("unknown actor state: %v", err)
+	}
+	_, err = client.CurrentRules(context.Background(), "900001")
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusForbidden {
+		t.Fatalf("unknown actor rules: %v", err)
 	}
 	request, _ := http.NewRequest(http.MethodGet, server.URL+"/internal/v1/vehicles", nil)
 	request.Header.Set("Authorization", "Bearer wrong-token")

@@ -31,6 +31,12 @@ type Me struct {
 	Employee  *Employee `json:"employee"`
 }
 
+type Rules struct {
+	ID           string `json:"id"`
+	VersionLabel string `json:"version_label"`
+	Body         string `json:"body"`
+}
+
 type ParkingLocation struct {
 	ID          string    `json:"id"`
 	Latitude    float64   `json:"latitude"`

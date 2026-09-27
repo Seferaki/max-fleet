@@ -72,6 +72,10 @@ func (c *Client) Me(ctx context.Context, actorMaxID string) (Me, error) {
 	return get[Me](ctx, c, "/me", actorMaxID)
 }
 
+func (c *Client) CurrentRules(ctx context.Context, actorMaxID string) (Rules, error) {
+	return get[Rules](ctx, c, "/rules/current", actorMaxID)
+}
+
 type VehicleFilter struct {
 	Available *bool
 	Limit     int
