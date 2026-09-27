@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "1e22c0db-a86b-44f0-b2d1-33c197bea3ee"
 branch: codex/backend
-heartbeat_utc: "2026-09-27T13:53:00Z"
+heartbeat_utc: "2026-09-27T14:10:27Z"
 current_task: BE-01
-current_substep: "Подтверждён takeover от A; добавить типизированные команды BE-01"
-last_verified_code_commit: "fffc54eb257eb29783a0d9d2d57981b6c66595e9"
+current_substep: "Командный DataAPI client проверен; далее отдельный mock"
+last_verified_code_commit: "24fc8339ae0b986afebab50a4c9bf3b98fb88ae2"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: добавить типизированные команды и отдельный mock с auth/версиями; проверить контракты и восстановление"
+next_step: "BE-01: создать отдельный mock HTTP API с auth, версиями, synthetic fixtures; затем idempotency и атомарный snapshot"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `fffc54eb257eb29783a0d9d2d57981b6c66595e9` — чтения DataAPI client; WIP | Команды, mock, scenarios |
+| BE-01 | IN_PROGRESS | `24fc8339ae0b986afebab50a4c9bf3b98fb88ae2` — чтения и 4 типизированные команды DataAPI client; WIP | Остальные команды, mock, scenarios, snapshot |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,10 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `24fc8339ae0b986afebab50a4c9bf3b98fb88ae2`. Добавлены типизированные вызовы `checkout.create`, `checkout.cancel`, `return.set_location`, `return.complete` и lookup результата своей команды. POST повторяет 503 с тем же Idempotency-Key, body, X-Request-ID и inbox lease; 409 не повторяется; неподтверждённая точка карты не отправляется. На этом ноутбуке официальный Go 1.27.1 сверен по SHA-256, затем `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` в `services/gateway` → exit 0. `go test ./internal/dataapi` и `go vet ./internal/dataapi` → exit 0. `contracts/validate.py` → 2 OpenAPI, 36 routes, 24 command examples, 44 scenarios; локальный Python 3.14 использовал PyYAML 6.0.3 в игнорируемом venv, поскольку pinned 6.0.1 не импортировалась здесь. Это проверка клиента на `httptest`, отдельный mock и сценарии против него ещё не готовы. BE-01 остаётся WIP. Приватный prompt MAX подготовлен; `-Check` → token отсутствует.
+
+### Предыдущий BE-01 checkpoint
 
 - BE-01 code commit: `fffc54eb257eb29783a0d9d2d57981b6c66595e9`. `services/gateway/internal/dataapi` содержит типизированные DTO `/meta`, `/me`, `/vehicles`, `/vehicles/{id}`, проверку URL/actor/UUID/версии метаданных, обязательных служебных заголовков, ограничение ответа 2 MiB, строгий JSON, ошибку с кодом/версией и повтор 429/503/transport с тем же X-Request-ID. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; тесты неизвестного actor, 503 retry, 409 без retry, недопустимого ввода/лишнего поля и несовместимого контракта прошли. Команды, mock, сохранение состояния и проверка сценариев ещё не реализованы; BE-01 WIP.
 
