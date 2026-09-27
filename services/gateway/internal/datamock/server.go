@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
@@ -43,21 +44,32 @@ type seedFile struct {
 }
 
 type Server struct {
+	mu        sync.Mutex
 	token     string
 	employees map[string]dataapi.Employee
 	vehicles  []dataapi.Vehicle
+	checkouts map[string]dataapi.Checkout
+	commands  map[string]commandRecord
+	now       func() time.Time
 }
 
 func New(token string) (*Server, error) {
+	return NewWithClock(token, time.Now)
+}
+
+func NewWithClock(token string, now func() time.Time) (*Server, error) {
 	if token == "" || strings.ContainsAny(token, "\r\n") {
 		return nil, errors.New("data-mock: service token required")
+	}
+	if now == nil {
+		return nil, errors.New("data-mock: clock required")
 	}
 	var seed seedFile
 	if err := json.Unmarshal(syntheticSeed, &seed); err != nil || !seed.DemoOnly || len(seed.Vehicles) != 10 {
 		return nil, errors.New("data-mock: invalid synthetic seed")
 	}
 	stamp := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
-	s := &Server{token: token, employees: make(map[string]dataapi.Employee)}
+	s := &Server{token: token, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), commands: make(map[string]commandRecord), now: now}
 	for i, item := range seed.Employees {
 		id := fmt.Sprintf("80000000-0000-4000-8000-%012d", i+1)
 		s.employees[item.MaxUserID] = dataapi.Employee{ID: id, MaxUserID: item.MaxUserID, DisplayName: item.DisplayName, Role: item.Role, CanStartTrip: item.CanStartTrip, Version: 1, UpdatedAt: stamp}
@@ -97,6 +109,8 @@ func (s *Server) Handler() http.Handler {
 	}))
 	mux.HandleFunc("GET /internal/v1/vehicles", s.authorize(true, s.requireEmployee(s.listVehicles)))
 	mux.HandleFunc("GET /internal/v1/vehicles/{id}", s.authorize(true, s.requireEmployee(s.vehicle)))
+	mux.HandleFunc("POST /internal/v1/commands", s.authorize(true, s.requireEmployee(s.execute)))
+	mux.HandleFunc("GET /internal/v1/commands/{key}", s.authorize(true, s.requireEmployee(s.commandResult)))
 	return mux
 }
 
@@ -138,6 +152,9 @@ func (s *Server) requireEmployee(next route) route {
 }
 
 func (s *Server) listVehicles(w http.ResponseWriter, r *http.Request, requestID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expireHolds()
 	query := r.URL.Query()
 	for key := range query {
 		if key != "available" && key != "limit" && key != "cursor" {
@@ -190,6 +207,9 @@ func (s *Server) listVehicles(w http.ResponseWriter, r *http.Request, requestID 
 }
 
 func (s *Server) vehicle(w http.ResponseWriter, r *http.Request, requestID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expireHolds()
 	id := r.PathValue("id")
 	if !validUUID(id) {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
