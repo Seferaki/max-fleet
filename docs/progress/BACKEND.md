@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03 выполнены; mock покрывает основные сценарии поездки и возврата, durable inbox, polling marker и notification claim, но notification ack/retry и часть команд ещё отсутствуют. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03 выполнены; mock покрывает основные сценарии поездки и возврата, durable inbox, polling marker и notification claim/ack/retry, но typed notification client и часть команд ещё отсутствуют. Контракт v1 опубликован в `codex/backend`, будущие ветки data/QA должны взять именно его commit. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "0b57d4b9-be94-4558-b500-eff5594ee587"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T08:50:30Z"
+heartbeat_utc: "2026-09-28T08:55:52Z"
 current_task: BE-01
-current_substep: "Новая сессия B: notifications ack/retry и typed WorkerClient"
-last_verified_code_commit: "14ed77e7b6aa2db638f15636d0ce0a45fe3fdd69"
+current_substep: "Notification ack/retry проверены; далее typed WorkerClient"
+last_verified_code_commit: "dc22558f6d8054bad4b2477db13b13ead66826c6"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: реализовать notifications ack/retry с текущим lease token, backoff/dead и typed WorkerClient; затем расширить contract runner; WIP"
+next_step: "BE-01: добавить typed WorkerClient для notifications claim/ack/retry; затем расширить contract runner; WIP"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `ed954e0aa865785e37c2ccea1549e7284492b591` — typed WorkerClient и durable inbox; WIP | 22/44 runner-сценария; notification/integration маршруты и часть команд |
+| BE-01 | IN_PROGRESS | `dc22558f6d8054bad4b2477db13b13ead66826c6` — mock notification ack/retry с lease, retry/dead и snapshot v14; WIP | 22/44 runner-сценария; typed notification client и часть команд |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `dc22558f6d8054bad4b2477db13b13ead66826c6`. Mock `POST /notifications/{id}/ack|retry` требует WorkerBearer и текущий lease token, сохраняет provider message ID либо retry/dead, ограничивает очередь пятью попытками; повтор Idempotency-Key возвращает прежний переход, изменённый body — 409. Snapshot v14 сохраняет переходы, v13 загружается; failed save даёт 503 и откатывает состояние. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0; `go test -count=3 ./internal/datamock -run '^TestNotification' -v` → 5 тестов × 3 PASS. Проверены auth, неверный/устаревший lease, restart, backoff, dead и v13 migration. `docker build -f services/gateway/Dockerfile.data-mock -t max-fleet-data-mock:notification-transition services/gateway` не выполнен: Docker Desktop Linux Engine недоступен (`npipe` отсутствует); CI этого SHA ещё не проверен. Следующий шаг: typed notification WorkerClient; BE-01 WIP, реальный MAX/Python не проверены.
 
 - BE-01 code commit: `14ed77e7b6aa2db638f15636d0ce0a45fe3fdd69`. Синтетический mock добавляет admin delivery о `checkout.start`, `return.complete`, `issue.create` в одном snapshot с успешной доменной командой; повтор команды не создаёт дубль, failed save откатывает outbox. `POST /notifications/claim` требует WorkerBearer, сохраняет аренду на 2 минуты и ключ ответа в snapshot v13; обрабатывает restart, expiry и выдаёт одну раннюю delivery на recipient за раз. `go test ./internal/datamock -run 'TestNotification|TestBeforeIssue' -count=1 -v` → 3 PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `docker build -f services/gateway/Dockerfile.data-mock -t max-fleet-data-mock:notification-claim services/gateway` → exit 0. [CI предыдущего typed integration client checkpoint](https://github.com/Seferaki/max-fleet/actions/runs/36358575300) → пять jobs success; CI текущего SHA ещё не проверен. Ack/retry, typed notification client, реальный MAX и Python WIP. Mock использует единственного синтетического admin из seed как открывшего диалог; реальную eligibility получателей реализует DE. Локальный synthetic seed достаточен для продолжения; dev consumer MAX не запускался, приватный `.local/` и Docker volume через Git не переносятся. Имена локальных секретов: `data_api_token`, `worker_api_token`; `max_bot_token` отсутствует. H-01 HUMAN_REQUIRED остаётся в таблице ниже.
 
