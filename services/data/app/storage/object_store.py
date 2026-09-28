@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 import boto3
 from botocore.config import Config as BotoConfig
@@ -23,9 +23,9 @@ class ObjectStore(Protocol):
 
 
 class S3ObjectStore:
-    def __init__(self, settings: Settings, client: object | None = None) -> None:
+    def __init__(self, settings: Settings, client: Any = None) -> None:
         self.bucket = settings.s3_bucket
-        self.client = client or boto3.client(
+        self.client: Any = client or boto3.client(
             "s3",
             endpoint_url=settings.s3_endpoint,
             region_name=settings.s3_region,
@@ -38,10 +38,10 @@ class S3ObjectStore:
 
     def ensure_bucket(self) -> None:
         try:
-            self.client.head_bucket(Bucket=self.bucket)  # type: ignore[attr-defined]
+            self.client.head_bucket(Bucket=self.bucket)
         except ClientError:
             try:
-                self.client.create_bucket(Bucket=self.bucket)  # type: ignore[attr-defined]
+                self.client.create_bucket(Bucket=self.bucket)
             except (BotoCoreError, ClientError) as exc:
                 raise StorageUnavailable("bucket") from exc
         except BotoCoreError as exc:
@@ -49,27 +49,27 @@ class S3ObjectStore:
 
     def put(self, key: str, data: bytes, content_type: str) -> None:
         try:
-            self.client.put_object(Bucket=self.bucket, Key=key, Body=data,  # type: ignore[attr-defined]
+            self.client.put_object(Bucket=self.bucket, Key=key, Body=data,
                                    ContentType=content_type)
         except (BotoCoreError, ClientError) as exc:
             raise StorageUnavailable("put") from exc
 
     def get(self, key: str) -> bytes:
         try:
-            response = self.client.get_object(Bucket=self.bucket, Key=key)  # type: ignore[attr-defined]
-            return response["Body"].read()  # type: ignore[no-any-return]
+            response = self.client.get_object(Bucket=self.bucket, Key=key)
+            return response["Body"].read()
         except (BotoCoreError, ClientError) as exc:
             raise StorageUnavailable("get") from exc
 
     def delete(self, key: str) -> None:
         try:
-            self.client.delete_object(Bucket=self.bucket, Key=key)  # type: ignore[attr-defined]
+            self.client.delete_object(Bucket=self.bucket, Key=key)
         except (BotoCoreError, ClientError) as exc:
             raise StorageUnavailable("delete") from exc
 
     def healthy(self) -> bool:
         try:
-            self.client.head_bucket(Bucket=self.bucket)  # type: ignore[attr-defined]
+            self.client.head_bucket(Bucket=self.bucket)
             return True
         except (BotoCoreError, ClientError):
             return False

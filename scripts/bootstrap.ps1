@@ -1,6 +1,8 @@
 ﻿$ErrorActionPreference = 'Stop'
 
-$secretDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'MAXFleet\secrets'
+# MAX_FLEET_SECRETS_DIR — ASCII-путь, если в профиле Windows кириллица (Docker Desktop не монтирует такие пути).
+$secretDirectory = if ($env:MAX_FLEET_SECRETS_DIR) { $env:MAX_FLEET_SECRETS_DIR } else {
+    Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'MAXFleet\secrets' }
 $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $names = @(
     'max_webhook_secret',

@@ -1,0 +1,123 @@
+# Изолированный контур data engineer: PostgreSQL + S3 (SeaweedFS) + migrate + data-api + data-worker.
+# Секреты создаёт scripts/bootstrap.sh|ps1; путь к каталогу передаётся через MAX_FLEET_SECRETS_DIR.
+#   MAX_FLEET_SECRETS_DIR=~/.local/share/max-fleet/secrets docker compose -f deploy/compose.data.yaml up -d --build
+# SEED_SYNTHETIC=1 — загрузить синтетические демо-данные (только dev/test).
+name: max-fleet-data
+
+x-data-env: &data-env
+  APP_ENV: ${APP_ENV:-development}
+  COMPANY_TIMEZONE: ${COMPANY_TIMEZONE:-Europe/Moscow}
+  MAX_INTEGRATION_KEY: ${MAX_INTEGRATION_KEY:-demo-bot}
+  DB_HOST: postgres
+  DB_NAME: maxfleet
+  DB_USER: maxfleet_app
+  DB_PASSWORD_FILE: /run/secrets/data_runtime_password
+  DATA_API_TOKEN_FILE: /run/secrets/data_api_token
+  WORKER_API_TOKEN_FILE: /run/secrets/worker_api_token
+  S3_ENDPOINT: http://s3:8333
+  S3_BUCKET: ${S3_BUCKET:-max-fleet-photos}
+  S3_REGION: us-east-1
+  S3_ACCESS_KEY_FILE: /run/secrets/s3_access_key
+  S3_SECRET_KEY_FILE: /run/secrets/s3_secret_key
+
+x-hardening: &hardening
+  init: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+
+services:
+  postgres:
+    image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+    environment:
+      POSTGRES_DB: maxfleet
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password, migration_password, data_runtime_password]
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ../services/data/deploy/postgres-init.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d maxfleet]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  s3:
+    image: chrislusf/seaweedfs@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
+    entrypoint: [/bin/sh, /s3-entrypoint.sh]
+    secrets: [s3_access_key, s3_secret_key]
+    volumes:
+      - s3_data:/data
+      - ../services/data/deploy/s3-entrypoint.sh:/s3-entrypoint.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1:8333/healthz || wget -q -S -O /dev/null http://127.0.0.1:8333/ 2>&1 | grep -q 'HTTP/'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  migrate:
+    <<: *hardening
+    build:
+      context: ../services/data
+      args:
+        BUILD_SHA: ${BUILD_SHA:-local}
+    image: max-fleet-data:local
+    read_only: true
+    environment:
+      <<: *data-env
+      MIGRATION_DB_USER: maxfleet_migrator
+      MIGRATION_DB_PASSWORD_FILE: /run/secrets/migration_password
+      SEED_SYNTHETIC: ${SEED_SYNTHETIC:-0}
+    command:
+      - sh
+      - -c
+      - >-
+        alembic upgrade head &&
+        python -m app.worker ensure-bucket &&
+        if [ "$$SEED_SYNTHETIC" = "1" ]; then python -m app.seed synthetic; fi
+    secrets: [migration_password, data_runtime_password, data_api_token, worker_api_token, s3_access_key, s3_secret_key]
+    depends_on:
+      postgres: {condition: service_healthy}
+      s3: {condition: service_healthy}
+    restart: "no"
+
+  data-api:
+    <<: *hardening
+    image: max-fleet-data:local
+    read_only: true
+    environment: *data-env
+    secrets: [data_runtime_password, data_api_token, worker_api_token, s3_access_key, s3_secret_key]
+    # Только loopback: внешняя сеть к data-api не допускается, Go ходит по внутренней сети.
+    ports:
+      - 127.0.0.1:${DATA_API_PORT:-18000}:8000
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+
+  data-worker:
+    <<: *hardening
+    image: max-fleet-data:local
+    read_only: true
+    environment: *data-env
+    command: [python, -m, app.worker, run]
+    secrets: [data_runtime_password, data_api_token, worker_api_token, s3_access_key, s3_secret_key]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+
+secrets:
+  postgres_password: {file: "${MAX_FLEET_SECRETS_DIR:?Set MAX_FLEET_SECRETS_DIR}/postgres_password"}
+  migration_password: {file: "${MAX_FLEET_SECRETS_DIR}/migration_password"}
+  data_runtime_password: {file: "${MAX_FLEET_SECRETS_DIR}/data_runtime_password"}
+  data_api_token: {file: "${MAX_FLEET_SECRETS_DIR}/data_api_token"}
+  worker_api_token: {file: "${MAX_FLEET_SECRETS_DIR}/worker_api_token"}
+  s3_access_key: {file: "${MAX_FLEET_SECRETS_DIR}/s3_access_key"}
+  s3_secret_key: {file: "${MAX_FLEET_SECRETS_DIR}/s3_secret_key"}
+
+volumes:
+  pg_data:
+  s3_data:
