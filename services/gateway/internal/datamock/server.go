@@ -45,25 +45,33 @@ type seedFile struct {
 }
 
 type Server struct {
-	mu           sync.Mutex
-	token        string
-	workerToken  string
-	employees    map[string]dataapi.Employee
-	vehicles     []dataapi.Vehicle
-	checkouts    map[string]dataapi.Checkout
-	trips        map[string]dataapi.Trip
-	returns      map[string]dataapi.Return
-	issues       map[string]dataapi.Issue
-	issueAssets  map[string]stagedIssueAsset
-	stageResults map[string]stageAttempt
-	commands     map[string]commandRecord
-	photos       map[string]map[int]photoRecord
-	photoResults map[string]photoAttempt
-	challenges   map[string]mockChallenge
-	rules        dataapi.Rules
-	now          func() time.Time
-	saveSnapshot func(stateSnapshot) error
-	assetDir     string
+	mu                     sync.Mutex
+	token                  string
+	workerToken            string
+	employees              map[string]dataapi.Employee
+	vehicles               []dataapi.Vehicle
+	checkouts              map[string]dataapi.Checkout
+	trips                  map[string]dataapi.Trip
+	returns                map[string]dataapi.Return
+	issues                 map[string]dataapi.Issue
+	issueAssets            map[string]stagedIssueAsset
+	stageResults           map[string]stageAttempt
+	commands               map[string]commandRecord
+	photos                 map[string]map[int]photoRecord
+	photoResults           map[string]photoAttempt
+	challenges             map[string]mockChallenge
+	inbox                  map[string]mockInboxEvent
+	inboxKeys              map[string]inboxKeyRecord
+	inboxClaims            map[string]inboxClaimRecord
+	inboxTransitions       map[string]inboxTransitionRecord
+	inboxSequence          int64
+	integrations           map[string]mockIntegration
+	integrationLeases      map[string]integrationLeaseRecord
+	integrationCheckpoints map[string]integrationCheckpointRecord
+	rules                  dataapi.Rules
+	now                    func() time.Time
+	saveSnapshot           func(stateSnapshot) error
+	assetDir               string
 }
 
 func New(token string) (*Server, error) {
@@ -103,7 +111,7 @@ func newServer(token, workerToken, snapshotPath string, now func() time.Time) (*
 		return nil, errors.New("data-mock: invalid synthetic seed")
 	}
 	stamp := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
-	s := &Server{token: token, workerToken: workerToken, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), trips: make(map[string]dataapi.Trip), returns: make(map[string]dataapi.Return), issues: make(map[string]dataapi.Issue), issueAssets: make(map[string]stagedIssueAsset), stageResults: make(map[string]stageAttempt), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), challenges: make(map[string]mockChallenge), now: now,
+	s := &Server{token: token, workerToken: workerToken, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), trips: make(map[string]dataapi.Trip), returns: make(map[string]dataapi.Return), issues: make(map[string]dataapi.Issue), issueAssets: make(map[string]stagedIssueAsset), stageResults: make(map[string]stageAttempt), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), challenges: make(map[string]mockChallenge), inbox: make(map[string]mockInboxEvent), inboxKeys: make(map[string]inboxKeyRecord), inboxClaims: make(map[string]inboxClaimRecord), inboxTransitions: make(map[string]inboxTransitionRecord), integrations: map[string]mockIntegration{"demo-bot": {Data: dataapi.Integration{Key: "demo-bot", Mode: "polling", Version: 1, UpdatedAt: stamp}}}, integrationLeases: make(map[string]integrationLeaseRecord), integrationCheckpoints: make(map[string]integrationCheckpointRecord), now: now,
 		rules: dataapi.Rules{ID: "90000000-0000-4000-8000-000000000001", VersionLabel: "demo-v1", Body: seed.Rules}}
 	for i, item := range seed.Employees {
 		id := fmt.Sprintf("80000000-0000-4000-8000-%012d", i+1)
@@ -169,6 +177,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /internal/v1/inspections/{id}/photos/{slot}", s.authorize(true, s.requireEmployee(s.uploadPhoto)))
 	mux.HandleFunc("POST /internal/v1/assets/stage", s.authorize(true, s.requireEmployee(s.stageIssueAsset)))
 	mux.HandleFunc("GET /internal/v1/assets/{id}/content", s.authorize(true, s.requireEmployee(s.assetContent)))
+	mux.HandleFunc("POST /internal/v1/inbox", s.authorizeWorker(s.storeInbox))
+	mux.HandleFunc("POST /internal/v1/inbox/claim", s.authorizeWorker(s.claimInbox))
+	mux.HandleFunc("POST /internal/v1/inbox/{id}/ack", s.authorizeWorker(s.ackInbox))
+	mux.HandleFunc("POST /internal/v1/inbox/{id}/retry", s.authorizeWorker(s.retryInbox))
+	mux.HandleFunc("GET /internal/v1/integrations/{key}", s.authorizeWorker(s.getIntegration))
+	mux.HandleFunc("POST /internal/v1/integrations/{key}/lease", s.authorizeWorker(s.leaseIntegration))
+	mux.HandleFunc("POST /internal/v1/integrations/{key}/checkpoint", s.authorizeWorker(s.checkpointIntegration))
 	mux.HandleFunc("GET /internal/v1/vehicles", s.authorize(true, s.requireEmployee(s.listVehicles)))
 	mux.HandleFunc("GET /internal/v1/vehicles/{id}", s.authorize(true, s.requireEmployee(s.vehicle)))
 	mux.HandleFunc("GET /internal/v1/vehicles/{id}/previous-inspection", s.authorize(true, s.requireEmployee(s.previousInspection)))
@@ -432,7 +447,7 @@ func (s *Server) fail(w http.ResponseWriter, requestID string, status int, code 
 		Code      string `json:"code"`
 		Message   string `json:"message"`
 		Retryable bool   `json:"retryable"`
-	}{Code: code, Message: code}, RequestID: requestID})
+	}{Code: code, Message: code, Retryable: status == http.StatusServiceUnavailable || status == http.StatusTooManyRequests}, RequestID: requestID})
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

@@ -270,14 +270,21 @@ func get[T any](ctx context.Context, c *Client, path, actorMaxID string) (T, err
 }
 
 func request[T any](ctx context.Context, c *Client, method, path, actorMaxID string, body []byte, contentType, idempotencyKey string, inbox *InboxLease, client *http.Client) (T, error) {
+	return requestWithMode[T](ctx, c, method, path, actorMaxID, body, contentType, idempotencyKey, inbox, client, false)
+}
+
+func requestWithMode[T any](ctx context.Context, c *Client, method, path, actorMaxID string, body []byte, contentType, idempotencyKey string, inbox *InboxLease, client *http.Client, worker bool) (T, error) {
 	var zero T
 	if client == nil {
 		client = c.httpClient
 	}
+	if worker && (actorMaxID != "" || inbox != nil) {
+		return zero, errors.New("data-api: worker request must not carry actor or command lease")
+	}
 	if actorMaxID != "" && !validMaxID(actorMaxID) {
 		return zero, errors.New("data-api: invalid actor MAX ID")
 	}
-	if path != "/meta" && actorMaxID == "" {
+	if !worker && path != "/meta" && actorMaxID == "" {
 		return zero, errors.New("data-api: actor MAX ID required")
 	}
 	requestID, err := newUUID()

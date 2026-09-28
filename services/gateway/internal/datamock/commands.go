@@ -74,6 +74,10 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 	signature := fmt.Sprintf("%x", sha256.Sum256(canonicalBody))
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if lease != "" && !s.validCommandLease(r.Header.Get("X-Inbox-Event-ID"), actor, lease, s.now().UTC()) {
+		s.fail(w, requestID, http.StatusConflict, "LEASE_EXPIRED")
+		return
+	}
 	if record, exists := s.commands[identity]; exists {
 		if record.Signature != signature {
 			s.fail(w, requestID, http.StatusConflict, "IDEMPOTENCY_CONFLICT")
