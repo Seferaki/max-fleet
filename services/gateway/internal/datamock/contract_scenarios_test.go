@@ -89,6 +89,34 @@ func (s scenarioContext) readyCheckout() dataapi.Checkout {
 	return ready
 }
 
+func (s scenarioContext) rawActorRequest(method, path, body, key string) error {
+	s.t.Helper()
+	request := httptest.NewRequest(method, path, bytes.NewBufferString(body))
+	request.Header.Set("Authorization", "Bearer test-service-token")
+	request.Header.Set("X-Contract-Version", dataapi.ContractVersion)
+	request.Header.Set("X-Request-ID", "99999999-9999-4999-8999-999999999999")
+	request.Header.Set("X-Actor-Max-ID", driverID)
+	if body != "" {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	if key != "" {
+		request.Header.Set("Idempotency-Key", key)
+	}
+	response := httptest.NewRecorder()
+	s.mock.Handler().ServeHTTP(response, request)
+	if response.Code == http.StatusOK {
+		return nil
+	}
+	var envelope struct {
+		Error dataapi.APIError `json:"error"`
+	}
+	if json.Unmarshal(response.Body.Bytes(), &envelope) != nil || envelope.Error.Code == "" {
+		s.t.Fatalf("invalid raw error response: %d", response.Code)
+	}
+	envelope.Error.Status = response.Code
+	return &envelope.Error
+}
+
 func (s scenarioContext) readyReturn(damage, parkingAllowed bool) (dataapi.Trip, dataapi.Return) {
 	s.t.Helper()
 	tripID := "20000000-0000-4000-8000-000000000001"
@@ -412,6 +440,36 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 			return err
 		},
+		"schema.limit": func(s scenarioContext) error {
+			err := s.rawActorRequest(http.MethodGet, "/internal/v1/vehicles?limit=51", "", "")
+			if len(s.mock.vehicles) != 10 {
+				s.t.Fatal("invalid limit changed vehicle data")
+			}
+			return err
+		},
+		"schema.malformed-uuid": func(s scenarioContext) error {
+			err := s.rawActorRequest(http.MethodPost, "/internal/v1/commands", `{"operation":"checkout.create","target_id":"not-a-uuid","expected_version":1,"payload":{}}`, "scenario-invalid-uuid")
+			if len(s.mock.checkouts) != 0 {
+				s.t.Fatal("malformed UUID changed checkout state")
+			}
+			return err
+		},
+		"schema.null-omitted": func(s scenarioContext) error {
+			err := s.rawActorRequest(http.MethodPost, "/internal/v1/commands", `{"operation":"checkout.create","target_id":"10000000-0000-4000-8000-000000000001","expected_version":1}`, "scenario-omitted-payload")
+			if len(s.mock.checkouts) != 0 {
+				s.t.Fatal("omitted payload changed checkout state")
+			}
+			return err
+		},
+		"schema.unknown-enum": func(s scenarioContext) error {
+			hold := s.hold("scenario-invalid-fuel-hold")
+			body := fmt.Sprintf(`{"operation":"inspection.update","target_id":"%s","expected_version":%d,"payload":{"fuel_level":37}}`, hold.Inspection.ID, hold.Inspection.Version)
+			err := s.rawActorRequest(http.MethodPost, "/internal/v1/commands", body, "scenario-invalid-fuel")
+			if s.mock.checkouts[hold.ID].Inspection.FuelLevel != nil || s.mock.checkouts[hold.ID].Inspection.Version != hold.Inspection.Version {
+				s.t.Fatal("invalid fuel changed inspection")
+			}
+			return err
+		},
 		"schema.same-key-different-body": func(s scenarioContext) error {
 			s.hold("scenario-same-key")
 			_, err := s.client.CheckoutCreate(s.ctx, driverID, "10000000-0000-4000-8000-000000000002", 1, "scenario-same-key", nil)
@@ -532,7 +590,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 		})
 	}
-	if len(runs) != 26 {
+	if len(runs) != 30 {
 		t.Fatal("scenario runner count changed")
 	}
 	for id := range runs {
