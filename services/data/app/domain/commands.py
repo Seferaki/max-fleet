@@ -22,7 +22,6 @@ from app.config import Settings
 from app.domain import dto
 from app.domain.core import (
     Actor,
-    assignment_of_employee,
     audit,
     check_version,
     expire_attempt,
@@ -165,31 +164,41 @@ def ensure_inspection_editable(ic: InspectionContext) -> None:
 
 def checkout_create(ctx: Ctx) -> dict[str, Any]:
     session, now = ctx.session, ctx.now
-    employee = lock_employee(session, ctx.actor.id)
+    # Участники без блокировок: собственное закрепление actor и закрепление целевой машины.
+    own_pre = session.scalar(select(m.VehicleAssignment).where(m.VehicleAssignment.employee_id == ctx.actor.id))
+    target_pre = session.get(m.VehicleAssignment, ctx.target)
+    # Канонический порядок: все employee по id → все vehicle по id → assignment по vehicle_id.
+    employee_ids = {ctx.actor.id} | ({target_pre.employee_id} if target_pre else set())
+    locked_emps = {eid: lock_employee(session, eid) for eid in sorted(employee_ids)}
+    employee = locked_emps[ctx.actor.id]
     if not employee.can_start_trip:
         raise DomainError("CANNOT_START_TRIP")
-    vehicle = lock_vehicle(session, ctx.target)
-    own = assignment_of_employee(session, employee.id)
+    vehicle_ids = {ctx.target} | ({own_pre.vehicle_id} if own_pre else set())
+    vehicles = {vid: lock_vehicle(session, vid) for vid in sorted(vehicle_ids)}
+    vehicle = vehicles[ctx.target]
+    assignments = {vid: lock_assignment_for_vehicle(session, vid) for vid in sorted(vehicle_ids)}
+    # Если actor успел получить hold на другой машине после чтения — UNIQUE(employee_id) даст USER_BUSY.
+    own = next((a for a in assignments.values() if a is not None and a.employee_id == employee.id), None)
     if own is not None:
         attempt = session.get(m.CheckoutAttempt, own.checkout_attempt_id)
         if own.phase == "hold" and attempt is not None and attempt.expires_at <= now:
-            if own.vehicle_id != vehicle.id:
-                other = lock_vehicle(session, own.vehicle_id)
-            else:
-                other = vehicle
-            expire_attempt(session, lock(session, m.CheckoutAttempt, attempt.id), other, own, now)
+            expire_attempt(session, lock(session, m.CheckoutAttempt, attempt.id), vehicles[own.vehicle_id],
+                           own, now)
             session.flush()
+            if own.vehicle_id == vehicle.id:
+                assignments[vehicle.id] = None
         else:
             raise DomainError("USER_BUSY")
-    assignment = lock_assignment_for_vehicle(session, vehicle.id)
+    assignment = assignments[vehicle.id]
     if assignment is not None:
         attempt = session.get(m.CheckoutAttempt, assignment.checkout_attempt_id)
-        if assignment.phase == "hold" and attempt is not None and attempt.expires_at <= now:
-            lock_employee(session, assignment.employee_id)
-            expire_attempt(session, lock(session, m.CheckoutAttempt, attempt.id), vehicle, assignment, now)
-            session.flush()
-        else:
+        if assignment.phase != "hold" or attempt is None or attempt.expires_at > now:
             raise DomainError("VEHICLE_UNAVAILABLE")
+        if assignment.employee_id not in locked_emps:
+            # просроченный hold другого сотрудника появился после чтения: его строку мы не блокировали
+            raise DomainError("TEMPORARY_FAILURE")
+        expire_attempt(session, lock(session, m.CheckoutAttempt, attempt.id), vehicle, assignment, now)
+        session.flush()
     if not dto.vehicle_issuable(session, vehicle):
         raise DomainError("VEHICLE_UNAVAILABLE")
     check_version(vehicle, ctx.cmd.expected_version)
