@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "0b57d4b9-be94-4558-b500-eff5594ee587"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T09:20:15Z"
+heartbeat_utc: "2026-09-28T09:23:06Z"
 current_task: BE-02
-current_substep: "Адаптер MAX: изучить pinned SDK и реализовать transport интерфейс"
-last_verified_code_commit: "bb8063c3800602f921b7390469c374d55f672a06"
-checkpoint_state: VERIFIED
+current_substep: "MAX text transport готов; далее нормализация входящих update"
+last_verified_code_commit: "d53d977a7d4384339e3534c28e5d017c1eff57df"
+checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-02: изучить pinned MAX SDK v2.4.1, реализовать transport интерфейс и тестовый sender; реальный токен не требуется"
+next_step: "BE-02: нормализовать bot_started/message_created/message_callback/photo/geo из pinned SDK; затем webhook durable inbox"
 human_required: [H-01]
 ```
 
@@ -29,7 +29,7 @@ human_required: [H-01]
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
-| BE-02 | IN_PROGRESS | База: `8cd90fe98e0c110f7a8653840d1991fe3307bded` | MAX transport интерфейс; H-01 не блокирует mock |
+| BE-02 | IN_PROGRESS | `d53d977a7d4384339e3534c28e5d017c1eff57df` — SDK text transport и recording sender | Нормализация входящих update; H-01 не блокирует mock |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
 | BE-05 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-02 code commit: `d53d977a7d4384339e3534c28e5d017c1eff57df`. `maxsdk.Transport` отделяет диалоги от официального SDK v2.4.1; `SDKTransport` отправляет текст пользователю и возвращает MAX message ID, `RecordingTransport` сохраняет отправки для тестов. Проверены неверный recipient/пустой текст до SDK, ошибка SDK, отсутствие ID, отменённый context и фактический HTTP-запрос через pinned SDK к локальному тестовому серверу. `go test ./internal/maxsdk -v` → 4 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Реальный MAX/токен и CI этого SHA не проверены. Следующий шаг: нормализация входящих update; BE-02 WIP.
 
 - BE-01 gate: [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) для `8cd90fe98e0c110f7a8653840d1991fe3307bded` завершилась success: secret scan, contract, Go, web и Docker. `bb8063c3800602f921b7390469c374d55f672a06` — последний проверенный code commit. Критерии BE-01 сверены с планом: typed client, отдельный mock, версии/auth/errors, fixture неизвестного, fake clock, timeout/409/503, atomic snapshot, запрет production, восстановление. Локальный `go test -race ./...` не запускался: CGO выключен и gcc отсутствует; CI выполняет обычный Go test. BE-01 DONE. Следующая задача BE-02, без реального MAX до H-01/INT.
 
