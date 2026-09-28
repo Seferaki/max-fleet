@@ -3,6 +3,7 @@ package dialog
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
@@ -18,8 +19,12 @@ import (
 )
 
 func mockClients(t *testing.T, now time.Time) (*dataapi.Client, *dataapi.WorkerClient, func()) {
+	return mockClientsClock(t, func() time.Time { return now })
+}
+
+func mockClientsClock(t *testing.T, now func() time.Time) (*dataapi.Client, *dataapi.WorkerClient, func()) {
 	t.Helper()
-	mock, err := datamock.NewWithSnapshotAndWorkerToken("synthetic-service-token", "synthetic-worker-token", filepath.Join(t.TempDir(), "snapshot.json"), func() time.Time { return now })
+	mock, err := datamock.NewWithSnapshotAndWorkerToken("synthetic-service-token", "synthetic-worker-token", filepath.Join(t.TempDir(), "snapshot.json"), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,6 +40,55 @@ func mockClients(t *testing.T, now time.Time) (*dataapi.Client, *dataapi.WorkerC
 		t.Fatal(err)
 	}
 	return actor, worker, server.Close
+}
+
+func TestMathAnswerRejectsOtherActorAndExpiredHold(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	current := now
+	actor, store, closeServer := mockClientsClock(t, func() time.Time { return current })
+	defer closeServer()
+	const driver = "8000000000000000001"
+	available := true
+	page, err := actor.Vehicles(context.Background(), driver, dataapi.VehicleFilter{Available: &available, Limit: 5})
+	if err != nil || len(page.Items) == 0 {
+		t.Fatal(err)
+	}
+	vehicle := page.Items[0]
+	if _, err := actor.CheckoutCreate(context.Background(), driver, vehicle.ID, vehicle.Version, "expiry-setup-hold", nil); err != nil {
+		t.Fatal(err)
+	}
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: actor, Commands: actor, MAX: sender}
+	if err := processor.Handle(context.Background(), menuItem(driver, "expiry-menu", now)); err != nil {
+		t.Fatal(err)
+	}
+	menu := sender.Messages()[0]
+	event := callbackItem(driver, "expiry-math", menu.Buttons[0][0].Payload, now).Event
+	if _, err := store.StoreInbox(context.Background(), event, maxsdk.InboxIdempotencyKey(event)); err != nil {
+		t.Fatal(err)
+	}
+	worker := inboxworker.Worker{ID: "expiry-worker", Store: store, Processor: processor, Now: func() time.Time { return current }}
+	if result, err := worker.RunOnce(context.Background(), 1); err != nil || result.Acked != 1 {
+		t.Fatalf("math creation = %+v %v", result, err)
+	}
+	question := sender.Messages()[1]
+	if len(question.Buttons) != 4 {
+		t.Fatalf("math question = %+v", question)
+	}
+	answerPayload := question.Buttons[0][0].Payload
+	other := callbackItem("8000000000000000002", "other-answer", answerPayload, now)
+	if err := processor.Handle(context.Background(), other); err != nil || !strings.Contains(sender.Messages()[2].Text, "Шаг подтверждения изменился") {
+		t.Fatalf("other actor answer = %v, %+v", err, sender.Messages())
+	}
+	current = now.Add(16 * time.Minute)
+	expired := callbackItem(driver, "expired-answer", answerPayload, current)
+	if err := processor.Handle(context.Background(), expired); err != nil || !strings.Contains(sender.Messages()[3].Text, "hold истёк") {
+		t.Fatalf("expired answer = %v, %+v", err, sender.Messages())
+	}
+	state, err := actor.State(context.Background(), driver)
+	if err != nil || state.Checkout != nil || state.Trip != nil {
+		t.Fatalf("expired hold state = %+v %v", state, err)
+	}
 }
 
 func menuItem(actor, key string, now time.Time) dataapi.InboxClaimItem {
@@ -729,10 +783,10 @@ func TestCheckoutMenuRestoresHoldAndCancelsOnlyAfterConfirmation(t *testing.T) {
 		t.Fatal(err)
 	}
 	menu := sender.Messages()[0]
-	if !strings.Contains(menu.Text, "Hold до: 28.09.2026 09:15 UTC") || len(menu.Buttons) != 1 || !strings.HasPrefix(menu.Buttons[0][0].Payload, "cancel-intent:") {
+	if !strings.Contains(menu.Text, "Hold до: 28.09.2026 09:15 UTC") || len(menu.Buttons) != 2 || !strings.HasPrefix(menu.Buttons[0][0].Payload, "math:") || !strings.HasPrefix(menu.Buttons[1][0].Payload, "cancel-intent:") {
 		t.Fatalf("recovered hold menu = %+v", menu)
 	}
-	intent := callbackItem(driver, "cancel-intent", menu.Buttons[0][0].Payload, now)
+	intent := callbackItem(driver, "cancel-intent", menu.Buttons[1][0].Payload, now)
 	if err := processor.Handle(context.Background(), intent); err != nil {
 		t.Fatal(err)
 	}
@@ -773,5 +827,113 @@ func TestCheckoutMenuRestoresHoldAndCancelsOnlyAfterConfirmation(t *testing.T) {
 	other := callbackItem("8000000000000000002", "other-cancel", confirmation.Buttons[0][0].Payload, now)
 	if err := processor.Handle(context.Background(), other); err != nil || !strings.Contains(sender.Messages()[4].Text, "не найдено") {
 		t.Fatalf("other actor cancel = %v, %+v", err, sender.Messages())
+	}
+}
+
+func TestMathChallengeAttemptsStaleAnswerAndRecovery(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	actor, store, closeServer := mockClients(t, now)
+	defer closeServer()
+	const driver = "8000000000000000001"
+	available := true
+	page, err := actor.Vehicles(context.Background(), driver, dataapi.VehicleFilter{Available: &available, Limit: 5})
+	if err != nil || len(page.Items) == 0 {
+		t.Fatal(err)
+	}
+	vehicle := page.Items[0]
+	if _, err := actor.CheckoutCreate(context.Background(), driver, vehicle.ID, vehicle.Version, "math-setup-hold", nil); err != nil {
+		t.Fatal(err)
+	}
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: actor, Commands: actor, MAX: sender, Location: time.UTC}
+	worker := inboxworker.Worker{ID: "math-worker", Store: store, Processor: processor, Now: func() time.Time { return now }}
+	if err := processor.Handle(context.Background(), menuItem(driver, "math-menu", now)); err != nil {
+		t.Fatal(err)
+	}
+	deliver := func(key, payload string) maxsdk.RecordedText {
+		t.Helper()
+		event := callbackItem(driver, key, payload, now).Event
+		if _, err := store.StoreInbox(context.Background(), event, maxsdk.InboxIdempotencyKey(event)); err != nil {
+			t.Fatal(err)
+		}
+		result, err := worker.RunOnce(context.Background(), 1)
+		if err != nil || result.Acked != 1 {
+			t.Fatalf("math event %s = %+v %v", key, result, err)
+		}
+		messages := sender.Messages()
+		return messages[len(messages)-1]
+	}
+	mathPayload := sender.Messages()[0].Buttons[0][0].Payload
+	question := deliver("math-first", mathPayload)
+	if len(question.Buttons) != 4 {
+		t.Fatalf("math options = %+v", question)
+	}
+	var a, b int
+	parts := strings.Split(question.Text, "\n")
+	if len(parts) < 2 {
+		t.Fatalf("math question = %q", question.Text)
+	}
+	if _, err := fmt.Sscanf(parts[1], "%d + %d = ?", &a, &b); err != nil {
+		t.Fatalf("invalid math question = %q: %v", parts[1], err)
+	}
+	correctIndex := -1
+	for i, row := range question.Buttons {
+		value, err := strconv.Atoi(row[0].Text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if value == a+b {
+			correctIndex = i
+		}
+	}
+	if correctIndex < 0 {
+		t.Fatalf("correct answer missing: %+v", question.Buttons)
+	}
+	wrongIndex := (correctIndex + 1) % 4
+	stalePayload := question.Buttons[wrongIndex][0].Payload
+	for attempt := 1; attempt <= 3; attempt++ {
+		response := deliver(fmt.Sprintf("math-wrong-%d", attempt), question.Buttons[wrongIndex][0].Payload)
+		if attempt < 3 {
+			if !strings.Contains(response.Text, fmt.Sprintf("Осталось попыток: %d", 3-attempt)) || len(response.Buttons) != 4 {
+				t.Fatalf("wrong attempt %d = %+v", attempt, response)
+			}
+			question = response
+		} else if !strings.Contains(response.Text, "Три неверных ответа") || len(response.Buttons) != 0 {
+			t.Fatalf("third wrong answer = %+v", response)
+		}
+	}
+	stale := deliver("math-stale", stalePayload)
+	if !strings.Contains(stale.Text, "устарел") {
+		t.Fatalf("stale answer = %+v", stale)
+	}
+	state, err := actor.State(context.Background(), driver)
+	if err != nil || state.Checkout == nil || state.Checkout.Step != "math" || state.Trip != nil {
+		t.Fatalf("math state after failures = %+v %v", state, err)
+	}
+	if err := processor.Handle(context.Background(), menuItem(driver, "math-menu-again", now)); err != nil {
+		t.Fatal(err)
+	}
+	newMenu := sender.Messages()[len(sender.Messages())-1]
+	question = deliver("math-second", newMenu.Buttons[0][0].Payload)
+	if len(question.Buttons) != 4 {
+		t.Fatalf("new math question = %+v", question)
+	}
+	parts = strings.Split(question.Text, "\n")
+	if _, err := fmt.Sscanf(parts[1], "%d + %d = ?", &a, &b); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range question.Buttons {
+		value, _ := strconv.Atoi(row[0].Text)
+		if value == a+b {
+			response := deliver("math-correct", row[0].Payload)
+			if !strings.Contains(response.Text, "Ответ верный") {
+				t.Fatalf("correct answer = %+v", response)
+			}
+			break
+		}
+	}
+	state, err = actor.State(context.Background(), driver)
+	if err != nil || state.Checkout == nil || state.Checkout.Step != "rules" || state.Checkout.IntentConfirmedAt == nil || state.Trip != nil {
+		t.Fatalf("math state after correct answer = %+v %v", state, err)
 	}
 }

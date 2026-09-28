@@ -25,6 +25,8 @@ type Reader interface {
 type CheckoutCommander interface {
 	CheckoutCreate(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	CheckoutCancel(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	ChallengeCreateTake(context.Context, string, string, int64, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	ChallengeAnswer(context.Context, string, string, int64, int, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 }
 
 // Bootstrap handles implemented menu, catalog and checkout entry events. Other
@@ -46,7 +48,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	confirmVehicleID, confirmVersion, confirm := vehicleActionTarget(item.Event, "take:")
 	cancelID, cancelVersion, cancelIntent := vehicleActionTarget(item.Event, "cancel-intent:")
 	confirmedCancelID, confirmedCancelVersion, confirmedCancel := vehicleActionTarget(item.Event, "cancel:")
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !isMenuEvent(item.Event) {
+	mathCheckoutID, mathVersion, math := vehicleActionTarget(item.Event, "math:")
+	challengeID, challengeVersion, selectedOption, answer := answerTarget(item.Event)
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -87,6 +91,12 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 			checkoutID, version = confirmedCancelID, confirmedCancelVersion
 		}
 		return p.cancelCheckout(ctx, item, actor, maxID, state, checkoutID, version, confirmedCancel)
+	}
+	if math {
+		return p.createMath(ctx, item, actor, maxID, state, mathCheckoutID, mathVersion)
+	}
+	if answer {
+		return p.answerMath(ctx, item, actor, maxID, state, challengeID, challengeVersion, selectedOption)
 	}
 	if catalog {
 		if pageNumber == 0 {
@@ -147,6 +157,104 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		message += "\nHold до: " + formatMoment(state.Checkout.ExpiresAt, p.Location)
 	}
 	return p.sendView(ctx, maxID, message, menuRows(*me.Employee, state))
+}
+
+func answerTarget(event dataapi.NormalizedEvent) (string, int64, int, bool) {
+	if event.EventType != "message_callback" || event.Payload.Kind != "callback" || event.Payload.CallbackData == nil || !strings.HasPrefix(*event.Payload.CallbackData, "answer:") {
+		return "", 0, 0, false
+	}
+	parts := strings.Split(strings.TrimPrefix(*event.Payload.CallbackData, "answer:"), ":")
+	if len(parts) != 3 {
+		return "", 0, 0, true
+	}
+	version, versionErr := strconv.ParseInt(parts[1], 10, 64)
+	option, optionErr := strconv.Atoi(parts[2])
+	if versionErr != nil || optionErr != nil || version < 1 || option < 0 || option > 3 {
+		return "", 0, 0, true
+	}
+	return parts[0], version, option, true
+}
+
+func (p Bootstrap) createMath(ctx context.Context, item dataapi.InboxClaimItem, actor string, maxID int64, state dataapi.CurrentState, checkoutID string, version int64) error {
+	if !vehicleIDPattern.MatchString(checkoutID) || version < 1 {
+		return p.sendView(ctx, maxID, "Кнопка вопроса повреждена. Откройте /menu.", nil)
+	}
+	checkout := state.Checkout
+	if checkout == nil || checkout.ID != checkoutID || checkout.Status != "holding" || checkout.Step != "math" || checkout.Version != version {
+		return p.sendView(ctx, maxID, "Шаг оформления изменился или hold истёк. Обновите /menu.", nil)
+	}
+	vehicle, err := p.Data.Vehicle(ctx, actor, checkout.VehicleID)
+	if err != nil {
+		return err
+	}
+	if vehicle.Version < 2 || p.Commands == nil || item.LeaseToken == "" {
+		return errors.New("math challenge requires a durable inbox lease and vehicle version")
+	}
+	key, err := inboxworker.CommandKey(item, "challenge.create")
+	if err != nil {
+		return err
+	}
+	result, err := p.Commands.ChallengeCreateTake(ctx, actor, checkout.ID, checkout.Version, checkout.VehicleID, vehicle.Version-1, key, &dataapi.InboxLease{EventID: item.ID, Token: item.LeaseToken})
+	if err != nil {
+		var apiErr *dataapi.APIError
+		if errors.As(err, &apiErr) && apiErr.Status == 409 {
+			return p.sendView(ctx, maxID, "Вопрос устарел или hold истёк. Обновите /menu.", nil)
+		}
+		return err
+	}
+	challenge, err := dataapi.DecodeAggregate[dataapi.Challenge](result)
+	if err != nil || !validTakeChallenge(challenge) {
+		return errors.New("challenge create returned invalid aggregate")
+	}
+	return p.sendChallenge(ctx, maxID, challenge, "Выберите ответ. Попыток: 3.")
+}
+
+func (p Bootstrap) answerMath(ctx context.Context, item dataapi.InboxClaimItem, actor string, maxID int64, state dataapi.CurrentState, challengeID string, version int64, option int) error {
+	if !vehicleIDPattern.MatchString(challengeID) || version < 1 {
+		return p.sendView(ctx, maxID, "Кнопка ответа повреждена. Откройте /menu.", nil)
+	}
+	if state.Checkout == nil || state.Checkout.Status != "holding" || state.Checkout.Step != "math" {
+		return p.sendView(ctx, maxID, "Шаг подтверждения изменился или hold истёк. Обновите /menu.", nil)
+	}
+	if p.Commands == nil || item.LeaseToken == "" {
+		return errors.New("challenge answer requires a durable inbox lease")
+	}
+	key, err := inboxworker.CommandKey(item, "challenge.answer")
+	if err != nil {
+		return err
+	}
+	result, err := p.Commands.ChallengeAnswer(ctx, actor, challengeID, version, option, key, &dataapi.InboxLease{EventID: item.ID, Token: item.LeaseToken})
+	if err != nil {
+		var apiErr *dataapi.APIError
+		if errors.As(err, &apiErr) && (apiErr.Status == 409 || apiErr.Status == 404) {
+			return p.sendView(ctx, maxID, "Ответ уже устарел или вопрос недоступен. Начните новый через /menu.", nil)
+		}
+		return err
+	}
+	challenge, err := dataapi.DecodeAggregate[dataapi.Challenge](result)
+	if err != nil || !validTakeChallenge(challenge) || challenge.ID != challengeID || result.Correct == nil || result.AttemptsRemaining == nil || *result.AttemptsRemaining != challenge.AttemptsRemaining {
+		return errors.New("challenge answer returned invalid aggregate")
+	}
+	if *result.Correct {
+		return p.sendView(ctx, maxID, "Ответ верный. Следующий шаг — правила. Откройте /menu.", nil)
+	}
+	if *result.AttemptsRemaining == 0 {
+		return p.sendView(ctx, maxID, "Три неверных ответа. Получите новый вопрос через /menu, пока hold действует.", nil)
+	}
+	return p.sendChallenge(ctx, maxID, challenge, fmt.Sprintf("Ответ неверный. Осталось попыток: %d.", *result.AttemptsRemaining))
+}
+
+func validTakeChallenge(challenge dataapi.Challenge) bool {
+	return vehicleIDPattern.MatchString(challenge.ID) && challenge.Purpose == "take" && challenge.Question != "" && len(challenge.Options) == 4 && challenge.Version > 0 && challenge.AttemptsRemaining >= 0 && challenge.AttemptsRemaining <= 3 && !challenge.ExpiresAt.IsZero()
+}
+
+func (p Bootstrap) sendChallenge(ctx context.Context, maxID int64, challenge dataapi.Challenge, lead string) error {
+	rows := make([][]maxsdk.Button, 0, 4)
+	for index, value := range challenge.Options {
+		rows = append(rows, []maxsdk.Button{{Text: strconv.Itoa(value), Payload: fmt.Sprintf("answer:%s:%d:%d", challenge.ID, challenge.Version, index)}})
+	}
+	text := lead + "\n" + oneLine(challenge.Question) + "\nВопрос до: " + formatMoment(challenge.ExpiresAt, p.Location)
+	return p.sendView(ctx, maxID, text, rows)
 }
 
 func (p Bootstrap) cancelCheckout(ctx context.Context, item dataapi.InboxClaimItem, actor string, maxID int64, state dataapi.CurrentState, checkoutID string, version int64, confirm bool) error {
@@ -506,7 +614,11 @@ func isMenuEvent(event dataapi.NormalizedEvent) bool {
 
 func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.Button {
 	if state.Checkout != nil && state.Checkout.Status == "holding" {
-		return [][]maxsdk.Button{{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}}}
+		rows := [][]maxsdk.Button{}
+		if state.Checkout.Step == "math" {
+			rows = append(rows, []maxsdk.Button{{Text: "Продолжить оформление", Payload: fmt.Sprintf("math:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
+		}
+		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 	}
 	if employee.CanStartTrip && state.Trip == nil && state.Checkout == nil {
 		return [][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}}
