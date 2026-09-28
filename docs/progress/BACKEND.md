@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "0b57d4b9-be94-4558-b500-eff5594ee587"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T09:05:41Z"
+heartbeat_utc: "2026-09-28T09:07:19Z"
 current_task: BE-01
-current_substep: "25/44 contract runner; далее checkout.race-loser"
-last_verified_code_commit: "0daa6f62941a77223f4b53080f4ae9c6d648f767"
+current_substep: "26/44 contract runner; далее schema cases"
+last_verified_code_commit: "27f61ba6f58b235694d622b299e25a647126ed83"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: исполнить checkout.race-loser с двумя actor и следующие готовые contract scenarios; WIP"
+next_step: "BE-01: исполнить готовые schema cases и checkout.issue-before; затем остальные сценарии по зависимостям; WIP"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `0daa6f62941a77223f4b53080f4ae9c6d648f767` — typed WorkerClient и mock notification transitions; WIP | 25/44 runner-сценария; расширить runner и оставшиеся маршруты |
+| BE-01 | IN_PROGRESS | `27f61ba6f58b235694d622b299e25a647126ed83` — typed WorkerClient и mock notification transitions; WIP | 26/44 runner-сценария; расширить runner и оставшиеся маршруты |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `27f61ba6f58b235694d622b299e25a647126ed83`. Runner добавил `checkout.race-loser`: два разных actor одновременно вызывают `checkout.create` для одной машины, ровно один получает hold, второй — 409 `VEHICLE_UNAVAILABLE`; сохранён один checkout, машина holding. Теперь 26/44 сценариев PASS. `go test ./internal/datamock -run '^TestContractScenarioSubsetAgainstHTTPMock/checkout.race-loser$' -count=20`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Это синтетический mock, не PostgreSQL-транзакция Python; Docker/CI текущего SHA не проверены. Следующий шаг: schema cases и `checkout.issue-before`; BE-01 WIP.
 
 - BE-01 code commit: `0daa6f62941a77223f4b53080f4ae9c6d648f767`. Runner добавил `checkout.happy`: после восьми загруженных фото и синтетического ready-состояния `checkout.start` создаёт одну active trip, переводит hold в started и машину в in_trip; новая выдача второму actor получает `VEHICLE_UNAVAILABLE`. 25/44 сценариев PASS. `go test ./internal/datamock -run '^TestContractScenarioSubsetAgainstHTTPMock$' -count=1 -v`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Math/rules в этом сценарии подготовлены фикстурой, не пройдены через полный диалог MAX; реальный MAX/Python не проверены. Docker/CI этого SHA не проверены. Следующий шаг: `checkout.race-loser`; BE-01 WIP.
 
