@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03 и BE-01…BE-05 выполнены на Go mock; BE-06 в работе. Контракт v1.1 для чтения фото поездки реализован в Go mock/client; Python ещё должен его реализовать. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03 и BE-01…BE-05 выполнены на Go mock; BE-06 в работе. Контракт v1.2 опубликован; Go mock/client ещё на v1.1 до следующего шага, Python v1.2 тоже не реализован. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "2a3026c7-1c0f-4258-9d7c-020601272841"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T20:30:33Z"
+heartbeat_utc: "2026-09-28T20:35:39Z"
 current_task: BE-06
-current_substep: "BE-06: claim HANDOFF; проектирование сохранения issue-before с фото"
-last_verified_code_commit: "24b1c44188c6ae0874dd5d91ee75530285c3ad4b"
+current_substep: "BE-06: контракт v1.2 для восстанавливаемого issue draft опубликован; далее Go client/mock"
+last_verified_code_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 checkpoint_state: WIP
-contract_commit: "1aaea964e253dce7338283ca4c012a14c8c93f6d"
+contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "После claim BE-06: категория/описание и до 3 stage-фото для issue-before, issue.create с безопасным восстановлением, затем сводка/start. UI-01 React карта остаётся P0"
+next_step: "BE-06: Go client/mock v1.2 conversation.save и /state с CAS/ACL/restart, затем диалог категории/описания и до 3 stage-фото, issue.create, сводка/start. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -33,7 +33,7 @@ human_required: [H-01]
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
 | BE-05 | DONE | `856785401024a28f7b0ba4a92c65219a6774ad27` — 8 ракурсов, upload/replace/view/media/recovery; [CI c2a39a5](https://github.com/Seferaki/max-fleet/actions/runs/36476231053) success и локальный gateway verify | Реальный MAX/Python остаются INT; BE-06 |
-| BE-06 | IN_PROGRESS | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ о новых замечаниях; `24b1c44188c6ae0874dd5d91ee75530285c3ad4b` — безопасный ответ | Категория/описание/фото issue-before и start ещё не реализованы |
+| BE-06 | IN_PROGRESS | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ; `da3931879aeb663dd529c8c5af8cdb1e744d9cdd` — контракт v1.2 | Go runtime v1.2, issue-before и start ещё не реализованы |
 | BE-07 | TODO | — | См. план |
 | UI-01 | TODO | — | См. план |
 | BE-08 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-06 contract code commit `da3931879aeb663dd529c8c5af8cdb1e744d9cdd` опубликован обычным push. v1.2 добавляет `conversation` в `/state` и поля `issue_category`, уникальные `asset_ids` (до 3), `vehicle_version` в контекст сохранённого диалога; включены синтетический пример и сценарии restart/CAS. `py contracts/build_openapi.py` на системном Python 3.14 сначала не прошёл из-за отсутствия PyYAML; штатный `.local/contract-venv/Scripts/python.exe contracts/build_openapi.py` и `contracts/validate.py` → PASS (37 маршрутов, 24 команды, 8 прочих примеров, 50 сценариев). Redocly lint обеих схем → valid, staged diff/secret scan → exit 0. Go client/mock ещё ожидают v1.1, Python v1.2 не проверен; BE-06 WIP. Следующий шаг: Go client/mock v1.2 с CAS/ACL и восстановлением после restart.
 
 - CLAIM 2026-09-28 20:30:33 UTC: ноутбук B начинает новую сессию `2a3026c7-1c0f-4258-9d7c-020601272841` после опубликованного HANDOFF `250e973bb87662ea069559df0b3a60f8b64d475c`. Remote/локальный HEAD совпали, worktree чист. До правок кода требуется обычный push claim-коммита.
 
