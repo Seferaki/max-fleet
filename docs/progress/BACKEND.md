@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "2a3026c7-1c0f-4258-9d7c-020601272841"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T21:01:07Z"
+heartbeat_utc: "2026-09-28T21:07:11Z"
 current_task: BE-06
-current_substep: "BE-06: issue-before review/submit и восстановление проверены; далее сводка/start"
-last_verified_code_commit: "ccb4eedf036efbf3432f440d8f60bec907398132"
+current_substep: "BE-06: сводка/start, active trip и восстановление ответа проверены; далее полный take mock и ошибки"
+last_verified_code_commit: "626086e96668660c87430fb1e73a2d355c4c86fc"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-06: итоговая сводка before с 8/8, топливом/пробегом/правилами и attestation, checkout.start с восстановлением после commit; затем active trip карточка. UI-01 React карта остаётся P0"
+next_step: "BE-06: проверить полный take через диалог на mock и отказы hold/прав/версии, затем закрыть BE-06 по проверкам; BE-07 активная поездка/возврат и UI-01 React карта остаются P0"
 human_required: [H-01]
 ```
 
@@ -33,7 +33,7 @@ human_required: [H-01]
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
 | BE-05 | DONE | `856785401024a28f7b0ba4a92c65219a6774ad27` — 8 ракурсов, upload/replace/view/media/recovery; [CI c2a39a5](https://github.com/Seferaki/max-fleet/actions/runs/36476231053) success и локальный gateway verify | Реальный MAX/Python остаются INT; BE-06 |
-| BE-06 | IN_PROGRESS | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ; `da3931879aeb663dd529c8c5af8cdb1e744d9cdd` — контракт v1.2; `d3a54dc7cfa6a0b93253527751671f6cf3c81ebc` — Go conversation; `f73ccbec636c39309202cc68716b087622d96e3c` — описание; `79e98ba3b09f26997d6867a60650c9367b0a27a2` — до 3 фото; `ccb4eedf036efbf3432f440d8f60bec907398132` — issue.create/recovery | Итоговая сводка/start ещё не реализованы |
+| BE-06 | IN_PROGRESS | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ; `da3931879aeb663dd529c8c5af8cdb1e744d9cdd` — контракт v1.2; `d3a54dc7cfa6a0b93253527751671f6cf3c81ebc` — Go conversation; `f73ccbec636c39309202cc68716b087622d96e3c` — описание; `79e98ba3b09f26997d6867a60650c9367b0a27a2` — до 3 фото; `ccb4eedf036efbf3432f440d8f60bec907398132` — issue.create/recovery; `626086e96668660c87430fb1e73a2d355c4c86fc` — summary/start/recovery | Полный dialog take и отказы ещё не проверены вместе |
 | BE-07 | TODO | — | См. план |
 | UI-01 | TODO | — | См. план |
 | BE-08 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-06 start code commit `626086e96668660c87430fb1e73a2d355c4c86fc` опубликован обычным push. Меню предлагает итоговую сводку только после 8 подтверждённых фото, топлива, пробега, принятия правил и ответа без новых замечаний. Сводка показывает hold и явное подтверждение данных; `checkout.start` отправляется через Data API с lease и стабильным inbox-ключом. После commit показывается активная поездка; повтор после потери ответа читает сохранённый trip из `/state` и не создаёт вторую поездку. Синтетический тест проверил отсутствие ранней кнопки, чужого actor, отсутствие lease, устаревшую версию, потерю MAX-ответа и восстановление без нового trip ID. `go test ./internal/dialog -run '^TestCheckoutSummaryStartAndLostReplyRecovery$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Полный диалоговый take и все отказы совместно ещё не проверены; реальный MAX/Python не проверены, BE-06 WIP.
 
 - BE-06 issue-submit code commit `ccb4eedf036efbf3432f440d8f60bec907398132` опубликован обычным push. Сводка before-замечания показывает категорию, описание и 0–3 фото; `issue.create` использует сохранённые target/version/asset IDs и стабильный ключ inbox. Только после сохранения issue бот сообщает об отмене hold и недоступности машины. `conversation.save` затем фиксирует `done`/issue ID, а повтор читает issue по правам actor. Синтетические тесты проверили чужого actor, отсутствие lease, привязку двух staged фото, смену статуса машины, сбой MAX-ответа после commit и сбой между `issue.create` и `done` с успешным retry. `go test ./internal/dialog -run '^TestBeforeIssueSubmit' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Реальный MAX/Python не проверены, BE-06 WIP; следующий шаг — итоговая сводка и start.
 
