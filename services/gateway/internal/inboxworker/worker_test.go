@@ -18,6 +18,19 @@ func (f processorFunc) Handle(ctx context.Context, item dataapi.InboxClaimItem) 
 	return f(ctx, item)
 }
 
+type unstableStore struct {
+	*dataapi.WorkerClient
+	failClaims int
+}
+
+func (s *unstableStore) ClaimInbox(ctx context.Context, workerID string, maxItems int, key string) (dataapi.InboxClaim, error) {
+	if s.failClaims > 0 {
+		s.failClaims--
+		return dataapi.InboxClaim{}, errors.New("synthetic store outage")
+	}
+	return s.WorkerClient.ClaimInbox(ctx, workerID, maxItems, key)
+}
+
 func workerStore(t *testing.T, path string, now func() time.Time) (*dataapi.WorkerClient, *httptest.Server) {
 	t.Helper()
 	mock, err := datamock.NewWithSnapshotAndWorkerToken("synthetic-service-token", "synthetic-worker-token", path, now)
@@ -164,5 +177,37 @@ func TestWorkerRetryAfterDomainCommitReusesCommandKey(t *testing.T) {
 	summary, err := actorClient.AdminSummary(context.Background(), "8000000000000000003")
 	if err != nil || summary.Holding != 1 {
 		t.Fatalf("duplicate hold after replay: %+v, %v", summary, err)
+	}
+}
+
+func TestWorkerLoopRecoversFromStoreOutageAndStopsOnCancel(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	client, server := workerStore(t, filepath.Join(t.TempDir(), "snapshot.json"), func() time.Time { return now })
+	defer server.Close()
+	storeStart(t, client, "8000000000000000001", "start-after-outage", now)
+	store := &unstableStore{WorkerClient: client, failClaims: 1}
+	processed := 0
+	worker := Worker{ID: "inbox-loop-worker", Store: store, Now: func() time.Time { return now }, Processor: processorFunc(func(context.Context, dataapi.InboxClaimItem) error {
+		processed++
+		return nil
+	})}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	observed := 0
+	err := worker.Run(ctx, time.Millisecond, 1, func(result Result, err error) {
+		observed++
+		if observed == 1 && err == nil || observed == 2 && (err != nil || result.Acked != 1) {
+			t.Errorf("cycle %d = %+v, %v", observed, result, err)
+		}
+		if observed == 2 {
+			cancel()
+		}
+	})
+	if err != nil || observed != 2 || processed != 1 {
+		t.Fatalf("worker shutdown = %v; cycles=%d processed=%d", err, observed, processed)
+	}
+	claim, err := client.ClaimInbox(context.Background(), "after-loop", 1, "claim-after-loop")
+	if err != nil || len(claim.Items) != 0 {
+		t.Fatalf("acknowledged event remains in queue: %+v, %v", claim, err)
 	}
 }

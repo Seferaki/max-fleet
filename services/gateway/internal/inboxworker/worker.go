@@ -44,6 +44,34 @@ type Result struct {
 	Dead    int
 }
 
+// Run keeps the durable queue moving across transient store failures. The
+// caller supplies a real Processor; an unconfigured worker never claims items.
+// observe receives counts and errors without event payloads.
+func (w Worker) Run(ctx context.Context, interval time.Duration, maxItems int, observe func(Result, error)) error {
+	if interval <= 0 || interval > time.Hour {
+		return errors.New("invalid inbox worker interval")
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if ctx.Err() != nil {
+			return nil
+		}
+		result, err := w.RunOnce(ctx, maxItems)
+		if ctx.Err() != nil {
+			return nil
+		}
+		if observe != nil {
+			observe(result, err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+	}
+}
+
 var safeCode = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,79}$`)
 var safeStep = regexp.MustCompile(`^[a-z][a-z0-9._:-]{0,79}$`)
 
