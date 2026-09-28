@@ -103,6 +103,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 				message = cardText(vehicle, p.Location)
 				message += "\n" + checkoutAvailabilityText(vehicle, *me.Employee, state)
 				rows = append([][]maxsdk.Button{{{Text: "Предыдущий осмотр", Payload: "prev:" + vehicle.ID}}}, rows...)
+				if vehicle.CurrentParking != nil {
+					rows = append([][]maxsdk.Button{{{Text: "Показать на карте", URL: parkingMapURL(*vehicle.CurrentParking)}}}, rows...)
+				}
 				if canOfferCheckout(vehicle, *me.Employee, state) {
 					rows = append([][]maxsdk.Button{{{Text: "Начать оформление", Payload: fmt.Sprintf("intent:%s:%d", vehicle.ID, vehicle.Version)}}}, rows...)
 				}
@@ -130,6 +133,10 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		return p.sendView(ctx, maxID, message, [][]maxsdk.Button{{{Text: "К списку", Payload: "cars:1"}}})
 	}
 	return p.sendView(ctx, maxID, menuText(*me.Employee, state), menuRows(*me.Employee, state))
+}
+
+func parkingMapURL(parking dataapi.ParkingLocation) string {
+	return fmt.Sprintf("https://www.openstreetmap.org/?mlat=%.6f&mlon=%.6f#map=17/%.6f/%.6f", parking.Latitude, parking.Longitude, parking.Latitude, parking.Longitude)
 }
 
 func vehicleActionTarget(event dataapi.NormalizedEvent, prefix string) (string, int64, bool) {

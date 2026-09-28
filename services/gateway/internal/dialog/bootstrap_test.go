@@ -252,6 +252,9 @@ func TestCardReadsFreshVehicleAndHandlesInvalidOrStaleLink(t *testing.T) {
 	if strings.Contains(card, "Тестовый сотрудник") || strings.Contains(card, "Взять машину") {
 		t.Fatalf("card leaked another actor or unfinished action: %q", card)
 	}
+	if buttons := sender.Messages()[0].Buttons; len(buttons) != 4 || buttons[1][0].Text != "Показать на карте" || !strings.HasPrefix(buttons[1][0].URL, "https://www.openstreetmap.org/?mlat=") {
+		t.Fatalf("confirmed parking map button = %+v", buttons)
+	}
 	command = "/car invalid"
 	item.Event.Payload.Text = &command
 	if err := processor.Handle(context.Background(), item); err != nil || !strings.Contains(sender.Messages()[1].Text, "Некорректная ссылка") {
@@ -383,7 +386,7 @@ func TestCatalogCallbacksUseClickerAndRefreshStaleCard(t *testing.T) {
 		t.Fatal(err)
 	}
 	card := sender.Messages()[2]
-	if !strings.Contains(card.Text, "Данные автомобиля изменились") || !strings.Contains(card.Text, "Статус:") || len(card.Buttons) != 2 || card.Buttons[0][0].Payload != "prev:"+vehicle.ID || card.Buttons[1][0].Payload != "cars:1" {
+	if !strings.Contains(card.Text, "Данные автомобиля изменились") || !strings.Contains(card.Text, "Статус:") || len(card.Buttons) != 3 || card.Buttons[0][0].URL == "" || card.Buttons[1][0].Payload != "prev:"+vehicle.ID || card.Buttons[2][0].Payload != "cars:1" {
 		t.Fatalf("stale card = %+v", card)
 	}
 	unknown := callbackItem("8000000000000000009", "other-clicker", stalePayload, now)
@@ -519,7 +522,7 @@ func TestCheckoutIntentCreatesHoldOnlyAfterConfirmedInboxEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	buttons := sender.Messages()[0].Buttons
-	if len(buttons) != 3 || !strings.HasPrefix(buttons[0][0].Payload, "intent:") {
+	if len(buttons) != 4 || !strings.HasPrefix(buttons[0][0].Payload, "intent:") {
 		t.Fatalf("ready card buttons = %+v", buttons)
 	}
 	intent := callbackItem(driver, "take-intent", buttons[0][0].Payload, now)

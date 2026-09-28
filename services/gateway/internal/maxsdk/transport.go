@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -23,6 +24,7 @@ type Transport interface {
 type Button struct {
 	Text    string
 	Payload string
+	URL     string
 }
 
 type messageSender interface {
@@ -53,7 +55,11 @@ func (t *SDKTransport) SendButtons(ctx context.Context, userID int64, text strin
 	for _, row := range rows {
 		keyboardRow := keyboard.AddRow()
 		for _, button := range row {
-			keyboardRow.AddCallBack(button.Text, button.Payload)
+			if button.URL != "" {
+				keyboardRow.AddLink(button.Text, button.URL)
+			} else {
+				keyboardRow.AddCallBack(button.Text, button.Payload)
+			}
 		}
 	}
 	return t.send(ctx, userID, text, keyboard)
@@ -106,7 +112,15 @@ func validateButtons(rows [][]Button) error {
 			return errors.New("MAX keyboard column count is invalid")
 		}
 		for _, button := range row {
-			if strings.TrimSpace(button.Text) == "" || !utf8.ValidString(button.Text) || utf8.RuneCountInString(button.Text) > 100 || button.Payload == "" || !utf8.ValidString(button.Payload) || utf8.RuneCountInString(button.Payload) > 200 {
+			if strings.TrimSpace(button.Text) == "" || !utf8.ValidString(button.Text) || utf8.RuneCountInString(button.Text) > 100 || (button.Payload == "") == (button.URL == "") {
+				return errors.New("MAX callback button is invalid")
+			}
+			if button.URL != "" {
+				parsed, err := url.Parse(button.URL)
+				if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || len(button.URL) > 2048 || !utf8.ValidString(button.URL) {
+					return errors.New("MAX link button is invalid")
+				}
+			} else if !utf8.ValidString(button.Payload) || utf8.RuneCountInString(button.Payload) > 200 {
 				return errors.New("MAX callback button is invalid")
 			}
 		}

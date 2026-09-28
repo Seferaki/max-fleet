@@ -98,7 +98,7 @@ func TestTransportRejectsInvalidSendBeforeSDK(t *testing.T) {
 	if sdk.calls != 0 {
 		t.Fatalf("SDK called for invalid message %d times", sdk.calls)
 	}
-	for _, rows := range [][][]Button{nil, {{}}, {{{Text: "", Payload: "cars:1"}}}, {{{Text: "Далее", Payload: strings.Repeat("x", 201)}}}} {
+	for _, rows := range [][][]Button{nil, {{}}, {{{Text: "", Payload: "cars:1"}}}, {{{Text: "Далее", Payload: strings.Repeat("x", 201)}}}, {{{Text: "Карта", URL: "http://example.com"}}}, {{{Text: "Карта", URL: "https://example.com", Payload: "cars:1"}}}} {
 		if _, err := transport.SendButtons(context.Background(), 123, "Список", rows); err == nil {
 			t.Fatalf("invalid buttons accepted: %+v", rows)
 		}
@@ -108,6 +108,35 @@ func TestTransportRejectsInvalidSendBeforeSDK(t *testing.T) {
 	}
 	if _, err := NewTransport(nil); err == nil {
 		t.Fatal("accepted nil SDK")
+	}
+}
+
+func TestSDKTransportSendsPinnedLinkButton(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Attachments []struct {
+				Payload struct {
+					Buttons [][]struct{ Type, URL string } `json:"buttons"`
+				} `json:"payload"`
+			} `json:"attachments"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Attachments) != 1 || len(body.Attachments[0].Payload.Buttons) != 1 || body.Attachments[0].Payload.Buttons[0][0].Type != "link" || body.Attachments[0].Payload.Buttons[0][0].URL != "https://www.openstreetmap.org/" {
+			t.Errorf("wrong SDK link envelope: %+v err=%v", body, err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"message":{"body":{"mid":"max-link-1"}}}`))
+	}))
+	defer server.Close()
+	api, err := maxbot.NewApi("synthetic-test-token", maxbot.WithBaseURL(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, err := NewTransport(api)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, err := transport.SendButtons(context.Background(), 123, "Карта", [][]Button{{{Text: "Показать", URL: "https://www.openstreetmap.org/"}}}); err != nil || id != "max-link-1" {
+		t.Fatalf("SDK link send = %q %v", id, err)
 	}
 }
 
