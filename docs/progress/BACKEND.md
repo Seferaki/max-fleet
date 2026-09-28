@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "0b57d4b9-be94-4558-b500-eff5594ee587"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T13:44:07Z"
+heartbeat_utc: "2026-09-28T13:45:33Z"
 current_task: BE-02
-current_substep: "Webhook outcome counters проверены; продолжается BE-02 worker lifecycle"
-last_verified_code_commit: "41c5b0edf13a54c423745fbd49ab4397fba569e1"
+current_substep: "Worker lifecycle проверен; продолжается BE-02 processor/wiring"
+last_verified_code_commit: "0cc89a0c261a8b68e6ab7cc378190cfd089e23d2"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-02: worker lifecycle/graceful shutdown; затем безопасный processor/wiring и политика poison multi-photo polling"
+next_step: "BE-02: безопасный processor/wiring и политика poison multi-photo polling"
 human_required: [H-01]
 ```
 
@@ -29,7 +29,7 @@ human_required: [H-01]
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
-| BE-02 | IN_PROGRESS | `41c5b0edf13a54c423745fbd49ab4397fba569e1` — webhook outcome counters; [CI race gate](https://github.com/Seferaki/max-fleet/actions/runs/36405603485) success | Worker lifecycle, processor/wiring и политика multi-photo polling; H-01 не блокирует mock |
+| BE-02 | IN_PROGRESS | `0cc89a0c261a8b68e6ab7cc378190cfd089e23d2` — worker lifecycle; [CI race gate](https://github.com/Seferaki/max-fleet/actions/runs/36405603485) success | Processor/wiring и политика multi-photo polling; H-01 не блокирует mock |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
 | BE-05 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-02 code commit: `0cc89a0c261a8b68e6ab7cc378190cfd089e23d2`. `inboxworker.Worker.Run` выполняет циклы claim/process с заданным интервалом, продолжает после временной ошибки DataAPI и корректно выходит при отмене context. Он требует настоящий Processor и не запускается с заглушкой, которая ошибочно ACK-нет события. Тест создал durable inbox event, симулировал отказ первого claim, затем успешную обработку и ACK, отменил context и проверил пустую очередь. `go test ./internal/inboxworker -count=1 -v` → 5 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA и реальный MAX не проверены; runtime processor/wiring и multi-photo polling WIP.
 
 - BE-02 code commit: `41c5b0edf13a54c423745fbd49ab4397fba569e1`. Webhook ведёт атомарные счётчики `accepted/ignored/unavailable`, `GET /health/max-events` отдаёт только агрегаты без текста, actor ID, секретов или фото. Групповые и неизвестные события дают `ignored`, сбой DataAPI — `unavailable`, успешная запись — `accepted`; тесты проверили все исходы и route. `go test ./internal/maxwebhook ./cmd/gateway -count=1 -v` → 8 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA и реальный MAX не проверены; BE-02 WIP. Следующий шаг: worker lifecycle/graceful shutdown, затем processor/wiring и multi-photo polling.
 
