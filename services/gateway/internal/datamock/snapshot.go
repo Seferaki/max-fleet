@@ -38,11 +38,14 @@ type stateSnapshot struct {
 	Integrations           map[string]mockIntegration             `json:"integrations"`
 	IntegrationLeases      map[string]integrationLeaseRecord      `json:"integration_leases"`
 	IntegrationCheckpoints map[string]integrationCheckpointRecord `json:"integration_checkpoints"`
+	Notifications          map[string]mockNotification            `json:"notifications"`
+	NotificationClaims     map[string]notificationClaimRecord     `json:"notification_claims"`
+	NotificationSequence   int64                                  `json:"notification_sequence"`
 }
 
 func (s *Server) snapshot() stateSnapshot {
 	state := stateSnapshot{
-		Version:                12,
+		Version:                13,
 		SeedSHA:                fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)),
 		Vehicles:               append([]dataapi.Vehicle(nil), s.vehicles...),
 		Employees:              make(map[string]dataapi.Employee, len(s.employees)),
@@ -64,6 +67,9 @@ func (s *Server) snapshot() stateSnapshot {
 		Integrations:           make(map[string]mockIntegration, len(s.integrations)),
 		IntegrationLeases:      make(map[string]integrationLeaseRecord, len(s.integrationLeases)),
 		IntegrationCheckpoints: make(map[string]integrationCheckpointRecord, len(s.integrationCheckpoints)),
+		Notifications:          make(map[string]mockNotification, len(s.notifications)),
+		NotificationClaims:     make(map[string]notificationClaimRecord, len(s.notificationClaims)),
+		NotificationSequence:   s.notificationSequence,
 	}
 	for key, value := range s.checkouts {
 		state.Checkouts[key] = value
@@ -126,6 +132,12 @@ func (s *Server) snapshot() stateSnapshot {
 	for key, value := range s.integrationCheckpoints {
 		state.IntegrationCheckpoints[key] = value
 	}
+	for key, value := range s.notifications {
+		state.Notifications[key] = value
+	}
+	for key, value := range s.notificationClaims {
+		state.NotificationClaims[key] = value
+	}
 	return state
 }
 
@@ -162,6 +174,9 @@ func (s *Server) restore(state stateSnapshot) {
 	s.integrations = state.Integrations
 	s.integrationLeases = state.IntegrationLeases
 	s.integrationCheckpoints = state.IntegrationCheckpoints
+	s.notifications = state.Notifications
+	s.notificationClaims = state.NotificationClaims
+	s.notificationSequence = state.NotificationSequence
 }
 
 func (s *Server) persist() error {
@@ -186,7 +201,7 @@ func (s *Server) loadSnapshot(path string) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var state stateSnapshot
-	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 12) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version >= 7 && (state.IssueAssets == nil || state.StageResults == nil)) || (state.Version >= 8 && (state.Inbox == nil || state.InboxKeys == nil)) || (state.Version >= 9 && state.InboxClaims == nil) || (state.Version >= 10 && state.InboxTransitions == nil) || (state.Version >= 11 && (state.Integrations == nil || state.IntegrationLeases == nil)) || (state.Version >= 12 && state.IntegrationCheckpoints == nil) {
+	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 13) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version >= 7 && (state.IssueAssets == nil || state.StageResults == nil)) || (state.Version >= 8 && (state.Inbox == nil || state.InboxKeys == nil)) || (state.Version >= 9 && state.InboxClaims == nil) || (state.Version >= 10 && state.InboxTransitions == nil) || (state.Version >= 11 && (state.Integrations == nil || state.IntegrationLeases == nil)) || (state.Version >= 12 && state.IntegrationCheckpoints == nil) || (state.Version >= 13 && (state.Notifications == nil || state.NotificationClaims == nil)) {
 		return errors.New("data-mock: invalid snapshot; refusing to reset")
 	}
 	if state.Challenges == nil {
@@ -228,6 +243,12 @@ func (s *Server) loadSnapshot(path string) error {
 	if state.IntegrationCheckpoints == nil {
 		state.IntegrationCheckpoints = make(map[string]integrationCheckpointRecord)
 	}
+	if state.Notifications == nil {
+		state.Notifications = make(map[string]mockNotification)
+	}
+	if state.NotificationClaims == nil {
+		state.NotificationClaims = make(map[string]notificationClaimRecord)
+	}
 	if state.Version < 9 {
 		identities := make([]string, 0, len(state.Inbox))
 		for identity := range state.Inbox {
@@ -253,6 +274,15 @@ func (s *Server) loadSnapshot(path string) error {
 				return errors.New("data-mock: invalid inbox sequence")
 			}
 			seen[event.Sequence] = true
+		}
+	}
+	if state.Version >= 13 {
+		seen := make(map[int64]bool, len(state.Notifications))
+		for id, notification := range state.Notifications {
+			if !validUUID(id) || id != notification.ID || notification.Sequence < 1 || notification.Sequence > state.NotificationSequence || seen[notification.Sequence] || !validMaxID(notification.Recipient) || !validUUID(notification.Event.ResourceID) {
+				return errors.New("data-mock: invalid notification queue")
+			}
+			seen[notification.Sequence] = true
 		}
 	}
 	for _, slots := range state.Photos {
