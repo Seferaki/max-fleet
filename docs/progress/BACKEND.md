@@ -9,7 +9,7 @@ lock_state: ACTIVE
 owner: B
 session_id: "0b57d4b9-be94-4558-b500-eff5594ee587"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T13:45:33Z"
+heartbeat_utc: "2026-09-28T13:47:19Z"
 current_task: BE-02
 current_substep: "Worker lifecycle проверен; продолжается BE-02 processor/wiring"
 last_verified_code_commit: "0cc89a0c261a8b68e6ab7cc378190cfd089e23d2"
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-02 documentation commit: `6f71994896608485d1dfdab652b54cc5e8d5da47`. README больше не направляет к выполненной BE-01: отражены S-01…S-03/BE-01 DONE, BE-02 WIP, mock/CI и отсутствие проверки реального MAX/Python/UI карты. Проверены `git diff -- README.md` и наличие указанных артефактов (`contracts/data-api.openapi.yaml`, `deploy/compose.backend.yaml`, `services/gateway/internal/maxpoll/runner.go`, `web/package.json`); staged diff/secret scan → exit 0. Код не менялся, `last_verified_code_commit` остаётся `0cc89a0c261a8b68e6ab7cc378190cfd089e23d2`. Следующий шаг: processor/wiring и политика multi-photo polling.
 
 - BE-02 code commit: `0cc89a0c261a8b68e6ab7cc378190cfd089e23d2`. `inboxworker.Worker.Run` выполняет циклы claim/process с заданным интервалом, продолжает после временной ошибки DataAPI и корректно выходит при отмене context. Он требует настоящий Processor и не запускается с заглушкой, которая ошибочно ACK-нет события. Тест создал durable inbox event, симулировал отказ первого claim, затем успешную обработку и ACK, отменил context и проверил пустую очередь. `go test ./internal/inboxworker -count=1 -v` → 5 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA и реальный MAX не проверены; runtime processor/wiring и multi-photo polling WIP.
 
