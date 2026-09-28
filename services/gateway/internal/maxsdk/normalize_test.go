@@ -49,6 +49,11 @@ func TestNormalizeMessageKinds(t *testing.T) {
 	if event.Payload.PhotoSourceKey == nil || *event.Payload.PhotoSourceKey != "https://cdn.example/photo-1" || event.Payload.AttachmentCount != 1 {
 		t.Fatalf("photo source lost: %+v", event.Payload)
 	}
+	captioned := directMessage(model.MessageBody{Mid: "photo-replace", Text: "/replace 3", Attachments: []model.Attachment{{Type: model.AttachImage, Payload: model.Payload{URL: "https://cdn.example/replacement"}}}})
+	event, err := Normalize("demo-bot", captioned)
+	if err != nil || event.Payload.Text == nil || *event.Payload.Text != "/replace 3" {
+		t.Fatalf("photo caption lost: %+v %v", event.Payload, err)
+	}
 	event, _ = Normalize("demo-bot", geo)
 	if event.Payload.Latitude == nil || *event.Payload.Latitude != 0 || event.Payload.Longitude == nil || *event.Payload.Longitude != 37.6 {
 		t.Fatalf("zero latitude was lost: %+v", event.Payload)
@@ -105,8 +110,9 @@ func TestNormalizeRejectsGroupAndAmbiguousMedia(t *testing.T) {
 		t.Fatalf("two images = %+v, %v", partial, err)
 	}
 	unsupported := directMessage(model.MessageBody{Mid: "file-1", Attachments: []model.Attachment{{Type: model.AttachFile}}})
-	if _, err := Normalize("demo-bot", unsupported); !errors.Is(err, ErrUnsupportedContent) {
-		t.Fatalf("file = %v", err)
+	partial, err = Normalize("demo-bot", unsupported)
+	if !errors.Is(err, ErrUnsupportedContent) || partial.ActorMaxUserID == "" || partial.MessageID == nil || partial.Payload.PhotoSourceKey != nil || RejectionText(err) == "" {
+		t.Fatalf("file = %+v, %v", partial, err)
 	}
 	invalidPhoto := directMessage(model.MessageBody{Mid: "photo-2", Attachments: []model.Attachment{{Type: model.AttachImage}}})
 	if _, err := Normalize("demo-bot", invalidPhoto); !errors.Is(err, ErrInvalidUpdate) {

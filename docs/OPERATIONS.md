@@ -61,6 +61,7 @@ HUMAN_REQUIRED: H-01
 | APP_ENV, LOG_LEVEL, COMPANY_TIMEZONE | Go/Python | Агент; timezone подтверждает владелец |
 | DATA_API_BASE_URL, CONTRACT_VERSION | Go | Агент; mock до INT, data-api после |
 | MAX_BOT_TOKEN_FILE, MAX_WEBHOOK_SECRET_FILE | Только Go | Bot token — человек локально; secret — агент криптографически |
+| MAX_PHOTO_HOSTS | Только Go | Агент после проверки доменов CDN MAX; точные HTTPS hostname через запятую, без URL, query и токенов |
 | DATA_API_TOKEN_FILE, WORKER_API_TOKEN_FILE | Go/Python | Агент; отдельные значения для ролей |
 | DATABASE_URL_FILE / MIGRATION_DATABASE_URL_FILE / POSTGRES_PASSWORD_FILE | Только Python/миграции/PostgreSQL | Агент; разные runtime/migration роли |
 | S3_ENDPOINT, S3_BUCKET, S3_REGION | Python | Агент |
@@ -70,6 +71,8 @@ HUMAN_REQUIRED: H-01
 | BOOTSTRAP_ADMIN_MAX_ID_FILE, PRIVATE_SEED_FILE | Одноразовый Python bootstrap | Человек вводит реальные значения приватно |
 
 Безопасный порядок:
+
+`MAX_PHOTO_HOSTS` по умолчанию пуст: фото-событие остаётся в durable inbox без ACK до настройки. Указывать только проверенные точные имена хостов из MAX image payload, например при приватном smoke на реальном боте; не добавлять wildcard, IP, подписанный URL или токен. Загрузчик не следует редиректам, отклоняет внутренние IP, ограничивает время/размер и не логирует source URL. До проверки реального MAX этот параметр не считается настроенным.
 
 1. Агент создаёт приватный каталог и скрытый prompt; на Windows ограничивает ACL текущим пользователем, на Unix права 600/700.
 2. Человек вводит только bot token и приватные исходные данные. Случайные service/DB/storage секреты агент генерирует сам, не печатая.

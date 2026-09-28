@@ -1,14 +1,15 @@
 openapi: 3.1.0
 info:
   title: MAX Fleet Data API
-  version: '1.0'
+  version: '1.1'
   description: 'Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID
     и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом
-    запросе. Версия 1.0 заморожена после contract gate. Версии: vehicle растёт при смене доступности, блокировке,
-    issue и коррекции; checkout при изменении оформления; inspection при ответе, фото и подтверждении; return при
-    месте/отмене/завершении; trip при начале возврата, отмене, завершении и admin close; conversation только при
-    save. Фото не повышает checkout/return version. Перед start/complete Go читает актуальный агрегат. Hold равен
-    15 минутам серверного времени. Finalized inspection неизменяем, admin close не подставляет отсутствующие данные.'
+    запросе. Версия 1.1 добавляет приватное чтение фото поездки по фазе и ракурсу. Версии: vehicle растёт при смене
+    доступности, блокировке, issue и коррекции; checkout при изменении оформления; inspection при ответе, фото и
+    подтверждении; return при месте/отмене/завершении; trip при начале возврата, отмене, завершении и admin close;
+    conversation только при save. Фото не повышает checkout/return version. Перед start/complete Go читает актуальный
+    агрегат. Hold равен 15 минутам серверного времени. Finalized inspection неизменяем, admin close не подставляет
+    отсутствующие данные.'
 servers:
 - url: http://data-api:8000
 - url: http://data-mock:8000
@@ -43,7 +44,7 @@ components:
       in: header
       required: true
       schema:
-        const: '1.0'
+        const: '1.1'
     RequestID:
       name: X-Request-ID
       in: header
@@ -79,6 +80,15 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/PhotoSlot'
+    PathPhotoPhase:
+      name: phase
+      in: path
+      required: true
+      schema:
+        type: string
+        enum:
+        - before
+        - after
   schemas:
     UUID:
       type: string
@@ -752,7 +762,7 @@ components:
       additionalProperties: false
       properties:
         contract_version:
-          const: '1.0'
+          const: '1.1'
         build_sha:
           type: string
           maxLength: 64
@@ -4611,6 +4621,100 @@ paths:
       - $ref: '#/components/parameters/ActorMaxID'
       - $ref: '#/components/parameters/PathID'
       - $ref: '#/components/parameters/PathSlot'
+      responses:
+        '200':
+          description: Авторизованный поток, без публичного URL
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: INVALID_REQUEST
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_SERVICE_TOKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: STALE_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: UNSUPPORTED_MEDIA
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PHOTO_SET_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: TEMPORARY_FAILURE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /internal/v1/trips/{id}/inspection-photos/{phase}/{slot}:
+    get:
+      tags:
+      - photos
+      operationId: getTripInspectionPhoto
+      summary: getTripInspectionPhoto
+      description: Только владелец trip или admin. before доступно после finalized осмотра; after — лишь у завершённой
+        или закрытой поездки с finalized after-осмотром. Чужая поездка, отсутствующий ракурс и ещё не доступная
+        фаза дают одинаковый NOT_FOUND без asset ID и публичного URL.
+      security:
+      - DataBearer: []
+      parameters:
+      - $ref: '#/components/parameters/ContractVersion'
+      - $ref: '#/components/parameters/RequestID'
+      - $ref: '#/components/parameters/ActorMaxID'
+      - $ref: '#/components/parameters/PathID'
+      - $ref: '#/components/parameters/PathSlot'
+      - $ref: '#/components/parameters/PathPhotoPhase'
       responses:
         '200':
           description: Авторизованный поток, без публичного URL

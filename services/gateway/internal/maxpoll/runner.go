@@ -74,12 +74,12 @@ func (r Runner) RunOnce(ctx context.Context) (Result, error) {
 			result.Ignored++
 			continue
 		}
-		if errors.Is(err, maxsdk.ErrMultipleAttachments) && r.Reject != nil {
+		if maxsdk.RejectionText(err) != "" && r.Reject != nil {
 			actor, parseErr := strconv.ParseInt(event.ActorMaxUserID, 10, 64)
 			if parseErr != nil || actor <= 0 {
 				return result, errors.New("MAX invalid media actor")
 			}
-			if _, sendErr := r.Reject.SendText(ctx, actor, "Отправьте только одно фото или одну геопозицию в сообщении. Несколько вложений не сохранены."); sendErr != nil {
+			if _, sendErr := r.Reject.SendText(ctx, actor, maxsdk.RejectionText(err)); sendErr != nil {
 				return result, errors.New("MAX invalid media reply failed")
 			}
 			result.Rejected++

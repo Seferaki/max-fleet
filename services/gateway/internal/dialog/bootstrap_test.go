@@ -163,7 +163,7 @@ func TestMenuKeepsExistingTripOrCheckoutAheadOfNewVehicle(t *testing.T) {
 	}
 }
 
-func TestBootstrapWorkerAcksMenuButKeepsFollowingPhoto(t *testing.T) {
+func TestBootstrapWorkerAcksMenuAndRejectsPhotoWithoutInspection(t *testing.T) {
 	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
 	actor, store, closeServer := mockClients(t, now)
 	defer closeServer()
@@ -185,7 +185,7 @@ func TestBootstrapWorkerAcksMenuButKeepsFollowingPhoto(t *testing.T) {
 		t.Fatalf("menu cycle = %+v, %v", first, err)
 	}
 	second, err := worker.RunOnce(context.Background(), 10)
-	if err != nil || second.Deferred != 1 || second.Acked != 0 || len(sender.Messages()) != 1 {
+	if err != nil || second.Acked != 1 || second.Deferred != 0 || len(sender.Messages()) != 2 || !strings.Contains(sender.Messages()[1].Text, "нет активного шага загрузки фото") {
 		t.Fatalf("photo cycle = %+v, %v", second, err)
 	}
 }
@@ -256,6 +256,9 @@ func (emptyCatalogReader) Me(_ context.Context, actor string) (dataapi.Me, error
 }
 func (emptyCatalogReader) State(context.Context, string) (dataapi.CurrentState, error) {
 	return dataapi.CurrentState{}, nil
+}
+func (emptyCatalogReader) CurrentRules(context.Context, string) (dataapi.Rules, error) {
+	return dataapi.Rules{}, errors.New("unexpected rules read")
 }
 func (emptyCatalogReader) Vehicles(context.Context, string, dataapi.VehicleFilter) (dataapi.Page[dataapi.Vehicle], error) {
 	return dataapi.Page[dataapi.Vehicle]{}, nil
@@ -413,7 +416,7 @@ func TestCatalogCallbacksUseClickerAndRefreshStaleCard(t *testing.T) {
 		t.Fatalf("menu callback answer = %v", got)
 	}
 	menu := sender.Messages()[0]
-	if len(menu.Buttons) != 1 || menu.Buttons[0][0].Payload != "cars:1" {
+	if len(menu.Buttons) != 2 || menu.Buttons[0][0].Payload != "cars:1" || menu.Buttons[1][0].Payload != "trip-list:mine:1" {
 		t.Fatalf("menu buttons = %+v", menu.Buttons)
 	}
 	if err := processor.Handle(context.Background(), callbackItem(driver, "cars-callback", "cars:1", now)); err != nil {
@@ -685,7 +688,7 @@ func TestBE03GoldenMenuCatalogAndCard(t *testing.T) {
 	}
 	messages := sender.Messages()
 	menuText := "MAX Fleet\nДоступные автомобили\nМои поездки\nПравила и помощь"
-	if messages[0].Text != menuText || !reflect.DeepEqual(messages[0].Buttons, [][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}}) {
+	if messages[0].Text != menuText || !reflect.DeepEqual(messages[0].Buttons, [][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}, {{Text: "Мои поездки", Payload: "trip-list:mine:1"}}}) {
 		t.Fatalf("menu golden changed: %+v", messages[0])
 	}
 	catalogText := strings.Join([]string{

@@ -181,6 +181,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /internal/v1/inspections/{id}/photos/{slot}", s.authorize(true, s.requireEmployee(s.uploadPhoto)))
 	mux.HandleFunc("POST /internal/v1/assets/stage", s.authorize(true, s.requireEmployee(s.stageIssueAsset)))
 	mux.HandleFunc("GET /internal/v1/assets/{id}/content", s.authorize(true, s.requireEmployee(s.assetContent)))
+	mux.HandleFunc("GET /internal/v1/trips/{id}/inspection-photos/{phase}/{slot}", s.authorize(true, s.requireEmployee(s.tripInspectionPhoto)))
 	mux.HandleFunc("POST /internal/v1/inbox", s.authorizeWorker(s.storeInbox))
 	mux.HandleFunc("POST /internal/v1/inbox/claim", s.authorizeWorker(s.claimInbox))
 	mux.HandleFunc("POST /internal/v1/inbox/{id}/ack", s.authorizeWorker(s.ackInbox))

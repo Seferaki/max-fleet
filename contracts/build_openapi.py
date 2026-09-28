@@ -201,7 +201,7 @@ schemas = {
         "conversation_version": ref("Version"),
     }, ("checkout", "trip", "return", "next_step", "conversation_version")),
     "Meta": obj({
-        "contract_version": {"const": "1.0"}, "build_sha": string(64),
+        "contract_version": {"const": "1.1"}, "build_sha": string(64),
         "mode": string(enum=["mock", "real"]), "capabilities": array(string(80)),
     }, ("contract_version", "build_sha", "mode", "capabilities")),
     "AdminSummary": obj({
@@ -242,8 +242,8 @@ for name in ("Vehicle", "Trip", "Issue", "Employee"):
 
 spec = {
     "openapi": "3.1.0",
-    "info": {"title": "MAX Fleet Data API", "version": "1.0",
-             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.0 заморожена после contract gate."},
+    "info": {"title": "MAX Fleet Data API", "version": "1.1",
+             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.1 добавляет приватное чтение фото поездки по фазе и ракурсу."},
     "servers": [{"url": "http://data-api:8000"}, {"url": "http://data-mock:8000"}],
     "tags": [{"name": name, "description": description} for name, description in (
         ("read", "Чтение доменных данных с проверкой actor и прав"),
@@ -261,7 +261,7 @@ spec = {
         },
         "parameters": {
             "ContractVersion": {"name": "X-Contract-Version", "in": "header", "required": True,
-                                "schema": {"const": "1.0"}},
+                                "schema": {"const": "1.1"}},
             "RequestID": {"name": "X-Request-ID", "in": "header", "required": True,
                           "schema": ref("UUID")},
             "ActorMaxID": {"name": "X-Actor-Max-ID", "in": "header", "required": True,
@@ -271,6 +271,8 @@ spec = {
                                "description": "Стабилен при retry. Область: actor + ключ для команд, route + ключ для worker; тот же ключ с другим body → 409."},
             "PathID": {"name": "id", "in": "path", "required": True, "schema": ref("UUID")},
             "PathSlot": {"name": "slot", "in": "path", "required": True, "schema": ref("PhotoSlot")},
+            "PathPhotoPhase": {"name": "phase", "in": "path", "required": True,
+                               "schema": {"type": "string", "enum": ["before", "after"]}},
         },
         "schemas": schemas,
     },
@@ -587,12 +589,13 @@ upload(P + "/inspections/{id}/photos/{slot}", "uploadInspectionPhoto",
 upload(P + "/assets/stage", "stageIssueAsset", "StagePhotoUpload", "StagedAsset")
 
 
-def binary_read(path, operation_id, *, slot_path=False, description=""):
+def binary_read(path, operation_id, *, slot_path=False, phase_path=False, description=""):
     spec["paths"][path] = {"get": {
         "tags": ["photos"], "operationId": operation_id, "summary": operation_id,
         "description": description,
         "security": [{"DataBearer": []}],
-        "parameters": parameters(id_path=True, slot_path=slot_path),
+        "parameters": parameters(id_path=True, slot_path=slot_path,
+                                 extra=[{"$ref": "#/components/parameters/PathPhotoPhase"}] if phase_path else []),
         "responses": {**response(ref("ErrorResponse")),
                       "200": {"description": "Авторизованный поток, без публичного URL",
                               "content": {"image/jpeg": {"schema": {"type": "string", "format": "binary"}},
@@ -606,6 +609,9 @@ binary_read(P + "/assets/{id}/content", "getAuthorizedAsset",
 binary_read(P + "/vehicles/{id}/previous-inspection/photos/{slot}",
             "getAnonymizedPreviousPhoto", slot_path=True,
             description="Только последний finalized after-осмотр машины; этот маршрут не открывает чужую поездку или произвольный asset.")
+binary_read(P + "/trips/{id}/inspection-photos/{phase}/{slot}",
+            "getTripInspectionPhoto", slot_path=True, phase_path=True,
+            description="Только владелец trip или admin. before доступно после finalized осмотра; after — лишь у завершённой или закрытой поездки с finalized after-осмотром. Чужая поездка, отсутствующий ракурс и ещё не доступная фаза дают одинаковый NOT_FOUND без asset ID и публичного URL.")
 
 
 spec["info"]["description"] += (

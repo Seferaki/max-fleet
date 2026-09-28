@@ -110,7 +110,24 @@ func webhookHandler(ctx context.Context) (http.Handler, error) {
 			return nil, errors.New("gateway: production requires a real DataAPI")
 		}
 	}
-	webhook, err := maxwebhook.New(secret, integrationKey, worker)
+	var reject maxsdk.Transport
+	if os.Getenv("MAX_BOT_TOKEN_FILE") != "" {
+		token, err := readSecretFile("MAX_BOT_TOKEN_FILE")
+		if err != nil {
+			return nil, err
+		}
+		api, err := maxsdk.New(token)
+		if err != nil {
+			return nil, errors.New("gateway: invalid MAX SDK configuration")
+		}
+		reject, err = maxsdk.NewTransport(api)
+		if err != nil {
+			return nil, err
+		}
+	} else if strings.EqualFold(os.Getenv("APP_ENV"), "production") {
+		return nil, errors.New("gateway: MAX_BOT_TOKEN_FILE required in production")
+	}
+	webhook, err := maxwebhook.New(secret, integrationKey, worker, reject)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +183,7 @@ func pollingLoop(ctx context.Context, runner maxpoll.Runner) {
 			log.Printf("gateway: polling ignored %d unsupported events", result.Ignored)
 		}
 		if err == nil && result.Rejected > 0 {
-			log.Printf("gateway: polling rejected %d multi-attachment events", result.Rejected)
+			log.Printf("gateway: polling rejected %d unsupported media events", result.Rejected)
 		}
 		select {
 		case <-ctx.Done():
@@ -229,7 +246,18 @@ func inboxWorkerSetup() (inboxworker.Worker, bool, error) {
 	if err != nil {
 		return inboxworker.Worker{}, false, errors.New("gateway: COMPANY_TIMEZONE is invalid")
 	}
-	return inboxworker.Worker{ID: "gateway-inbox-worker", Store: store, Processor: dialog.Bootstrap{Data: actor, Commands: actor, MAX: sender, Location: location}, Now: time.Now}, true, nil
+	var photoDownloader dialog.PhotoFetcher
+	if configured := os.Getenv("MAX_PHOTO_HOSTS"); configured != "" {
+		hosts := strings.Split(configured, ",")
+		for i := range hosts {
+			hosts[i] = strings.TrimSpace(hosts[i])
+		}
+		photoDownloader, err = maxsdk.NewPhotoDownloader(hosts)
+		if err != nil {
+			return inboxworker.Worker{}, false, errors.New("gateway: MAX_PHOTO_HOSTS is invalid")
+		}
+	}
+	return inboxworker.Worker{ID: "gateway-inbox-worker", Store: store, Processor: dialog.Bootstrap{Data: actor, Commands: actor, MAX: sender, Photos: photoDownloader, PhotoStore: actor, Location: location}, Now: time.Now}, true, nil
 }
 
 func observeInbox(result inboxworker.Result, err error) {

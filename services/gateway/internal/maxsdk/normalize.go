@@ -60,8 +60,8 @@ func Normalize(integrationKey string, update model.Update) (dataapi.NormalizedEv
 		event.MessageID = stringPtr(update.Message.Body.Mid)
 		event.EventKey = "message:" + update.Message.Body.Mid + ":message_created"
 		if err := normalizeMessage(&event.Payload, update.Message.Body); err != nil {
-			if errors.Is(err, ErrMultipleAttachments) {
-				return event, err // actor is validated; polling can answer without storing malformed media
+			if errors.Is(err, ErrMultipleAttachments) || errors.Is(err, ErrUnsupportedContent) {
+				return event, err // actor is validated; ingress can answer without storing rejected media
 			}
 			return dataapi.NormalizedEvent{}, err
 		}
@@ -121,6 +121,12 @@ func normalizeMessage(payload *dataapi.NormalizedPayload, body model.MessageBody
 		}
 		payload.Kind = "photo"
 		payload.PhotoSourceKey = stringPtr(source)
+		if body.Text != "" {
+			if !utf8.ValidString(body.Text) || utf8.RuneCountInString(body.Text) > 1000 {
+				return ErrInvalidUpdate
+			}
+			payload.Text = stringPtr(body.Text)
+		}
 	case model.AttachLocation:
 		if !validCoordinate(attachment.Latitude, 90) || !validCoordinate(attachment.Longitude, 180) {
 			return ErrInvalidUpdate
@@ -150,3 +156,14 @@ func InboxIdempotencyKey(event dataapi.NormalizedEvent) string {
 }
 
 func stringPtr(value string) *string { return &value }
+
+// RejectionText contains no attachment URL, token or message body.
+func RejectionText(err error) string {
+	if errors.Is(err, ErrMultipleAttachments) {
+		return "Отправьте только одно фото или одну геопозицию в сообщении. Несколько вложений не сохранены."
+	}
+	if errors.Is(err, ErrUnsupportedContent) {
+		return "Видео и документы не принимаются. Отправьте одно фото JPEG, PNG или WebP либо текст; вложение не сохранено."
+	}
+	return ""
+}

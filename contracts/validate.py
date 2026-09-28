@@ -117,6 +117,14 @@ def main():
     scenarios = load_json("scenarios/v1.json")
     if scenarios["contract_version"] != data["info"]["version"]:
         raise RuntimeError("Версия сценариев не совпадает с OpenAPI")
+    photo_read = load_json("examples/trip-photo-read.json")
+    route = "/internal/v1/trips/{id}/inspection-photos/{phase}/{slot}"
+    if route not in data["paths"] or photo_read["contract_version"] != data["info"]["version"]:
+        raise RuntimeError("Пример чтения фото не совпадает с контрактом")
+    if photo_read["request_path"] != route.replace("{id}", photo_read["trip_id"]).replace("{phase}", photo_read["phase"]).replace("{slot}", str(photo_read["slot"])):
+        raise RuntimeError("Неверный пример пути чтения фото")
+    if photo_read["response"]["content_type"] not in data["paths"][route]["get"]["responses"]["200"]["content"]:
+        raise RuntimeError("Неверный пример media type фото")
     areas = {"identity", "vehicles", "checkout", "inspection", "return", "delivery", "schema"}
     cases = scenarios["cases"]
     if len(cases) < 35 or {case["area"] for case in cases} != areas:
