@@ -3,6 +3,7 @@ package inboxworker
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"regexp"
@@ -44,6 +45,17 @@ type Result struct {
 }
 
 var safeCode = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,79}$`)
+var safeStep = regexp.MustCompile(`^[a-z][a-z0-9._:-]{0,79}$`)
+
+// CommandKey stays stable when the same inbox event gets a new lease after
+// a crash. Each domain action in that event needs a distinct step name.
+func CommandKey(item dataapi.InboxClaimItem, step string) (string, error) {
+	if item.ID == "" || !safeStep.MatchString(step) {
+		return "", errors.New("invalid inbox command step")
+	}
+	sum := sha256.Sum256([]byte(item.ID + "\x00" + step))
+	return "inbox-command:" + hex.EncodeToString(sum[:]), nil
+}
 
 // RunOnce processes a claimed batch in order. The DataAPI owns actor ordering,
 // lease fencing and the five-attempt dead-letter transition.
