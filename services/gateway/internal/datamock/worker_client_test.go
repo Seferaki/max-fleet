@@ -115,3 +115,52 @@ func TestWorkerIntegrationClientAgainstMock(t *testing.T) {
 		t.Fatalf("service token accepted by integration route: %v", err)
 	}
 }
+
+func TestWorkerNotificationClientAgainstMock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	clock := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	mock, err := NewWithSnapshotAndWorkerToken("test-service-token", "worker-token", path, func() time.Time { return clock })
+	if err != nil {
+		t.Fatal(err)
+	}
+	testBeforeIssueNotification(t, mock)
+	server := httptest.NewServer(mock.Handler())
+	defer server.Close()
+	worker, err := dataapi.NewWorker(dataapi.WorkerConfig{BaseURL: server.URL + "/internal/v1", Token: "worker-token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	claim, err := worker.ClaimNotifications(ctx, "sender-a", 1, "notification-client-claim-1")
+	if err != nil || len(claim.Items) != 1 || claim.Items[0].Attempt != 1 {
+		t.Fatalf("claim: %+v %v", claim, err)
+	}
+	lease := claim.Items[0]
+	next := clock.Add(time.Minute)
+	retried, err := worker.RetryNotification(ctx, lease.DeliveryID, lease.LeaseToken, "MAX_RATE_LIMIT", &next, false, "notification-client-retry-1")
+	if err != nil || retried.State != "retry" {
+		t.Fatalf("retry: %+v %v", retried, err)
+	}
+	clock = next.Add(time.Second)
+	claim, err = worker.ClaimNotifications(ctx, "sender-a", 1, "notification-client-claim-2")
+	if err != nil || len(claim.Items) != 1 || claim.Items[0].Attempt != 2 || claim.Items[0].LeaseToken == lease.LeaseToken {
+		t.Fatalf("reclaim: %+v %v", claim, err)
+	}
+	ack, err := worker.AckNotification(ctx, lease.DeliveryID, claim.Items[0].LeaseToken, "synthetic-message-1", "notification-client-ack-1")
+	if err != nil || ack.State != "sent" || ack.ID != lease.DeliveryID {
+		t.Fatalf("ack: %+v %v", ack, err)
+	}
+	replayed, err := worker.AckNotification(ctx, lease.DeliveryID, claim.Items[0].LeaseToken, "synthetic-message-1", "notification-client-ack-1")
+	if err != nil || replayed != ack {
+		t.Fatalf("ack replay: %+v %v", replayed, err)
+	}
+	wrong, err := dataapi.NewWorker(dataapi.WorkerConfig{BaseURL: server.URL + "/internal/v1", Token: "test-service-token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = wrong.ClaimNotifications(ctx, "sender-b", 1, "notification-client-claim-3")
+	var apiErr *dataapi.APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusUnauthorized {
+		t.Fatalf("service token accepted by notification route: %v", err)
+	}
+}

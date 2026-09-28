@@ -74,4 +74,17 @@ func TestWorkerClientRejectsInvalidInputsBeforeNetwork(t *testing.T) {
 	if _, err := worker.CheckpointIntegration(context.Background(), "demo-bot", "lease", 2, nil, "marker", []string{testRequestID, testRequestID}, "worker-key-001"); err == nil {
 		t.Fatal("duplicate stored_event_ids accepted")
 	}
+	if _, err := worker.ClaimNotifications(context.Background(), "worker-a", 51, "worker-key-001"); err == nil {
+		t.Fatal("notification max_items 51 accepted")
+	}
+	if _, err := worker.AckNotification(context.Background(), testRequestID, "lease", "", "worker-key-001"); err == nil {
+		t.Fatal("empty provider message ID accepted")
+	}
+	if _, err := worker.RetryNotification(context.Background(), testRequestID, "lease", "MAX_RATE_LIMIT", nil, false, "worker-key-001"); err == nil {
+		t.Fatal("retry without next time accepted")
+	}
+	next := time.Now().Add(time.Minute)
+	if _, err := worker.RetryNotification(context.Background(), testRequestID, "lease", "MAX_RATE_LIMIT", &next, true, "worker-key-001"); err == nil {
+		t.Fatal("dead retry with next time accepted")
+	}
 }
