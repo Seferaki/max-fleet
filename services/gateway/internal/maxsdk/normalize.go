@@ -25,6 +25,11 @@ var (
 // Normalize converts the pinned SDK's update into the private DataAPI inbox
 // schema. It never trusts a callback message recipient as the actor.
 func Normalize(integrationKey string, update model.Update) (dataapi.NormalizedEvent, error) {
+	switch update.UpdateType {
+	case model.UpdateBotStarted, model.UpdateMessageCreated, model.UpdateMessageCallback:
+	default:
+		return dataapi.NormalizedEvent{}, ErrUnsupportedUpdate
+	}
 	if integrationKey == "" || len(integrationKey) > 100 || update.Timestamp <= 0 || update.ChatID <= 0 {
 		return dataapi.NormalizedEvent{}, ErrInvalidUpdate
 	}
