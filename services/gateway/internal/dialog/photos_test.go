@@ -135,7 +135,7 @@ func TestPhotoUploadCountsOnlyStoredImageAndStopsAtEight(t *testing.T) {
 	checkout := setupPhotoCheckout(t, actor, driver)
 	fetcher := &syntheticPhotoFetcher{image: samplePhoto(t, 1)}
 	sender := &maxsdk.RecordingTransport{}
-	processor := Bootstrap{Data: actor, PhotoStore: actor, Photos: fetcher, MAX: sender}
+	processor := Bootstrap{Data: actor, Commands: actor, PhotoStore: actor, Photos: fetcher, MAX: sender}
 	worker := inboxworker.Worker{ID: "photo-worker", Store: store, Processor: processor, Now: func() time.Time { return now }}
 	deliver := func(maxID, key string) string {
 		t.Helper()
@@ -175,6 +175,20 @@ func TestPhotoUploadCountsOnlyStoredImageAndStopsAtEight(t *testing.T) {
 				t.Fatalf("duplicate hash: %q", got)
 			}
 		}
+		if slot == 7 {
+			state, err := actor.State(context.Background(), driver)
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := fmt.Sprintf("confirm-photos:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)
+			event := callbackItem(driver, "photo-premature-confirm", payload, now).Event
+			if _, err := store.StoreInbox(context.Background(), event, maxsdk.InboxIdempotencyKey(event)); err != nil {
+				t.Fatal(err)
+			}
+			if result, err := worker.RunOnce(context.Background(), 1); err != nil || result.Acked != 1 || !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, "Комплект неполный") {
+				t.Fatalf("premature confirmation: %+v %v", result, err)
+			}
+		}
 	}
 	if got := deliver(driver, "photo-ninth"); !strings.Contains(got, "Девятое фото не добавлено") {
 		t.Fatalf("ninth image: %q", got)
@@ -182,6 +196,35 @@ func TestPhotoUploadCountsOnlyStoredImageAndStopsAtEight(t *testing.T) {
 	state, err = actor.State(context.Background(), driver)
 	if err != nil || state.Checkout == nil || state.Checkout.Inspection.ID != checkout.Inspection.ID || len(state.Checkout.Inspection.OccupiedSlots) != 8 {
 		t.Fatalf("photo set: %+v %v", state, err)
+	}
+	if err := processor.Handle(context.Background(), menuItem(driver, "photo-confirm-menu", now)); err != nil {
+		t.Fatal(err)
+	}
+	menu := sender.Messages()[len(sender.Messages())-1]
+	if len(menu.Buttons) != 3 || !strings.HasPrefix(menu.Buttons[1][0].Payload, "confirm-photos:") {
+		t.Fatalf("full photo menu: %+v", menu)
+	}
+	if err := processor.Handle(context.Background(), callbackItem(driver, "photo-confirm-no-lease", menu.Buttons[1][0].Payload, now)); err == nil || !strings.Contains(err.Error(), "durable inbox lease") {
+		t.Fatalf("confirmation without lease: %v", err)
+	}
+	confirm := callbackItem(driver, "photo-confirm", menu.Buttons[1][0].Payload, now).Event
+	if _, err := store.StoreInbox(context.Background(), confirm, maxsdk.InboxIdempotencyKey(confirm)); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := worker.RunOnce(context.Background(), 1); err != nil || result.Acked != 1 || !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, "подтверждены") {
+		t.Fatalf("confirmation: %+v %v", result, err)
+	}
+	state, err = actor.State(context.Background(), driver)
+	if err != nil || state.Checkout.Inspection.PhotosConfirmedAt == nil || len(state.Checkout.Inspection.OccupiedSlots) != 8 {
+		t.Fatalf("confirmed set: %+v %v", state, err)
+	}
+	confirmedVersion := state.Checkout.Inspection.Version
+	if err := processor.Handle(context.Background(), callbackItem(driver, "photo-stale-confirm", menu.Buttons[1][0].Payload, now)); err != nil || !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, "устарела") {
+		t.Fatalf("stale confirmation: %v", err)
+	}
+	state, err = actor.State(context.Background(), driver)
+	if err != nil || state.Checkout.Inspection.Version != confirmedVersion {
+		t.Fatalf("stale confirmation changed state: %+v %v", state, err)
 	}
 }
 

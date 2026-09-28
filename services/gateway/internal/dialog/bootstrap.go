@@ -30,6 +30,7 @@ type CheckoutCommander interface {
 	ChallengeCreateTake(context.Context, string, string, int64, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	ChallengeAnswer(context.Context, string, string, int64, int, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	CheckoutAcceptRules(context.Context, string, string, int64, string, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	InspectionConfirmPhotos(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 }
 
 type PhotoFetcher interface {
@@ -66,8 +67,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	rulesID, rulesVersion, rules := vehicleActionTarget(item.Event, "rules:")
 	acceptCheckoutID, acceptVersion, acceptedRulesID, acceptRules := acceptRulesTarget(item.Event)
 	photoCheckoutID, photoVersion, photos := vehicleActionTarget(item.Event, "photos:")
+	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !photoMessage && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !confirmPhotos && !photoMessage && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -124,6 +126,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	}
 	if photos {
 		return p.checkoutPhotos(ctx, maxID, state, photoCheckoutID, photoVersion)
+	}
+	if confirmPhotos {
+		return p.confirmCheckoutPhotos(ctx, item, actor, maxID, state, confirmInspectionID, confirmInspectionVersion)
 	}
 	if photoMessage {
 		return p.checkoutPhotoUpload(ctx, item, actor, maxID, state)
@@ -732,6 +737,9 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 		}
 		if state.Checkout.Step == "inspection" {
 			rows = append(rows, []maxsdk.Button{{Text: "Продолжить фото", Payload: fmt.Sprintf("photos:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
+			if slot, _, ok := photoSlot(state.Checkout.Inspection); ok && slot == 0 && state.Checkout.Inspection.PhotosConfirmedAt == nil {
+				rows = append(rows, []maxsdk.Button{{Text: "Подтвердить фотографии", Payload: fmt.Sprintf("confirm-photos:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)}})
+			}
 		}
 		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 	}
