@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -272,5 +273,65 @@ func TestCardShowsMissingFieldsAsUnknown(t *testing.T) {
 		if !strings.Contains(card, required) {
 			t.Fatalf("card misses %q: %q", required, card)
 		}
+	}
+}
+
+func callbackItem(actor, key, payload string, now time.Time) dataapi.InboxClaimItem {
+	return dataapi.InboxClaimItem{ID: key, Event: dataapi.NormalizedEvent{
+		IntegrationKey: "demo-bot", EventKey: "callback:" + key + ":message_callback", EventType: "message_callback",
+		ActorMaxUserID: actor, ChatID: actor, CallbackID: &key, OccurredAt: now,
+		Payload: dataapi.NormalizedPayload{Kind: "callback", CallbackData: &payload},
+	}}
+}
+
+func TestCatalogCallbacksUseClickerAndRefreshStaleCard(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	actor, _, closeServer := mockClients(t, now)
+	defer closeServer()
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: actor, MAX: sender}
+	const driver = "8000000000000000001"
+	if err := processor.Handle(context.Background(), callbackItem(driver, "menu-callback", "menu", now)); err != nil {
+		t.Fatal(err)
+	}
+	menu := sender.Messages()[0]
+	if len(menu.Buttons) != 1 || menu.Buttons[0][0].Payload != "cars:1" {
+		t.Fatalf("menu buttons = %+v", menu.Buttons)
+	}
+	if err := processor.Handle(context.Background(), callbackItem(driver, "cars-callback", "cars:1", now)); err != nil {
+		t.Fatal(err)
+	}
+	catalog := sender.Messages()[1]
+	if len(catalog.Buttons) != 6 || len(catalog.Buttons[5]) != 2 || catalog.Buttons[5][1].Payload != "cars:2" {
+		t.Fatalf("catalog buttons = %+v", catalog.Buttons)
+	}
+	available := true
+	page, err := actor.Vehicles(context.Background(), driver, dataapi.VehicleFilter{Available: &available, Limit: 5})
+	if err != nil || len(page.Items) == 0 {
+		t.Fatalf("available vehicles = %+v, %v", page, err)
+	}
+	vehicle := page.Items[0]
+	stalePayload := catalog.Buttons[0][0].Payload
+	if stalePayload != "car:"+vehicle.ID+":"+strconv.FormatInt(vehicle.Version, 10) {
+		t.Fatalf("card button does not carry version: %q", stalePayload)
+	}
+	const otherDriver = "8000000000000000002"
+	if _, err := actor.CheckoutCreate(context.Background(), otherDriver, vehicle.ID, vehicle.Version, "stale-card-hold", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := processor.Handle(context.Background(), callbackItem(driver, "stale-card", stalePayload, now)); err != nil {
+		t.Fatal(err)
+	}
+	card := sender.Messages()[2]
+	if !strings.Contains(card.Text, "Данные автомобиля изменились") || !strings.Contains(card.Text, "Статус:") || len(card.Buttons) != 1 || card.Buttons[0][0].Payload != "cars:1" {
+		t.Fatalf("stale card = %+v", card)
+	}
+	unknown := callbackItem("8000000000000000009", "other-clicker", stalePayload, now)
+	if err := processor.Handle(context.Background(), unknown); err != nil {
+		t.Fatal(err)
+	}
+	denied := sender.Messages()[3]
+	if !strings.Contains(denied.Text, "8000000000000000009") || strings.Contains(denied.Text, "Ключи:") || len(denied.Buttons) != 0 {
+		t.Fatalf("callback actor leaked card = %+v", denied)
 	}
 }

@@ -33,7 +33,7 @@ var vehicleIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-
 
 func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) error {
 	pageNumber, catalog := catalogPage(item.Event)
-	vehicleID, card := cardTarget(item.Event)
+	vehicleID, expectedVersion, card := cardTarget(item.Event)
 	if !catalog && !card && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
@@ -58,12 +58,11 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		return err
 	}
 	if catalog {
-		message, err := p.catalogText(ctx, actor, *me.Employee, state, pageNumber)
+		message, rows, err := p.catalogView(ctx, actor, *me.Employee, state, pageNumber)
 		if err != nil {
 			return err
 		}
-		_, err = p.MAX.SendText(ctx, maxID, message)
-		return err
+		return p.sendView(ctx, maxID, message, rows)
 	}
 	if card {
 		message := "Некорректная ссылка на автомобиль. Откройте /cars."
@@ -77,24 +76,49 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 				message = "Автомобиль больше не доступен по этой ссылке. Обновите /cars."
 			} else {
 				message = cardText(vehicle, p.Location)
+				if expectedVersion > 0 && vehicle.Version != expectedVersion {
+					message = "Данные автомобиля изменились. Ниже актуальная карточка.\n" + message
+				}
 			}
 		}
-		_, err = p.MAX.SendText(ctx, maxID, message)
+		return p.sendView(ctx, maxID, message, [][]maxsdk.Button{{{Text: "К списку", Payload: "cars:1"}}})
+	}
+	return p.sendView(ctx, maxID, menuText(*me.Employee, state), menuRows(*me.Employee, state))
+}
+
+func (p Bootstrap) sendView(ctx context.Context, maxID int64, text string, rows [][]maxsdk.Button) error {
+	if len(rows) == 0 {
+		_, err := p.MAX.SendText(ctx, maxID, text)
 		return err
 	}
-	_, err = p.MAX.SendText(ctx, maxID, menuText(*me.Employee, state))
+	_, err := p.MAX.SendButtons(ctx, maxID, text, rows)
 	return err
 }
 
-func cardTarget(event dataapi.NormalizedEvent) (string, bool) {
+func cardTarget(event dataapi.NormalizedEvent) (string, int64, bool) {
+	if event.EventType == "message_callback" && event.Payload.Kind == "callback" && event.Payload.CallbackData != nil {
+		payload := *event.Payload.CallbackData
+		if !strings.HasPrefix(payload, "car:") {
+			return "", 0, false
+		}
+		parts := strings.Split(payload, ":")
+		if len(parts) != 3 {
+			return "", 0, true
+		}
+		version, err := strconv.ParseInt(parts[2], 10, 64)
+		if err != nil || version < 1 {
+			return "", 0, true
+		}
+		return parts[1], version, true
+	}
 	if event.EventType != "message_created" || event.Payload.Kind != "text" || event.Payload.Text == nil {
-		return "", false
+		return "", 0, false
 	}
 	command := strings.TrimSpace(*event.Payload.Text)
 	if !strings.HasPrefix(command, "/car ") {
-		return "", false
+		return "", 0, false
 	}
-	return strings.TrimSpace(strings.TrimPrefix(command, "/car ")), true
+	return strings.TrimSpace(strings.TrimPrefix(command, "/car ")), 0, true
 }
 
 func cardText(vehicle dataapi.Vehicle, location *time.Location) string {
@@ -161,6 +185,14 @@ func formatMoment(moment time.Time, location *time.Location) string {
 }
 
 func catalogPage(event dataapi.NormalizedEvent) (int, bool) {
+	if event.EventType == "message_callback" && event.Payload.Kind == "callback" && event.Payload.CallbackData != nil {
+		payload := *event.Payload.CallbackData
+		if !strings.HasPrefix(payload, "cars:") {
+			return 0, false
+		}
+		page, err := strconv.Atoi(strings.TrimPrefix(payload, "cars:"))
+		return page, err == nil && page >= 1 && page <= 20
+	}
 	if event.EventType != "message_created" || event.Payload.Kind != "text" || event.Payload.Text == nil {
 		return 0, false
 	}
@@ -175,9 +207,9 @@ func catalogPage(event dataapi.NormalizedEvent) (int, bool) {
 	return page, err == nil && page >= 1 && page <= 20
 }
 
-func (p Bootstrap) catalogText(ctx context.Context, actor string, employee dataapi.Employee, state dataapi.CurrentState, wanted int) (string, error) {
+func (p Bootstrap) catalogView(ctx context.Context, actor string, employee dataapi.Employee, state dataapi.CurrentState, wanted int) (string, [][]maxsdk.Button, error) {
 	if !employee.CanStartTrip || state.Trip != nil || state.Checkout != nil {
-		return "Сейчас нельзя начать оформление другой машины. Откройте /menu, чтобы продолжить текущий сценарий.", nil
+		return "Сейчас нельзя начать оформление другой машины. Откройте /menu, чтобы продолжить текущий сценарий.", [][]maxsdk.Button{{{Text: "В меню", Payload: "menu"}}}, nil
 	}
 	available := true
 	cursor := ""
@@ -186,30 +218,45 @@ func (p Bootstrap) catalogText(ctx context.Context, actor string, employee dataa
 		var err error
 		page, err = p.Data.Vehicles(ctx, actor, dataapi.VehicleFilter{Available: &available, Limit: 5, Cursor: cursor})
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		if number < wanted {
 			if page.NextCursor == nil {
-				return "Список изменился. Обновите: /cars", nil
+				return "Список изменился. Обновите: /cars", [][]maxsdk.Button{{{Text: "Обновить", Payload: "cars:1"}}}, nil
 			}
 			cursor = *page.NextCursor
 		}
 	}
 	if len(page.Items) == 0 {
-		return "Сейчас нет доступных автомобилей. Попробуйте обновить список позже.", nil
+		return "Сейчас нет доступных автомобилей. Попробуйте обновить список позже.", [][]maxsdk.Button{{{Text: "Обновить", Payload: "cars:1"}}}, nil
 	}
 	lines := []string{fmt.Sprintf("Доступные автомобили · страница %d", wanted)}
+	rows := make([][]maxsdk.Button, 0, len(page.Items)+1)
 	for _, vehicle := range page.Items {
-		lines = append(lines, fmt.Sprintf("%s · %s %s", oneLine(vehicle.Plate), oneLine(vehicle.Make), oneLine(vehicle.Model)))
+		label := fmt.Sprintf("%s · %s %s", oneLine(vehicle.Plate), oneLine(vehicle.Make), oneLine(vehicle.Model))
+		lines = append(lines, label)
+		rows = append(rows, []maxsdk.Button{{Text: shortLabel(label), Payload: fmt.Sprintf("car:%s:%d", vehicle.ID, vehicle.Version)}})
 	}
+	controls := []maxsdk.Button{{Text: "Обновить", Payload: "cars:1"}}
 	if wanted > 1 {
 		lines = append(lines, fmt.Sprintf("Назад: /cars %d", wanted-1))
+		controls = append(controls, maxsdk.Button{Text: "Назад", Payload: fmt.Sprintf("cars:%d", wanted-1)})
 	}
 	if page.NextCursor != nil && wanted < 20 {
 		lines = append(lines, fmt.Sprintf("Далее: /cars %d", wanted+1))
+		controls = append(controls, maxsdk.Button{Text: "Далее", Payload: fmt.Sprintf("cars:%d", wanted+1)})
 	}
 	lines = append(lines, "Обновить: /cars")
-	return strings.Join(lines, "\n"), nil
+	rows = append(rows, controls)
+	return strings.Join(lines, "\n"), rows, nil
+}
+
+func shortLabel(value string) string {
+	runes := []rune(value)
+	if len(runes) > 80 {
+		return string(runes[:79]) + "…"
+	}
+	return value
 }
 
 func oneLine(value string) string {
@@ -217,6 +264,9 @@ func oneLine(value string) string {
 }
 
 func isMenuEvent(event dataapi.NormalizedEvent) bool {
+	if event.EventType == "message_callback" && event.Payload.Kind == "callback" && event.Payload.CallbackData != nil {
+		return *event.Payload.CallbackData == "menu"
+	}
 	if event.EventType == "bot_started" && event.Payload.Kind == "start" {
 		return true
 	}
@@ -225,6 +275,13 @@ func isMenuEvent(event dataapi.NormalizedEvent) bool {
 	}
 	command := strings.ToLower(strings.TrimSpace(*event.Payload.Text))
 	return command == "/start" || command == "/menu"
+}
+
+func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.Button {
+	if employee.CanStartTrip && state.Trip == nil && state.Checkout == nil {
+		return [][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}}
+	}
+	return nil
 }
 
 func menuText(employee dataapi.Employee, state dataapi.CurrentState) string {
