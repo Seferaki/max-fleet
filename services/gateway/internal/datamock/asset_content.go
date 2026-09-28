@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+
+	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 )
 
 func (s *Server) assetContent(w http.ResponseWriter, r *http.Request, requestID string) {
@@ -57,6 +60,41 @@ func (s *Server) assetContent(w http.ResponseWriter, r *http.Request, requestID 
 		s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
 		return
 	}
+	s.writePhotoAsset(w, requestID, id, contentType, hash)
+}
+
+func (s *Server) tripInspectionPhoto(w http.ResponseWriter, r *http.Request, requestID string) {
+	id := r.PathValue("id")
+	phase := r.PathValue("phase")
+	slot, err := strconv.Atoi(r.PathValue("slot"))
+	if !validUUID(id) || (phase != "before" && phase != "after") || err != nil || slot < 1 || slot > 8 {
+		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	trip, found := s.trips[id]
+	employee := s.employees[r.Header.Get("X-Actor-Max-ID")]
+	if !found || (trip.EmployeeID != employee.ID && employee.Role != "admin") {
+		s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
+		return
+	}
+	var inspection dataapi.Inspection
+	if phase == "before" && trip.BeforeInspection.Status == "finalized" {
+		inspection = trip.BeforeInspection
+	} else if phase == "after" && (trip.Status == "completed" || trip.Status == "closed") && trip.AfterInspection != nil && trip.AfterInspection.Status == "finalized" {
+		inspection = *trip.AfterInspection
+	}
+	photo, found := s.photos[inspection.ID][slot]
+	if inspection.ID == "" || !found {
+		s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
+		return
+	}
+	s.writePhotoAsset(w, requestID, photo.AssetID, photo.ContentType, photo.SHA256)
+}
+
+// Caller holds s.mu while resolving authorization and the asset record.
+func (s *Server) writePhotoAsset(w http.ResponseWriter, requestID, id, contentType, hash string) {
 	data, err := os.ReadFile(filepath.Join(s.assetDir, id))
 	if err != nil || len(data) == 0 || len(data) > 10<<20 || fmt.Sprintf("%x", sha256.Sum256(data)) != hash {
 		s.fail(w, requestID, http.StatusServiceUnavailable, "STORAGE_UNAVAILABLE")

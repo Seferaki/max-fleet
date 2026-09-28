@@ -18,12 +18,25 @@ func (c *Client) AssetContent(ctx context.Context, actorMaxID, assetID string) (
 	if !validMaxID(actorMaxID) || !validUUID(assetID) {
 		return AssetContent{}, errors.New("data-api: invalid asset request")
 	}
+	return c.privateImage(ctx, actorMaxID, "/assets/"+assetID+"/content")
+}
+
+// TripInspectionPhoto retrieves a finalized inspection angle without exposing an asset ID.
+func (c *Client) TripInspectionPhoto(ctx context.Context, actorMaxID, tripID, phase string, slot int) (AssetContent, error) {
+	if !validMaxID(actorMaxID) || !validUUID(tripID) || (phase != "before" && phase != "after") || slot < 1 || slot > 8 {
+		return AssetContent{}, errors.New("data-api: invalid trip photo request")
+	}
+	path := fmt.Sprintf("/trips/%s/inspection-photos/%s/%d", tripID, phase, slot)
+	return c.privateImage(ctx, actorMaxID, path)
+}
+
+func (c *Client) privateImage(ctx context.Context, actorMaxID, path string) (AssetContent, error) {
 	requestID, err := newUUID()
 	if err != nil {
 		return AssetContent{}, err
 	}
 	u := *c.baseURL
-	u.Path += "/assets/" + assetID + "/content"
+	u.Path += path
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 		if err != nil {
