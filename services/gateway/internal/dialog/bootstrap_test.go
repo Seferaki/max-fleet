@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -602,5 +603,108 @@ func TestCheckoutRejectsStaleAndUnknownActorBeforeCommand(t *testing.T) {
 	state, err := actor.State(context.Background(), driver)
 	if err != nil || state.Checkout != nil {
 		t.Fatalf("stale/unknown actor created hold: %+v %v", state, err)
+	}
+}
+
+func TestBE03GoldenMenuCatalogAndCard(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	actor, _, closeServer := mockClients(t, now)
+	defer closeServer()
+	const driver = "8000000000000000001"
+	const vehicleID = "10000000-0000-4000-8000-000000000001"
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: actor, Commands: actor, MAX: sender, Location: time.FixedZone("MSK", 3*3600)}
+	if err := processor.Handle(context.Background(), menuItem(driver, "golden-menu", now)); err != nil {
+		t.Fatal(err)
+	}
+	command := "/cars"
+	item := menuItem(driver, "golden-cars", now)
+	item.Event.Payload.Text = &command
+	if err := processor.Handle(context.Background(), item); err != nil {
+		t.Fatal(err)
+	}
+	command = "/car " + vehicleID
+	item = menuItem(driver, "golden-card", now)
+	item.Event.Payload.Text = &command
+	if err := processor.Handle(context.Background(), item); err != nil {
+		t.Fatal(err)
+	}
+	messages := sender.Messages()
+	menuText := "MAX Fleet\nДоступные автомобили\nМои поездки\nПравила и помощь"
+	if messages[0].Text != menuText || !reflect.DeepEqual(messages[0].Buttons, [][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}}) {
+		t.Fatalf("menu golden changed: %+v", messages[0])
+	}
+	catalogText := strings.Join([]string{
+		"Доступные автомобили · страница 1",
+		"DEMO-001 · Демо Учебный седан 1", "DEMO-002 · Демо Учебный седан 2",
+		"DEMO-003 · Демо Учебный хэтчбек 1", "DEMO-004 · Демо Учебный хэтчбек 2",
+		"DEMO-005 · Демо Учебный универсал 1", "Далее: /cars 2", "Обновить: /cars",
+	}, "\n")
+	if messages[1].Text != catalogText || len(messages[1].Buttons) != 6 || messages[1].Buttons[0][0].Payload != "car:"+vehicleID+":1" || !reflect.DeepEqual(messages[1].Buttons[5], []maxsdk.Button{{Text: "Обновить", Payload: "cars:1"}, {Text: "Далее", Payload: "cars:2"}}) {
+		t.Fatalf("catalog golden changed: %+v", messages[1])
+	}
+	cardText := strings.Join([]string{
+		"DEMO-001 · Демо Учебный седан 1", "Статус: available",
+		"Место парковки: 55.750100, 37.620100", "Место подтверждено: 27.09.2026 12:00 MSK",
+		"Топливо: 100%", "Топливо обновлено: 27.09.2026 12:00 MSK",
+		"Пробег: 12000 км", "Пробег обновлён: 27.09.2026 12:00 MSK",
+		"Описание: Синтетический автомобиль", "Известные замечания: Нет",
+		"Ключи: Демо: ключ у ответственного", "К списку: /cars",
+		"Выдача: доступно подтверждение оформления; поездка начнётся только после приёмки.",
+	}, "\n")
+	cardButtons := [][]maxsdk.Button{
+		{{Text: "Начать оформление", Payload: "intent:" + vehicleID + ":1"}},
+		{{Text: "Показать на карте", URL: "https://www.openstreetmap.org/?mlat=55.750100&mlon=37.620100#map=17/55.750100/37.620100"}},
+		{{Text: "Предыдущий осмотр", Payload: "prev:" + vehicleID}},
+		{{Text: "К списку", Payload: "cars:1"}},
+	}
+	if messages[2].Text != cardText || !reflect.DeepEqual(messages[2].Buttons, cardButtons) {
+		t.Fatalf("card golden changed: %+v", messages[2])
+	}
+}
+
+type fixedVehicleReader struct {
+	emptyCatalogReader
+	vehicle dataapi.Vehicle
+}
+
+func (r fixedVehicleReader) Vehicle(context.Context, string, string) (dataapi.Vehicle, error) {
+	return r.vehicle, nil
+}
+
+func TestCardWithoutParkingOrKeysHidesCheckoutAction(t *testing.T) {
+	const vehicleID = "10000000-0000-4000-8000-000000000001"
+	ready := dataapi.Vehicle{ID: vehicleID, Status: "available", Version: 1, KeyInstructions: "У диспетчера", CurrentParking: &dataapi.ParkingLocation{Latitude: 55.75, Longitude: 37.62, ConfirmedAt: time.Now()}}
+	for _, test := range []struct {
+		name    string
+		vehicle dataapi.Vehicle
+		wantMap bool
+	}{
+		{name: "нет парковки", vehicle: func() dataapi.Vehicle { v := ready; v.CurrentParking = nil; return v }(), wantMap: false},
+		{name: "нет ключей", vehicle: func() dataapi.Vehicle { v := ready; v.KeyInstructions = ""; return v }(), wantMap: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			sender := &maxsdk.RecordingTransport{}
+			item := callbackItem("8000000000000000001", "no-checkout", "car:"+vehicleID+":1", time.Now())
+			if err := (Bootstrap{Data: fixedVehicleReader{vehicle: test.vehicle}, MAX: sender}).Handle(context.Background(), item); err != nil {
+				t.Fatal(err)
+			}
+			view := sender.Messages()[0]
+			if !strings.Contains(view.Text, "Выдача: требуется") {
+				t.Fatalf("missing requirement = %q", view.Text)
+			}
+			mapFound := false
+			for _, row := range view.Buttons {
+				for _, button := range row {
+					if strings.HasPrefix(button.Payload, "intent:") {
+						t.Fatalf("checkout offered without required data: %+v", view.Buttons)
+					}
+					mapFound = mapFound || button.URL != ""
+				}
+			}
+			if mapFound != test.wantMap {
+				t.Fatalf("map button = %t, want %t", mapFound, test.wantMap)
+			}
+		})
 	}
 }
