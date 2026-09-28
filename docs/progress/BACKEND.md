@@ -5,19 +5,19 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: ACTIVE
+lock_state: HANDOFF
 owner: B
 session_id: "2931dab3-6fbe-41df-9b53-e44eade06330"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T20:21:28Z"
+heartbeat_utc: "2026-09-28T20:24:32Z"
 current_task: BE-06
-current_substep: "BE-06: ответ о новых замечаниях после 8 фото проверен; далее категория/описание issue-before"
-last_verified_code_commit: "47d0369c527eb60a6d62acbc3cb205496b6c1b1b"
+current_substep: "BE-06: топливо, пробег и ответ о новых замечаниях проверены на mock; очередь передаётся с WIP"
+last_verified_code_commit: "24b1c44188c6ae0874dd5d91ee75530285c3ad4b"
 checkpoint_state: WIP
 contract_commit: "1aaea964e253dce7338283ca4c012a14c8c93f6d"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-06: для нового замечания добавить категорию/описание, до 3 stage-фото и issue.create; затем сводка/start; UI-01 React карта остаётся P0"
+next_step: "После claim BE-06: категория/описание и до 3 stage-фото для issue-before, issue.create с безопасным восстановлением, затем сводка/start. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -33,7 +33,7 @@ human_required: [H-01]
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
 | BE-05 | DONE | `856785401024a28f7b0ba4a92c65219a6774ad27` — 8 ракурсов, upload/replace/view/media/recovery; [CI c2a39a5](https://github.com/Seferaki/max-fleet/actions/runs/36476231053) success и локальный gateway verify | Реальный MAX/Python остаются INT; BE-06 |
-| BE-06 | IN_PROGRESS | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ о новых замечаниях | Категория/описание/фото issue-before и start ещё не реализованы |
+| BE-06 | IN_PROGRESS | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ о новых замечаниях; `24b1c44188c6ae0874dd5d91ee75530285c3ad4b` — безопасный ответ | Категория/описание/фото issue-before и start ещё не реализованы |
 | BE-07 | TODO | — | См. план |
 | UI-01 | TODO | — | См. план |
 | BE-08 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- HANDOFF 2026-09-28 20:24:32 UTC, ноутбук B/session `2931dab3-6fbe-41df-9b53-e44eade06330`. Последний проверенный code commit `24b1c44188c6ae0874dd5d91ee75530285c3ad4b` опубликован обычным push; исправлен ответ при новом замечании: пока форма категории/описания отсутствует, бот прямо говорит оставить машину и сообщить ответственному, поездка не начинается. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. BE-06 WIP, mock не доказывает реальный MAX/Python. `scripts/enter-max-token.ps1 -Check` → `MAX_BOT_TOKEN_FILE` отсутствует; значение секрета не читалось. `docker ps --filter name=max-fleet` → контейнеров нет, dev consumer не запущен. Синтетический seed достаточен; приватный backup не нужен. После следующего claim нужен issue-before с категорией/описанием/до 3 stage-фото и надёжным состоянием черновика. Текущий контракт `conversation.save` не содержит массива staged asset IDs, а mock его ещё не реализует; изменение контракта делать явно с версией/примерами либо выбрать совместимый безопасный способ хранения черновика. Затем сводка/start и ошибки после commit. React карта UI-01 остаётся P0.
 
 - BE-06 new issue answer code commit: `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` опубликован в `codex/backend` обычным push. После сохранения и подтверждения 8 фото, топлива и пробега диалог спрашивает о новых замечаниях. «Нет» сохраняет `new_damage=false`, затем `checkout.set_no_new_issues` двумя отдельными idempotent-командами с обработкой повторного события после первого сохранения; «Есть» сохраняет `new_damage=true`, выдача остаётся заблокированной до оформления issue. Синтетические тесты проверили чужого actor, отсутствие lease, версии, два сохранения и отказ `checkout.start` при новом замечании. `go test ./internal/dialog -run '^TestNoNewIssuesPersistsAfterInspectionAndRejectsStaleChoice$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; `git diff --cached --check` и `py scripts/check-secrets.py --staged` → exit 0. Категория/описание/дополнительные фото и начало поездки ещё отсутствуют; реальный MAX/Python не проверены, BE-06 WIP.
 
