@@ -5,19 +5,19 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: HANDOFF
+lock_state: ACTIVE
 owner: A
-session_id: "8b0ea984-1cd7-4f3f-9642-16bace154c9c"
+session_id: "7426ea1e-c20b-4d5b-9fb3-690bfac56398"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T15:41:58Z"
+heartbeat_utc: "2026-09-28T15:44:38Z"
 current_task: BE-05
-current_substep: "Плановая передача после опубликованного MAX image sender; просмотр требует контрактного маршрута"
+current_substep: "Захват очереди после HANDOFF; проектирование маршрута чтения фото trip/phase/slot"
 last_verified_code_commit: "d590c2624563d9ad78f0fe9c27babef32e06e83e"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "Новый исполнитель: fetch/pull --ff-only, чистый status, claim ACTIVE с новым session и push до кода. Затем BE-05: версионированный контракт чтения trip/phase/slot с примерами, mock/client/view ACL; unsupported media и recovery. UI-01 React карта остаётся P0"
+next_step: "BE-05: версионированный контракт чтения trip/phase/slot с примерами, mock/client/view ACL; затем unsupported media и recovery. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- CLAIM 2026-09-28 15:44:38 UTC: после опубликованного `HANDOFF` `f2613ce672ca8e43c7d15dec03bc4a9be6bd0cfb` ноутбук A начал новую сессию `7426ea1e-c20b-4d5b-9fb3-690bfac56398`. `git fetch origin codex/backend`, `git status --short --branch`, `git rev-parse HEAD`, `git rev-parse origin/codex/backend` → чистая ветка и одинаковый SHA; `git ls-remote` подтвердил удалённый checkpoint. До code edits требуется публикация этого claim обычным push.
 
 - HANDOFF 2026-09-28 15:41:58 UTC, ноутбук A/session `8b0ea984-1cd7-4f3f-9642-16bace154c9c`. Последний проверенный code commit `d590c2624563d9ad78f0fe9c27babef32e06e83e`, соответствующий status `06dae517c754cf879b92ca814b6d554ce49d6fea` опубликован обычным push и подтверждён `git ls-remote`; worktree чист. `go test ./internal/maxsdk -run '^TestSDKTransportSendsAuthorizedImageByToken' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; `docker compose -f deploy/compose.backend.yaml config --quiet` с временными несекретными interpolation paths → OK. [CI предыдущего BE-05 status](https://github.com/Seferaki/max-fleet/actions/runs/36445005396) success; CI `06dae517` / [run 36445430945](https://github.com/Seferaki/max-fleet/actions/runs/36445430945) был `in_progress` при handoff, успех не заявлен. BE-05 WIP: нет просмотра по trip/phase/slot, ответа на video/document в webhook и проверки реального MAX/Python. `MAX_BOT_TOKEN_FILE` отсутствует по `scripts/enter-max-token.ps1 -Check` (False), `MAX_PHOTO_HOSTS` не настроен; реальные значения не выводились. `docker ps --filter name=max-fleet` → работающих MAX Fleet контейнеров нет, живой consumer не запускался. Достаточен синтетический seed, приватный backup не нужен. Следующий исполнитель сначала claim-ит HANDOFF и push, затем проектирует совместимое расширение v1 с новой версией/примерами и реализует чтение с ACL в Go mock, не редактируя `services/data/` до INT. Реальная React карта UI-01 остаётся обязательной P0.
 
