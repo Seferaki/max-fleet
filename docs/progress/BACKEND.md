@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "8b0ea984-1cd7-4f3f-9642-16bace154c9c"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T15:28:43Z"
+heartbeat_utc: "2026-09-28T15:32:29Z"
 current_task: BE-05
-current_substep: "Одно фото из durable inbox до ready в mock проверено; следующий шаг — выбор замены и подтверждение комплекта"
-last_verified_code_commit: "ec796e8f2626c358b9e9cddd56436a152280df64"
+current_substep: "Подтверждение 8/8 проверено; следующий шаг — безопасный выбор и замена ракурса"
+last_verified_code_commit: "2405e85a72b976026f3c0256fea99747663eb3af"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-05: выбор ракурса замены, подтверждение 8/8, просмотр до/после с ACL; затем ошибки unsupported media и recovery. UI-01 React карта остаётся P0"
+next_step: "BE-05: выбор ракурса замены без потери прежнего файла, просмотр до/после с ACL; затем unsupported media и recovery. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -32,7 +32,7 @@ human_required: [H-01]
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
-| BE-05 | IN_PROGRESS | `ed6c6f01c834cf53ecd57a41784140cb3d2cd540` — ракурс; `5225d0cf0991e5f0df585c3a4472bce0e10be9fa` — загрузчик; `ec796e8f2626c358b9e9cddd56436a152280df64` — upload | Замена, подтверждение, просмотр и recovery |
+| BE-05 | IN_PROGRESS | `ed6c6f0` — ракурс; `5225d0c` — загрузчик; `ec796e8` — upload; `2405e85a72b976026f3c0256fea99747663eb3af` — подтверждение | Замена, просмотр и recovery |
 | BE-06 | TODO | — | См. план |
 | BE-07 | TODO | — | См. план |
 | UI-01 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-05 code commit: `2405e85a72b976026f3c0256fea99747663eb3af`. После реально сохранённых 8/8 `/menu` предлагает «Подтвердить фотографии» с inspection ID/version. Callback повторно проверяет owner через `/me`/`/state`, holding inspection, полный комплект и версию; только durable inbox lease вызывает `inspection.confirm_photos` с стабильным ключом. Успех засчитывается лишь по aggregate с `photos_confirmed_at`; неполный комплект, старый callback и отсутствие lease не подтверждают фото. `go test ./internal/dialog -run '^TestPhoto' -count=1 -v` → 4 PASS, включая 7/8, 8/8 и повтор; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK до добавления одного тестового утверждения об отсутствии lease, после него focused тест повторно PASS. Первая команда gofmt/test использовала неверный относительный путь, тесты не запустились; исправленный запуск указан выше. Замена и просмотр ещё WIP, реальный MAX/Python не проверены.
 
 - BE-05 code commit: `ec796e8f2626c358b9e9cddd56436a152280df64`. Photo event обрабатывается после `/me` и `/state`, только для собственного holding inspection, с durable inbox lease. Go выбирает первый недостающий slot из проекции Python/mock, скачивает одно изображение через ограниченный загрузчик и передаёт его DataAPI с версией, source event и стабильным idempotency key. Счётчик показывается только по сохранённому ответу mock; 422 duplicate/hash, 409 stale/повтор, чужой actor, 8/8 и ошибка скачивания не увеличивают набор. Без `MAX_PHOTO_HOSTS` текущий осмотр остаётся deferred, а фото вне осмотра получает безопасный ответ. Добавлены несекретная конфигурация Compose/.env и инструкция по точным доверенным hostname. `go test ./internal/dialog -run '^TestPhoto' -count=1 -v` → 4 PASS: 8 последовательных слотов, повтор файла, девятое фото, download failure, чужой actor, отсутствие lease и сбой ответа после успешной записи с повторным inbox event без второго слота. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; первый полный прогон выявил устаревшее ожидание deferred фото вне осмотра, тест обновлён, повторный прогон зелёный. `docker compose -f deploy/compose.backend.yaml config --quiet` с временными путями `.env.example` только для interpolation → OK, реальные токены не читались. Реальный MAX CDN/token и Python API не проверены; замена, confirm, просмотр, unsupported media остаются WIP.
 
