@@ -31,6 +31,7 @@ type CheckoutCommander interface {
 	ChallengeAnswer(context.Context, string, string, int64, int, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	CheckoutAcceptRules(context.Context, string, string, int64, string, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	InspectionConfirmPhotos(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	InspectionUpdate(context.Context, string, string, int64, dataapi.InspectionUpdateInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 }
 
 type PhotoFetcher interface {
@@ -67,12 +68,14 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	rulesID, rulesVersion, rules := vehicleActionTarget(item.Event, "rules:")
 	acceptCheckoutID, acceptVersion, acceptedRulesID, acceptRules := acceptRulesTarget(item.Event)
 	photoCheckoutID, photoVersion, photos := vehicleActionTarget(item.Event, "photos:")
+	fuelInspectionID, fuelVersion, fuel := vehicleActionTarget(item.Event, "fuel:")
+	setFuelID, setFuelVersion, fuelLevel, setFuel := fuelChoiceTarget(item.Event)
 	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
 	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -132,6 +135,13 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	}
 	if photos {
 		return p.checkoutPhotos(ctx, maxID, state, photoCheckoutID, photoVersion)
+	}
+	if fuel || setFuel {
+		inspectionID, version := fuelInspectionID, fuelVersion
+		if setFuel {
+			inspectionID, version = setFuelID, setFuelVersion
+		}
+		return p.checkoutFuel(ctx, item, actor, maxID, state, inspectionID, version, fuelLevel, setFuel)
 	}
 	if confirmPhotos {
 		return p.confirmCheckoutPhotos(ctx, item, actor, maxID, state, confirmInspectionID, confirmInspectionVersion)
@@ -757,6 +767,7 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 					rows = append(rows, []maxsdk.Button{{Text: "Заменить фотографию", Payload: fmt.Sprintf("replace-photos:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 				}
 			}
+			rows = append(rows, []maxsdk.Button{{Text: "Указать топливо", Payload: fmt.Sprintf("fuel:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)}})
 		}
 		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 	}
