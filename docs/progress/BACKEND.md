@@ -9,11 +9,11 @@ lock_state: ACTIVE
 owner: A
 session_id: "8b0ea984-1cd7-4f3f-9642-16bace154c9c"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T15:15:41Z"
+heartbeat_utc: "2026-09-28T15:18:43Z"
 current_task: BE-05
-current_substep: "Проверить контракт фото и реализовать безопасный приём одного изображения по очереди"
-last_verified_code_commit: "d4b39da40e99c6be07512f634b370b9603818673"
-checkpoint_state: VERIFIED
+current_substep: "Запрос следующего ракурса восстановлен из DataAPI; следующий шаг — безопасное скачивание MAX и upload"
+last_verified_code_commit: "ed6c6f01c834cf53ecd57a41784140cb3d2cd540"
+checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
@@ -32,7 +32,7 @@ human_required: [H-01]
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
-| BE-05 | IN_PROGRESS | — | Один безопасный upload фото, затем замена и просмотр |
+| BE-05 | IN_PROGRESS | `ed6c6f01c834cf53ecd57a41784140cb3d2cd540` — восстановление ракурса из DataAPI и callback | Безопасное скачивание/upload, замена и просмотр |
 | BE-06 | TODO | — | См. план |
 | BE-07 | TODO | — | См. план |
 | UI-01 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-05 code commit: `ed6c6f01c834cf53ecd57a41784140cb3d2cd540`. `/menu` для holding inspection читает сохранённые слоты из `/state`, показывает число и первый недостающий из восьми заданных ракурсов; кнопка продолжения несёт checkout ID/version и отвергает устаревшую версию. При 8/8 не предлагает девятое фото, некорректная проекция слотов не превращается в запрос фото. `go test ./internal/dialog -run '^TestPhoto' -count=1 -v` → 2 PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK. Первая попытка локального Go вызова использовала неверный относительный путь к Go, не исполнила тесты; исправленная команда выше прошла. Фото-события ещё deferred, download/upload/replace/confirm и реальный MAX не проверены: BE-05 WIP. Следующий шаг — ограниченный загрузчик MAX image, затем запись одного слота через DataAPI после подтверждённого ready.
 
 - BE-04 DONE: code commit `d4b39da40e99c6be07512f634b370b9603818673` и status `a08bcf6c8a99d1158b282d2bde1932a051607f06` опубликованы; `git ls-remote --heads origin codex/backend` подтвердил status SHA. [CI status checkpoint](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) → completed/success (включая Go race/Docker/контрактные проверки). Локальные mock сценарии hold, cancel, math, rules, expired, stale/conflict и duplicate event проверены командами следующего пункта и ранее опубликованными checkpoint; повторный callback не создаёт вторую попытку. Это завершение BE-04 на mock, не приёмка реального MAX. Далее BE-05.
 
