@@ -5,13 +5,13 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: ACTIVE
+lock_state: HANDOFF
 owner: B
 session_id: "c52b6904-b47a-47b3-9bcf-ec03a54cc4da"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T14:33:18Z"
+heartbeat_utc: "2026-09-28T14:34:37Z"
 current_task: BE-03
-current_substep: "BE-03: некорректные callback-кнопки каталога подтверждаются; далее намерение/hold"
+current_substep: "BE-03 WIP: callback-кнопки и previous inspection проверены; следующий шаг — намерение/hold"
 last_verified_code_commit: "9ec9dc076c73c9394cc98a1067591d9e1a2f915d"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- HANDOFF от ноутбука B, session `c52b6904-b47a-47b3-9bcf-ec03a54cc4da`. Последний код `9ec9dc076c73c9394cc98a1067591d9e1a2f915d`, статус до передачи `8a7a36381ab56b92e51817346998bdb073f03c36`; все изменения опубликованы обычным push, worktree чист до status-коммита. Следующий исполнитель: fetch, сверить remote/status, claim-коммит ACTIVE и push до кода. Затем отдельное подтверждение намерения и `checkout.create` через DataAPI с inbox lease/idempotency и повторной проверкой actor/version; Python остаётся владельцем 15-минутного hold. BE-03/BE-04 WIP, UI-01 React карта остаётся обязательной P0. Для проверок: `cd services/gateway`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` (на этом Windows Go: `.local/go-dist/go/bin/go.exe`). Реальный MAX и CI последних SHA не проверены. `MAX_BOT_TOKEN_FILE` отсутствует по `scripts/enter-max-token.ps1 -Check`; значение не требуется в чате. Активных контейнеров проекта по `docker ps --filter label=com.docker.compose.project=max-fleet-backend` нет; dev consumer не запущен. Для нового запуска достаточно синтетического seed mock, приватный backup не нужен. Имена локальных секретов при будущем запуске: `MAX_BOT_TOKEN_FILE`, `MAX_FLEET_DATA_API_TOKEN_FILE`, `MAX_FLEET_WORKER_API_TOKEN_FILE`, `MAX_FLEET_MAX_WEBHOOK_SECRET_FILE`; локальные копии/volume не передаются Git.
 
 - BE-03 code commit: `9ec9dc076c73c9394cc98a1067591d9e1a2f915d`. Неверное значение `cars:N` (включая переполнение числа и страницу >20) больше не остаётся deferred в inbox: после actor access check диалог отправляет безопасное предложение обновить список и отвечает на MAX callback. Worker тест проверил `Acked=1`, `Deferred=0`, кнопку обновления и answer; `go test ./internal/dialog -count=1`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA/реальный MAX не проверены; BE-03 IN_PROGRESS.
 
