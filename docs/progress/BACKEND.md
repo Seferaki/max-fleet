@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "c52b6904-b47a-47b3-9bcf-ec03a54cc4da"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T13:59:11Z"
+heartbeat_utc: "2026-09-28T14:02:31Z"
 current_task: BE-02
-current_substep: "Ограниченный menu processor проверен; далее runtime wiring"
-last_verified_code_commit: "98dd5d38b435116b2370a04d3f311511f86bb226"
+current_substep: "Inbox worker подключён к gateway; ожидается CI/runtime review BE-02"
+last_verified_code_commit: "95bd145568b9a7b01e83983ec21e1b5ba1290956"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-02: подключить inbox worker к gateway c Bootstrap Processor; readiness сохранять partial до завершения диалогов"
+next_step: "BE-02: проверить CI для 95bd145 и runtime/границу BE-03; затем перейти к доступу, меню и карточкам BE-03"
 human_required: [H-01]
 ```
 
@@ -29,7 +29,7 @@ human_required: [H-01]
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
-| BE-02 | IN_PROGRESS | `98dd5d38b435116b2370a04d3f311511f86bb226` — ограниченный menu processor; [CI race gate](https://github.com/Seferaki/max-fleet/actions/runs/36405603485) success | Runtime wiring и полнота диалогов; H-01 не блокирует mock |
+| BE-02 | IN_PROGRESS | `95bd145568b9a7b01e83983ec21e1b5ba1290956` — worker подключён к gateway; [предыдущий CI race gate](https://github.com/Seferaki/max-fleet/actions/runs/36405603485) success | CI/runtime review, затем BE-03; H-01 не блокирует mock |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
 | BE-05 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-02 code commit: `95bd145568b9a7b01e83983ec21e1b5ba1290956`. Gateway в webhook/dev polling режимах запускает `inboxworker.Worker` c `dialog.Bootstrap`, если `MAX_BOT_TOKEN_FILE` задан приватным файлом; без него dev webhook только сохраняет inbox и остаётся partial, production требует файл. Worker останавливается по Interrupt/SIGTERM, ждётся перед выходом; диагностический `/health/ready` остаётся 503, пока не готовы остальные диалоги. Логи содержат только счётчики/общие коды, без событий, actor или секретов. Тест проверил запуск из приватных файлов против persistent mock, пустой claim, режим без токена и отказ production без токена. `go test ./cmd/gateway -count=1 -v` → 4 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA/реальный MAX и Docker runtime новой сборки пока не проверены; BE-02 WIP до проверки CI/runtime и явной границы с BE-03.
 
 - BE-02 code commit: `98dd5d38b435116b2370a04d3f311511f86bb226`. `dialog.Bootstrap` обрабатывает только `bot_started`, `/start`, `/menu`: каждый раз читает `/me` и `/state` через DataAPI; неизвестному actor отправляет только его ID и отказ, blocked driver не получает пункт новой выдачи, активный trip/checkout не сбрасывается и стоит впереди новой машины. Фото, callback и прочие сообщения возвращают `ErrDeferred` без доступа к данным/отправки и без ACK. HTTP-тесты на persistent mock проверили роли/неизвестного пользователя; интеграция с inbox worker подтвердила ACK меню и deferred фото. `go test ./internal/dialog -count=1 -v` → 4 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA и реальный MAX не проверены. В gateway processor ещё не запускается; кнопки и остальные потоки — BE-03+, BE-02 WIP.
 
