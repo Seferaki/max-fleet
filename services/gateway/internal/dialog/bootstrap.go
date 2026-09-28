@@ -22,6 +22,7 @@ type Reader interface {
 	Vehicles(context.Context, string, dataapi.VehicleFilter) (dataapi.Page[dataapi.Vehicle], error)
 	Vehicle(context.Context, string, string) (dataapi.Vehicle, error)
 	PreviousInspection(context.Context, string, string) (dataapi.Inspection, error)
+	Issue(context.Context, string, string) (dataapi.Issue, error)
 }
 
 type CheckoutCommander interface {
@@ -34,6 +35,7 @@ type CheckoutCommander interface {
 	InspectionUpdate(context.Context, string, string, int64, dataapi.InspectionUpdateInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	CheckoutSetNoNewIssues(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	ConversationSave(context.Context, string, string, int64, dataapi.ConversationSaveInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	IssueCreate(context.Context, string, string, int64, dataapi.IssueCreateInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 }
 
 type PhotoFetcher interface {
@@ -81,12 +83,14 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	issueKindID, issueKindVersion, issueKind, issueKindPrompt := issueCategoryTarget(item.Event)
 	issueDraftText, issueDraftCommand := issueDraftInput(item.Event)
 	issuePhotoID, issuePhotoVersion, issuePhotoHelp := vehicleActionTarget(item.Event, "issue-photos:")
+	issueReviewID, issueReviewVersion, issueReview := vehicleActionTarget(item.Event, "issue-review:")
+	issueSubmitID, issueSubmitVersion, issueSubmit := vehicleActionTarget(item.Event, "issue-submit:")
 	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
 	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !issueReview && !issueSubmit && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -174,6 +178,13 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	if issuePhotoHelp {
 		return p.issuePhotoHelp(ctx, maxID, state, issuePhotoID, issuePhotoVersion)
 	}
+	if issueReview || issueSubmit {
+		inspectionID, version := issueReviewID, issueReviewVersion
+		if issueSubmit {
+			inspectionID, version = issueSubmitID, issueSubmitVersion
+		}
+		return p.checkoutIssueSubmit(ctx, item, actor, maxID, *me.Employee, state, inspectionID, version, issueSubmit)
+	}
 	if confirmPhotos {
 		return p.confirmCheckoutPhotos(ctx, item, actor, maxID, state, confirmInspectionID, confirmInspectionVersion)
 	}
@@ -252,6 +263,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 				message += fmt.Sprintf("\nДополнительные фото замечания: %d/3 (черновик).", len(draft.Context.AssetIDs))
 			}
 		}
+	}
+	if state.Conversation != nil && state.Conversation.Flow == "issue_before" && state.Conversation.Step == "done" && state.Conversation.Context.IssueID != nil {
+		message += "\nЗамечание сохранено. Машина недоступна до проверки ответственного."
 	}
 	return p.sendView(ctx, maxID, message, menuRows(*me.Employee, state))
 }
@@ -815,6 +829,7 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 			}
 			if draft, ok := issuePhotoDraft(state); ok {
 				rows = append(rows, []maxsdk.Button{{Text: "Фото замечания", Payload: fmt.Sprintf("issue-photos:%s:%d", state.Checkout.Inspection.ID, draft.Version)}})
+				rows = append(rows, []maxsdk.Button{{Text: "Проверить замечание", Payload: fmt.Sprintf("issue-review:%s:%d", state.Checkout.Inspection.ID, draft.Version)}})
 			}
 		}
 		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})

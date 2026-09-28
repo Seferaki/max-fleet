@@ -269,6 +269,9 @@ func (emptyCatalogReader) Vehicle(context.Context, string, string) (dataapi.Vehi
 func (emptyCatalogReader) PreviousInspection(context.Context, string, string) (dataapi.Inspection, error) {
 	return dataapi.Inspection{}, errors.New("unexpected previous inspection read")
 }
+func (emptyCatalogReader) Issue(context.Context, string, string) (dataapi.Issue, error) {
+	return dataapi.Issue{}, errors.New("unexpected issue read")
+}
 
 func TestCatalogEmptyListMessage(t *testing.T) {
 	sender := &maxsdk.RecordingTransport{}

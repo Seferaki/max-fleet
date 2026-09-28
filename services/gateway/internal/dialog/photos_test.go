@@ -40,6 +40,14 @@ func (s *failOnePhotoReply) SendText(ctx context.Context, userID int64, message 
 	return s.RecordingTransport.SendText(ctx, userID, message)
 }
 
+func (s *failOnePhotoReply) SendButtons(ctx context.Context, userID int64, message string, rows [][]maxsdk.Button) (string, error) {
+	if s.fail {
+		s.fail = false
+		return "", errors.New("synthetic send interruption")
+	}
+	return s.RecordingTransport.SendButtons(ctx, userID, message, rows)
+}
+
 func (f *syntheticPhotoFetcher) Download(context.Context, string) (maxsdk.DownloadedPhoto, error) {
 	if f.err != nil {
 		return maxsdk.DownloadedPhoto{}, f.err
