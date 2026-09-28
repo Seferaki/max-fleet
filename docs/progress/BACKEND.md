@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "598236e0-6118-4815-9686-f1cda6630793"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T14:45:31Z"
+heartbeat_utc: "2026-09-28T14:47:56Z"
 current_task: BE-04
-current_substep: "BE-03 проверен и завершён; BE-04: восстановление hold, math/cancel"
-last_verified_code_commit: "b7bd1ad5d4a67a6506251a8022919ebb60861562"
+current_substep: "BE-04: восстановление hold и подтверждённая отмена проверены; далее math"
+last_verified_code_commit: "dd9c6259710aec65f6d1e0c94ae9789331d080c6"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-04: восстановить active checkout в /menu, добавить безопасную отмену hold и math с версиями/идемпотентностью; UI-01 React карта остаётся P0"
+next_step: "BE-04: показать math challenge активного hold, проверить 4 ответа/три ошибки/TTL/stale callback и восстановление по /state; UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -31,7 +31,7 @@ human_required: [H-01]
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
-| BE-04 | IN_PROGRESS | `744980e591d1d87a0672b5431560bf797dc28624` — 15-минутный hold через DataAPI после подтверждения | Math, cancel, recovery; BE-03 ещё закрывается |
+| BE-04 | IN_PROGRESS | `dd9c6259710aec65f6d1e0c94ae9789331d080c6` — hold, восстановление /menu и подтверждённая отмена через DataAPI | Math, rules, TTL/версии |
 | BE-05 | TODO | — | См. план |
 | BE-06 | TODO | — | См. план |
 | BE-07 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-04 code commit: `dd9c6259710aec65f6d1e0c94ae9789331d080c6`. `/menu` по `/state` показывает срок активного hold и кнопку отмены. Первый callback только запрашивает подтверждение; второй вызывает `checkout.cancel` через DataAPI с inbox lease и стабильным ключом. После успеха проверяется агрегат `cancelled`; 409 stale/expired/invalid даёт безопасное обновление без ложного успеха. Тест persistent mock проверил, что первый клик не освобождает машину, подтверждение освобождает её, повтор и другой actor не выполняют действие, команда без lease отвергается. `go test ./internal/dialog -count=1 -v` → 19 top-level PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. `git ls-remote` подтвердил push; CI этого SHA и реальный MAX не проверены. Math/правила и полноценное продолжение hold ещё WIP, BE-04 IN_PROGRESS.
 
 - BE-03 code/test commit: `b7bd1ad5d4a67a6506251a8022919ebb60861562`. Golden тест закрепил точный текст и кнопки меню, первой страницы из пяти машин и карточки синтетической машины, включая URL последней парковки и версию в payload. Отдельные end-to-end тесты карточки без парковки/ключей проверили отсутствие кнопки оформления, карта видна только при известной точке; ранее проверены blocked driver, admin без trip-права, stale callback, неизвестный actor, previous-inspection ACL и пагинация. `go test ./internal/dialog -count=1 -v` → 18 top-level PASS (20 с подслучаями); `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. `git ls-remote` подтвердил публикацию SHA. BE-03 DONE по mock; CI этого SHA и реальный MAX не проверены. UI-01 обязательная React карта для возврата остаётся TODO; ссылка на существующую парковку её не заменяет.
 
