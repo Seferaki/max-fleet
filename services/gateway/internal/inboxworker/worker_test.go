@@ -125,6 +125,55 @@ func TestWorkerCannotAckExpiredLease(t *testing.T) {
 	}
 }
 
+func TestDeferredEventSurvivesLeasesAndRestartWithoutBlockingOtherActor(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "snapshot.json")
+	client, server := workerStore(t, path, func() time.Time { return now })
+	const actorA = "8000000000000000001"
+	const actorB = "8000000000000000002"
+	storeStart(t, client, actorA, "start-deferred-1", now)
+	storeStart(t, client, actorA, "start-after-deferred", now)
+	storeStart(t, client, actorB, "start-other-actor", now)
+	var seen []string
+	worker := Worker{ID: "deferred-worker", Store: client, Now: func() time.Time { return now }, Processor: processorFunc(func(_ context.Context, item dataapi.InboxClaimItem) error {
+		seen = append(seen, item.Event.EventKey)
+		if item.Event.EventKey == "start-deferred-1" {
+			return ErrDeferred
+		}
+		return nil
+	})}
+	first, err := worker.RunOnce(context.Background(), 10)
+	if err != nil || first.Claimed != 2 || first.Deferred != 1 || first.Acked != 1 || first.Dead != 0 || len(seen) != 2 || seen[1] != "start-other-actor" {
+		t.Fatalf("first batch = %+v, %v; seen=%v", first, err, seen)
+	}
+	busy, err := worker.RunOnce(context.Background(), 10)
+	if err != nil || busy.Claimed != 0 {
+		t.Fatalf("deferred lease was reclaimed early: %+v, %v", busy, err)
+	}
+	for i := 0; i < 6; i++ {
+		now = now.Add(3 * time.Minute)
+		result, err := worker.RunOnce(context.Background(), 10)
+		if err != nil || result.Claimed != 1 || result.Deferred != 1 || result.Dead != 0 || result.Acked != 0 {
+			t.Fatalf("deferred lease %d = %+v, %v", i, result, err)
+		}
+	}
+	server.Close()
+	client, server = workerStore(t, path, func() time.Time { return now })
+	defer server.Close()
+	worker.Store = client
+	worker.Processor = processorFunc(func(_ context.Context, item dataapi.InboxClaimItem) error {
+		seen = append(seen, item.Event.EventKey)
+		return nil
+	})
+	now = now.Add(3 * time.Minute)
+	for _, expected := range []string{"start-deferred-1", "start-after-deferred"} {
+		result, err := worker.RunOnce(context.Background(), 10)
+		if err != nil || result.Claimed != 1 || result.Acked != 1 || seen[len(seen)-1] != expected {
+			t.Fatalf("recovered event %s = %+v, %v; seen=%v", expected, result, err, seen)
+		}
+	}
+}
+
 func TestWorkerRetryAfterDomainCommitReusesCommandKey(t *testing.T) {
 	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
 	path := filepath.Join(t.TempDir(), "snapshot.json")

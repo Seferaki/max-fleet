@@ -27,6 +27,11 @@ type ProcessError struct {
 	Err  error
 }
 
+// ErrDeferred keeps an accepted event in the durable inbox while its dialog
+// flow is not implemented. The lease expires and can be reclaimed later;
+// unlike a processing failure, deferral never moves it to the dead queue.
+var ErrDeferred = errors.New("inbox event deferred")
+
 func (e *ProcessError) Error() string { return e.Code }
 func (e *ProcessError) Unwrap() error { return e.Err }
 
@@ -38,10 +43,11 @@ type Worker struct {
 }
 
 type Result struct {
-	Claimed int
-	Acked   int
-	Retried int
-	Dead    int
+	Claimed  int
+	Acked    int
+	Deferred int
+	Retried  int
+	Dead     int
 }
 
 // Run keeps the durable queue moving across transient store failures. The
@@ -105,6 +111,10 @@ func (w Worker) RunOnce(ctx context.Context, maxItems int) (Result, error) {
 			return result, err
 		}
 		processErr := w.Processor.Handle(ctx, item)
+		if errors.Is(processErr, ErrDeferred) {
+			result.Deferred++
+			continue
+		}
 		key, err := randomKey("inbox-transition:")
 		if err != nil {
 			return result, err
