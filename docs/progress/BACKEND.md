@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03 и BE-01…BE-04 выполнены на Go mock; BE-05 в работе. Контракт v1 опубликован в `codex/backend`; до изменения маршрутов просмотра нужна согласованная новая версия с примерами. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03 и BE-01…BE-04 выполнены на Go mock; BE-05 в работе. Контракт v1.1 для чтения фото поездки опубликован в `codex/backend`; runtime Go mock/client и Python ещё должны его реализовать. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "7426ea1e-c20b-4d5b-9fb3-690bfac56398"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T15:44:38Z"
+heartbeat_utc: "2026-09-28T15:50:14Z"
 current_task: BE-05
-current_substep: "Захват очереди после HANDOFF; проектирование маршрута чтения фото trip/phase/slot"
-last_verified_code_commit: "d590c2624563d9ad78f0fe9c27babef32e06e83e"
+current_substep: "Контракт v1.1 чтения фото опубликован; далее mock/client/view"
+last_verified_code_commit: "1aaea964e253dce7338283ca4c012a14c8c93f6d"
 checkpoint_state: WIP
-contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
+contract_commit: "1aaea964e253dce7338283ca4c012a14c8c93f6d"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-05: версионированный контракт чтения trip/phase/slot с примерами, mock/client/view ACL; затем unsupported media и recovery. UI-01 React карта остаётся P0"
+next_step: "BE-05: реализовать контракт v1.1 в Go mock/client с ACL и тестами, затем диалог просмотра, unsupported media и recovery. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -32,7 +32,7 @@ human_required: [H-01]
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
-| BE-05 | IN_PROGRESS | `ed6c6f0` — ракурс; `5225d0c` — загрузчик; `ec796e8` — upload; `2405e85` — подтверждение; `0b056e6` — замена; `d590c2624563d9ad78f0fe9c27babef32e06e83e` — MAX image send | Read route/view, unsupported media и recovery |
+| BE-05 | IN_PROGRESS | `ed6c6f0` — ракурс; `5225d0c` — загрузчик; `ec796e8` — upload; `2405e85` — подтверждение; `0b056e6` — замена; `d590c2624563d9ad78f0fe9c27babef32e06e83e` — MAX image send; `1aaea964e253dce7338283ca4c012a14c8c93f6d` — контракт v1.1 | Mock/client/view, unsupported media и recovery |
 | BE-06 | TODO | — | См. план |
 | BE-07 | TODO | — | См. план |
 | UI-01 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-05 code commit: `1aaea964e253dce7338283ca4c012a14c8c93f6d`. Контракт v1.1 добавил приватный `GET /internal/v1/trips/{id}/inspection-photos/{phase}/{slot}` для владельца/admin и одинаковый 404 для чужого trip, недоступной фазы и пустого ракурса. Добавлены синтетический пример и четыре сценария доступа; Python-код не менялся. `py contracts/validate.py` → OK: 2 OpenAPI, 37 data routes, 24 command examples, 7 other examples, 48 scenarios; `npx --yes @redocly/cli@2.54.3 lint contracts/data-api.openapi.yaml contracts/map-api.openapi.yaml --config redocly.yaml` → оба valid; `git diff --cached --check` и `py scripts/check-secrets.py --staged` → exit 0. Первая попытка validate перед генерацией YAML дала ожидаемое несовпадение; после генерации повтор прошёл. Runtime Go mock/client ещё использует v1.0; BE-05 WIP, реальный Python/MAX не проверен. Следующий шаг: mock/client v1.1 с ACL и тестами, затем диалог просмотра.
 
 - CLAIM 2026-09-28 15:44:38 UTC: после опубликованного `HANDOFF` `f2613ce672ca8e43c7d15dec03bc4a9be6bd0cfb` ноутбук A начал новую сессию `7426ea1e-c20b-4d5b-9fb3-690bfac56398`. `git fetch origin codex/backend`, `git status --short --branch`, `git rev-parse HEAD`, `git rev-parse origin/codex/backend` → чистая ветка и одинаковый SHA; `git ls-remote` подтвердил удалённый checkpoint. До code edits требуется публикация этого claim обычным push.
 
