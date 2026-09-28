@@ -5,13 +5,13 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: HANDOFF
+lock_state: ACTIVE
 owner: B
-session_id: "2931dab3-6fbe-41df-9b53-e44eade06330"
+session_id: "2a3026c7-1c0f-4258-9d7c-020601272841"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T20:24:32Z"
+heartbeat_utc: "2026-09-28T20:30:33Z"
 current_task: BE-06
-current_substep: "BE-06: топливо, пробег и ответ о новых замечаниях проверены на mock; очередь передаётся с WIP"
+current_substep: "BE-06: claim HANDOFF; проектирование сохранения issue-before с фото"
 last_verified_code_commit: "24b1c44188c6ae0874dd5d91ee75530285c3ad4b"
 checkpoint_state: WIP
 contract_commit: "1aaea964e253dce7338283ca4c012a14c8c93f6d"
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- CLAIM 2026-09-28 20:30:33 UTC: ноутбук B начинает новую сессию `2a3026c7-1c0f-4258-9d7c-020601272841` после опубликованного HANDOFF `250e973bb87662ea069559df0b3a60f8b64d475c`. Remote/локальный HEAD совпали, worktree чист. До правок кода требуется обычный push claim-коммита.
 
 - HANDOFF 2026-09-28 20:24:32 UTC, ноутбук B/session `2931dab3-6fbe-41df-9b53-e44eade06330`. Последний проверенный code commit `24b1c44188c6ae0874dd5d91ee75530285c3ad4b` опубликован обычным push; исправлен ответ при новом замечании: пока форма категории/описания отсутствует, бот прямо говорит оставить машину и сообщить ответственному, поездка не начинается. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. BE-06 WIP, mock не доказывает реальный MAX/Python. `scripts/enter-max-token.ps1 -Check` → `MAX_BOT_TOKEN_FILE` отсутствует; значение секрета не читалось. `docker ps --filter name=max-fleet` → контейнеров нет, dev consumer не запущен. Синтетический seed достаточен; приватный backup не нужен. После следующего claim нужен issue-before с категорией/описанием/до 3 stage-фото и надёжным состоянием черновика. Текущий контракт `conversation.save` не содержит массива staged asset IDs, а mock его ещё не реализует; изменение контракта делать явно с версией/примерами либо выбрать совместимый безопасный способ хранения черновика. Затем сводка/start и ошибки после commit. React карта UI-01 остаётся P0.
 
