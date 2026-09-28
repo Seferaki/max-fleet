@@ -72,7 +72,7 @@ func (p Bootstrap) checkoutIssueAnswer(ctx context.Context, item dataapi.InboxCl
 		}
 	}
 	if choice == "yes" {
-		return p.sendView(ctx, maxID, "Новое замечание отмечено. Машина не будет выдана. Продолжите оформление замечания через /menu.", nil)
+		return p.sendView(ctx, maxID, "Новое замечание отмечено. Поездка не начнётся. Оставьте машину и сообщите ответственному за автопарк.", nil)
 	}
 	if checkout.NoNewIssues != nil && *checkout.NoNewIssues {
 		return p.sendView(ctx, maxID, "Отсутствие новых замечаний сохранено. Продолжите через /menu.", nil)

@@ -108,7 +108,7 @@ func TestNewIssueAnswerCannotStartTripBeforeIssueSaved(t *testing.T) {
 		t.Fatal(err)
 	}
 	worker := inboxworker.Worker{ID: "issue-yes-worker", Store: store, Processor: processor, Now: func() time.Time { return now }}
-	if result, err := worker.RunOnce(context.Background(), 1); err != nil || result.Acked != 1 || !strings.Contains(sender.Messages()[0].Text, "не будет выдана") {
+	if result, err := worker.RunOnce(context.Background(), 1); err != nil || result.Acked != 1 || !strings.Contains(sender.Messages()[0].Text, "Поездка не начнётся") {
 		t.Fatalf("new issue answer: %+v %v %+v", result, err, sender.Messages())
 	}
 	state, err := actor.State(context.Background(), driver)
