@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "c52b6904-b47a-47b3-9bcf-ec03a54cc4da"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T14:22:57Z"
+heartbeat_utc: "2026-09-28T14:26:31Z"
 current_task: BE-03
-current_substep: "BE-03: menu/catalog/card callback-кнопки проверены; далее callback answer"
-last_verified_code_commit: "6315e9fe3b763adaa99c405e0a28ea0a7877ad8c"
+current_substep: "BE-03: MAX callback answer проверен; далее previous inspection"
+last_verified_code_commit: "05e672e54628f765cc101debc20cef03af668a6b"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-03: ответить на MAX callback через pinned SDK после обработки; затем previous inspection и кнопка карты UI-01"
+next_step: "BE-03: показать предыдущую приёмку и согласовать контракт кнопки карты UI-01; затем проверить версию перед выбором машины"
 human_required: [H-01]
 ```
 
@@ -30,7 +30,7 @@ human_required: [H-01]
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
-| BE-03 | IN_PROGRESS | `6315e9fe3b763adaa99c405e0a28ea0a7877ad8c` — рабочие callback-кнопки меню/каталога/карточки; answer/previous inspection WIP | Ответ MAX callback, previous inspection, UI-01 карта |
+| BE-03 | IN_PROGRESS | `05e672e54628f765cc101debc20cef03af668a6b` — callback answer через pinned SDK без повторной отправки; previous inspection WIP | Предыдущая приёмка, UI-01 карта, версии |
 | BE-04 | TODO | — | См. план |
 | BE-05 | TODO | — | См. план |
 | BE-06 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-03 code commit: `05e672e54628f765cc101debc20cef03af668a6b`. `maxsdk.Transport.AnswerCallback` вызывает pinned MAX SDK `POST /answers?callback_id=...` с пустым ответом, валидирует ID и результат `success`; `Bootstrap` подтверждает callback перед чтением DataAPI. Неудача answer не приводит к повтору уже доставленного view и бизнес-действия; остаётся риск индикатора ожидания в MAX, пока ответ не проверен на реальном устройстве. Тест официального SDK проверил HTTP-запрос, результат и ошибки; диалоговые тесты проверили 4 callback и сбой answer при успешной доставке сообщения. `go test ./internal/maxsdk ./internal/dialog -count=1 -v` → 25 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA/реальный MAX не проверены; previous inspection/карта/выдача WIP, BE-03 IN_PROGRESS.
 
 - BE-03 code commit: `6315e9fe3b763adaa99c405e0a28ea0a7877ad8c`. Меню отправляет callback-кнопку списка; каталог — до 5 кнопок машин с `car:<uuid>:<version>` и короткие `cars:N` для обновления/назад/далее; карточка — рабочую кнопку назад. Callback actor берётся из нормализованного clicker ID, повторно вызываются `/me`, `/state`, `/vehicles`; устаревшая версия показывает актуальную карточку без действия выдачи. Неизвестный clicker получает только ID. Тест через persistent mock создал hold другим сотрудником после списка и проверил stale callback, а также отказ неизвестному actor. `go test ./internal/dialog -count=1 -v` → 9 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA/реальный MAX не проверены. Отдельный `AnswerOnCallback` пока не вызывается (клиент может держать индикатор), previous inspection/карта/выдача WIP, BE-03 IN_PROGRESS.
 
