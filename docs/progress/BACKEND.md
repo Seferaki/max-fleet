@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "0b57d4b9-be94-4558-b500-eff5594ee587"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T08:58:33Z"
+heartbeat_utc: "2026-09-28T09:00:42Z"
 current_task: BE-01
-current_substep: "Typed notification WorkerClient проверен; далее contract runner"
-last_verified_code_commit: "0b4757812657e0cfb443d2844a4c68f5d0203150"
+current_substep: "23/44 contract runner; далее timeout-after-commit"
+last_verified_code_commit: "9e5b01c33d3a3f3313941e54a14a7aa483579b27"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: расширить исполняемый contract runner на inbox/notification/integration сценарии и устранить найденные расхождения; WIP"
+next_step: "BE-01: исполнить delivery.timeout-after-commit через HTTP с потерянным ответом, затем остальные готовые contract scenarios; WIP"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `0b4757812657e0cfb443d2844a4c68f5d0203150` — typed WorkerClient для notification claim/ack/retry, mock snapshot v14; WIP | 22/44 runner-сценария; расширить runner и оставшиеся маршруты |
+| BE-01 | IN_PROGRESS | `9e5b01c33d3a3f3313941e54a14a7aa483579b27` — typed WorkerClient и mock notification transitions; WIP | 23/44 runner-сценария; расширить runner и оставшиеся маршруты |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `9e5b01c33d3a3f3313941e54a14a7aa483579b27`. Исполняемый runner добавил `delivery.lease-expired` из `contracts/scenarios/v1.json`: WorkerClient сохраняет и claim-ит inbox event, fake clock истекает lease, ack старым token получает 409 `LEASE_EXPIRED`, inbox остаётся без перехода. Теперь 23/44 сценария PASS; это исполнение одного inbox-варианта, не webhook/MAX. `go test ./internal/datamock -run '^TestContractScenarioSubsetAgainstHTTPMock$' -count=1 -v`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Docker Engine остаётся недоступен, CI текущего SHA не проверен. Следующий шаг: `delivery.timeout-after-commit`; BE-01 WIP.
 
 - BE-01 code commit: `0b4757812657e0cfb443d2844a4c68f5d0203150`. Отдельный `dataapi.WorkerClient` получил типизированные `ClaimNotifications`, `AckNotification`, `RetryNotification`, проверяет ID, lease, recipient/provider/error и параметры повтора до сети; WorkerBearer используется без actor header. HTTP-тест прошёл claim → retry → reclaim → ack → idempotent replay против persistent mock, неверный service token получил 401. `go test ./internal/dataapi ./internal/datamock -run '^TestWorker' -count=1 -v` → 6 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Docker Engine в этом сеансе недоступен, контейнерная сборка и CI этого SHA не проверены. Следующий шаг: исполняемые contract runner-сценарии очередей; BE-01 WIP, реальный MAX/Python не проверены.
 
