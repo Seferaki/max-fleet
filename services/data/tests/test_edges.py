@@ -172,3 +172,37 @@ def test_five_mib_photo_accepted(api: Api) -> None:
     insp = checkout["inspection"]
     r = api.upload(DRIVER, insp["id"], 1, insp["version"], buf.getvalue())
     assert r.status_code == 200, r.text
+
+
+def test_cross_expired_holds_no_deadlock(api: Api, app_and_store: tuple, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ревью: A держит просроченный V1 и берёт V2, B держит просроченный V2 и берёт V1 — без 40P01."""
+    from app.domain import executor
+    from conftest import DRIVER2, V2
+
+    monkeypatch.setattr(executor, "sweep", lambda factory: None)  # проверяем путь внутри команды
+    for _ in range(5):
+        api.agg(api.cmd(DRIVER, "checkout.create", V1, api.ok(api.get(f"/vehicles/{V1}", DRIVER))["version"]))
+        api.agg(api.cmd(DRIVER2, "checkout.create", V2, api.ok(api.get(f"/vehicles/{V2}", DRIVER2))["version"]))
+        with app_and_store[0].state.engine.begin() as conn:
+            conn.execute(text("UPDATE checkout_attempts SET expires_at = now() - interval '1 second' "
+                              "WHERE status = 'holding'"))
+        v1 = api.ok(api.get(f"/vehicles/{V1}", ADMIN))["version"]
+        v2 = api.ok(api.get(f"/vehicles/{V2}", ADMIN))["version"]
+        barrier = threading.Barrier(2)
+
+        def take(actor: str, vid: str, ver: int, gate: threading.Barrier = barrier) -> tuple[int, str | None]:
+            gate.wait()
+            r = api.cmd(actor, "checkout.create", vid, ver)
+            return r.status_code, (r.json().get("error") or {}).get("code")
+
+        with ThreadPoolExecutor(2) as pool:
+            a = pool.submit(take, DRIVER, V2, v2)
+            b = pool.submit(take, DRIVER2, V1, v1)
+            results = [a.result(), b.result()]
+        assert results == [(200, None), (200, None)], results  # без deadlock и ложных отказов
+        with app_and_store[0].state.engine.connect() as conn:
+            holds = conn.execute(text("SELECT count(*) FROM vehicle_assignments")).scalar_one()
+        assert holds == sum(1 for status, _ in results if status == 200)
+        with app_and_store[0].state.engine.begin() as conn:
+            conn.execute(text("DELETE FROM vehicle_assignments"))
+            conn.execute(text("UPDATE checkout_attempts SET status='cancelled' WHERE status='holding'"))

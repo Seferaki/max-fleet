@@ -34,7 +34,7 @@ human_required: []
 
 Реализован весь внутренний API v1 (36 маршрутов) в `services/data/`. Проверено локально (Windows 11, Docker Desktop, PostgreSQL 17.6):
 
-- `uv run pytest` — 40 passed (реальный PostgreSQL, S3 — in-memory адаптер в тестах);
+- `uv run pytest` — 41 passed (реальный PostgreSQL, S3 — in-memory адаптер в тестах);
 - `uv run ruff check .` и `uv run mypy app` — без ошибок;
 - `docker compose -f deploy/compose.data.yaml up -d --build` с `SEED_SYNTHETIC=1` — migrate exit 0, data-api healthy;
 - `scripts/smoke.py` против живого контура (реальные PostgreSQL + SeaweedFS S3): взятие → 8 фото → поездка → возврат → 8 фото → точка → завершение — PASS;
