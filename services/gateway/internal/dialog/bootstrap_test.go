@@ -416,7 +416,7 @@ func TestCatalogCallbacksUseClickerAndRefreshStaleCard(t *testing.T) {
 		t.Fatalf("menu callback answer = %v", got)
 	}
 	menu := sender.Messages()[0]
-	if len(menu.Buttons) != 1 || menu.Buttons[0][0].Payload != "cars:1" {
+	if len(menu.Buttons) != 2 || menu.Buttons[0][0].Payload != "cars:1" || menu.Buttons[1][0].Payload != "trip-list:mine:1" {
 		t.Fatalf("menu buttons = %+v", menu.Buttons)
 	}
 	if err := processor.Handle(context.Background(), callbackItem(driver, "cars-callback", "cars:1", now)); err != nil {
@@ -688,7 +688,7 @@ func TestBE03GoldenMenuCatalogAndCard(t *testing.T) {
 	}
 	messages := sender.Messages()
 	menuText := "MAX Fleet\nДоступные автомобили\nМои поездки\nПравила и помощь"
-	if messages[0].Text != menuText || !reflect.DeepEqual(messages[0].Buttons, [][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}}) {
+	if messages[0].Text != menuText || !reflect.DeepEqual(messages[0].Buttons, [][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}, {{Text: "Мои поездки", Payload: "trip-list:mine:1"}}}) {
 		t.Fatalf("menu golden changed: %+v", messages[0])
 	}
 	catalogText := strings.Join([]string{

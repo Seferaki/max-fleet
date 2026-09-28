@@ -80,9 +80,9 @@ func (s *Server) tripInspectionPhoto(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	var inspection dataapi.Inspection
-	if phase == "before" && trip.BeforeInspection.Status == "finalized" {
+	if phase == "before" && trip.BeforeInspection.Phase == "before" && trip.BeforeInspection.Status == "finalized" {
 		inspection = trip.BeforeInspection
-	} else if phase == "after" && (trip.Status == "completed" || trip.Status == "closed") && trip.AfterInspection != nil && trip.AfterInspection.Status == "finalized" {
+	} else if phase == "after" && (trip.Status == "completed" || trip.Status == "closed_by_admin") && trip.AfterInspection != nil && trip.AfterInspection.Phase == "after" && trip.AfterInspection.Status == "finalized" {
 		inspection = *trip.AfterInspection
 	}
 	photo, found := s.photos[inspection.ID][slot]

@@ -71,7 +71,8 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !isMenuEvent(item.Event) {
+	tripView := parseTripView(item.Event)
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -98,6 +99,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	state, err := p.Data.State(ctx, actor)
 	if err != nil {
 		return err
+	}
+	if tripView.recognized {
+		return p.showTripView(ctx, actor, maxID, *me.Employee, tripView)
 	}
 	if intent || confirm {
 		vehicleID, version := actionVehicleID, actionVersion
@@ -756,10 +760,14 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 		}
 		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 	}
+	rows := [][]maxsdk.Button{{{Text: "Мои поездки", Payload: "trip-list:mine:1"}}}
 	if employee.CanStartTrip && state.Trip == nil && state.Checkout == nil {
-		return [][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}}
+		rows = append([][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}}, rows...)
 	}
-	return nil
+	if employee.Role == "admin" {
+		rows = append(rows, []maxsdk.Button{{Text: "Поездки автопарка", Payload: "trip-list:admin:1"}})
+	}
+	return rows
 }
 
 func menuText(employee dataapi.Employee, state dataapi.CurrentState) string {

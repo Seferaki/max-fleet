@@ -87,6 +87,13 @@ func TestTripInspectionPhotoAccessPhaseRestartAndStorage(t *testing.T) {
 	if err != nil || !bytes.Equal(got.Bytes, afterBytes) {
 		t.Fatalf("admin after restart: %+v %v", got, err)
 	}
+	closed := restarted.trips[tripID]
+	closed.Status = "closed_by_admin"
+	restarted.trips[tripID] = closed
+	got, err = client.TripInspectionPhoto(ctx, driverID, tripID, "after", 3)
+	if err != nil || !bytes.Equal(got.Bytes, afterBytes) {
+		t.Fatalf("finalized after on admin-closed trip: %+v %v", got, err)
+	}
 	if err := os.Remove(filepath.Join(restarted.assetDir, afterAsset)); err != nil {
 		t.Fatal(err)
 	}
