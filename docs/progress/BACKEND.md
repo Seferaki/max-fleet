@@ -5,13 +5,13 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: HANDOFF
+lock_state: ACTIVE
 owner: B
-session_id: "c52b6904-b47a-47b3-9bcf-ec03a54cc4da"
+session_id: "598236e0-6118-4815-9686-f1cda6630793"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T14:34:37Z"
+heartbeat_utc: "2026-09-28T14:36:02Z"
 current_task: BE-03
-current_substep: "BE-03 WIP: callback-кнопки и previous inspection проверены; следующий шаг — намерение/hold"
+current_substep: "BE-03/BE-04: намерение оформления, actor/version и hold через DataAPI"
 last_verified_code_commit: "9ec9dc076c73c9394cc98a1067591d9e1a2f915d"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
