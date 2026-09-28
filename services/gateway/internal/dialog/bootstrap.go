@@ -65,6 +65,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		return err
 	}
 	if catalog {
+		if pageNumber == 0 {
+			return p.sendView(ctx, maxID, "Кнопка списка устарела или повреждена. Обновите список.", [][]maxsdk.Button{{{Text: "Обновить", Payload: "cars:1"}}})
+		}
 		message, rows, err := p.catalogView(ctx, actor, *me.Employee, state, pageNumber)
 		if err != nil {
 			return err
@@ -259,7 +262,10 @@ func catalogPage(event dataapi.NormalizedEvent) (int, bool) {
 			return 0, false
 		}
 		page, err := strconv.Atoi(strings.TrimPrefix(payload, "cars:"))
-		return page, err == nil && page >= 1 && page <= 20
+		if err != nil || page < 1 || page > 20 {
+			return 0, true
+		}
+		return page, true
 	}
 	if event.EventType != "message_created" || event.Payload.Kind != "text" || event.Payload.Text == nil {
 		return 0, false
@@ -272,7 +278,10 @@ func catalogPage(event dataapi.NormalizedEvent) (int, bool) {
 		return 0, false
 	}
 	page, err := strconv.Atoi(strings.TrimPrefix(command, "/cars "))
-	return page, err == nil && page >= 1 && page <= 20
+	if err != nil || page < 1 || page > 20 {
+		return 0, true
+	}
+	return page, true
 }
 
 func (p Bootstrap) catalogView(ctx context.Context, actor string, employee dataapi.Employee, state dataapi.CurrentState, wanted int) (string, [][]maxsdk.Button, error) {

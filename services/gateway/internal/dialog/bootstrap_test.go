@@ -477,3 +477,26 @@ func TestCallbackAnswerFailureDoesNotReplayDeliveredView(t *testing.T) {
 		t.Fatalf("delivered views = %d", len(sender.Messages()))
 	}
 }
+
+func TestMalformedCatalogCallbackIsAnsweredAndAcked(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	actor, store, closeServer := mockClients(t, now)
+	defer closeServer()
+	item := callbackItem("8000000000000000001", "bad-catalog-page", "cars:999999999999999999999", now)
+	if _, err := store.StoreInbox(context.Background(), item.Event, maxsdk.InboxIdempotencyKey(item.Event)); err != nil {
+		t.Fatal(err)
+	}
+	sender := &maxsdk.RecordingTransport{}
+	worker := inboxworker.Worker{ID: "bad-catalog-worker", Store: store, Processor: Bootstrap{Data: actor, MAX: sender}, Now: func() time.Time { return now }}
+	result, err := worker.RunOnce(context.Background(), 1)
+	if err != nil || result.Acked != 1 || result.Deferred != 0 {
+		t.Fatalf("malformed callback worker = %+v, %v", result, err)
+	}
+	messages := sender.Messages()
+	if len(messages) != 1 || !strings.Contains(messages[0].Text, "повреждена") || len(messages[0].Buttons) != 1 || messages[0].Buttons[0][0].Payload != "cars:1" {
+		t.Fatalf("malformed callback response = %+v", messages)
+	}
+	if got := sender.AnsweredCallbacks(); len(got) != 1 || got[0] != "bad-catalog-page" {
+		t.Fatalf("malformed callback answer = %v", got)
+	}
+}
