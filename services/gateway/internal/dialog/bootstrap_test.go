@@ -257,6 +257,9 @@ func (emptyCatalogReader) Me(_ context.Context, actor string) (dataapi.Me, error
 func (emptyCatalogReader) State(context.Context, string) (dataapi.CurrentState, error) {
 	return dataapi.CurrentState{}, nil
 }
+func (emptyCatalogReader) CurrentRules(context.Context, string) (dataapi.Rules, error) {
+	return dataapi.Rules{}, errors.New("unexpected rules read")
+}
 func (emptyCatalogReader) Vehicles(context.Context, string, dataapi.VehicleFilter) (dataapi.Page[dataapi.Vehicle], error) {
 	return dataapi.Page[dataapi.Vehicle]{}, nil
 }

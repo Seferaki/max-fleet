@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/inboxworker"
@@ -17,6 +18,7 @@ import (
 type Reader interface {
 	Me(context.Context, string) (dataapi.Me, error)
 	State(context.Context, string) (dataapi.CurrentState, error)
+	CurrentRules(context.Context, string) (dataapi.Rules, error)
 	Vehicles(context.Context, string, dataapi.VehicleFilter) (dataapi.Page[dataapi.Vehicle], error)
 	Vehicle(context.Context, string, string) (dataapi.Vehicle, error)
 	PreviousInspection(context.Context, string, string) (dataapi.Inspection, error)
@@ -27,6 +29,7 @@ type CheckoutCommander interface {
 	CheckoutCancel(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	ChallengeCreateTake(context.Context, string, string, int64, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	ChallengeAnswer(context.Context, string, string, int64, int, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	CheckoutAcceptRules(context.Context, string, string, int64, string, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 }
 
 // Bootstrap handles implemented menu, catalog and checkout entry events. Other
@@ -50,7 +53,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	confirmedCancelID, confirmedCancelVersion, confirmedCancel := vehicleActionTarget(item.Event, "cancel:")
 	mathCheckoutID, mathVersion, math := vehicleActionTarget(item.Event, "math:")
 	challengeID, challengeVersion, selectedOption, answer := answerTarget(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !isMenuEvent(item.Event) {
+	rulesID, rulesVersion, rules := vehicleActionTarget(item.Event, "rules:")
+	acceptCheckoutID, acceptVersion, acceptedRulesID, acceptRules := acceptRulesTarget(item.Event)
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -97,6 +102,13 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	}
 	if answer {
 		return p.answerMath(ctx, item, actor, maxID, state, challengeID, challengeVersion, selectedOption)
+	}
+	if rules || acceptRules {
+		checkoutID, version := rulesID, rulesVersion
+		if acceptRules {
+			checkoutID, version = acceptCheckoutID, acceptVersion
+		}
+		return p.checkoutRules(ctx, item, actor, maxID, state, checkoutID, version, acceptedRulesID, acceptRules)
 	}
 	if catalog {
 		if pageNumber == 0 {
@@ -173,6 +185,21 @@ func answerTarget(event dataapi.NormalizedEvent) (string, int64, int, bool) {
 		return "", 0, 0, true
 	}
 	return parts[0], version, option, true
+}
+
+func acceptRulesTarget(event dataapi.NormalizedEvent) (string, int64, string, bool) {
+	if event.EventType != "message_callback" || event.Payload.Kind != "callback" || event.Payload.CallbackData == nil || !strings.HasPrefix(*event.Payload.CallbackData, "accept-rules:") {
+		return "", 0, "", false
+	}
+	parts := strings.Split(strings.TrimPrefix(*event.Payload.CallbackData, "accept-rules:"), ":")
+	if len(parts) != 3 {
+		return "", 0, "", true
+	}
+	version, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || version < 1 {
+		return "", 0, "", true
+	}
+	return parts[0], version, parts[2], true
 }
 
 func (p Bootstrap) createMath(ctx context.Context, item dataapi.InboxClaimItem, actor string, maxID int64, state dataapi.CurrentState, checkoutID string, version int64) error {
@@ -255,6 +282,67 @@ func (p Bootstrap) sendChallenge(ctx context.Context, maxID int64, challenge dat
 	}
 	text := lead + "\n" + oneLine(challenge.Question) + "\nВопрос до: " + formatMoment(challenge.ExpiresAt, p.Location)
 	return p.sendView(ctx, maxID, text, rows)
+}
+
+func (p Bootstrap) checkoutRules(ctx context.Context, item dataapi.InboxClaimItem, actor string, maxID int64, state dataapi.CurrentState, checkoutID string, version int64, shownRulesID string, accept bool) error {
+	if !vehicleIDPattern.MatchString(checkoutID) || version < 1 || accept && !vehicleIDPattern.MatchString(shownRulesID) {
+		return p.sendView(ctx, maxID, "Кнопка правил повреждена. Откройте /menu.", nil)
+	}
+	checkout := state.Checkout
+	if checkout == nil || checkout.ID != checkoutID || checkout.Version != version || checkout.Status != "holding" || checkout.Step != "rules" || checkout.IntentConfirmedAt == nil || checkout.RulesAcceptedAt != nil {
+		return p.sendView(ctx, maxID, "Шаг правил изменился или hold истёк. Обновите /menu.", nil)
+	}
+	rules, err := p.Data.CurrentRules(ctx, actor)
+	if err != nil {
+		return err
+	}
+	if !vehicleIDPattern.MatchString(rules.ID) || strings.TrimSpace(rules.Body) == "" || strings.TrimSpace(rules.VersionLabel) == "" || utf8.RuneCountInString(rules.Body) > 10000 || utf8.RuneCountInString(rules.VersionLabel) > 50 {
+		return errors.New("current rules are invalid")
+	}
+	if !accept {
+		return p.sendRules(ctx, maxID, *checkout, rules, "")
+	}
+	if shownRulesID != rules.ID {
+		return p.sendRules(ctx, maxID, *checkout, rules, "Правила изменились. Прочитайте текущую версию.\n")
+	}
+	if p.Commands == nil || item.LeaseToken == "" {
+		return errors.New("rules acceptance requires a durable inbox lease")
+	}
+	key, err := inboxworker.CommandKey(item, "checkout.accept_rules")
+	if err != nil {
+		return err
+	}
+	result, err := p.Commands.CheckoutAcceptRules(ctx, actor, checkout.ID, checkout.Version, rules.ID, key, &dataapi.InboxLease{EventID: item.ID, Token: item.LeaseToken})
+	if err != nil {
+		var apiErr *dataapi.APIError
+		if errors.As(err, &apiErr) && (apiErr.Status == 409 || apiErr.Status == 404) {
+			return p.sendView(ctx, maxID, "Правила или оформление изменились. Обновите /menu и прочитайте текущую версию.", nil)
+		}
+		return err
+	}
+	accepted, err := dataapi.DecodeAggregate[dataapi.Checkout](result)
+	if err != nil || accepted.ID != checkout.ID || accepted.Status != "holding" || accepted.Step != "inspection" || accepted.RulesVersionID == nil || *accepted.RulesVersionID != rules.ID || accepted.RulesAcceptedAt == nil {
+		return errors.New("rules acceptance returned invalid aggregate")
+	}
+	return p.sendView(ctx, maxID, "Правила версии "+oneLine(rules.VersionLabel)+" приняты. Осмотр до поездки: нужно 8 фотографий. Откройте /menu для продолжения.", nil)
+}
+
+func (p Bootstrap) sendRules(ctx context.Context, maxID int64, checkout dataapi.Checkout, rules dataapi.Rules, lead string) error {
+	const chunkSize = 3500 // Leaves space for version and part labels under MAX's 4000-rune limit.
+	body := []rune(rules.Body)
+	parts := (len(body) + chunkSize - 1) / chunkSize
+	rows := [][]maxsdk.Button{{{Text: "Принимаю правила", Payload: fmt.Sprintf("accept-rules:%s:%d:%s", checkout.ID, checkout.Version, rules.ID)}}, {{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", checkout.ID, checkout.Version)}}}
+	for part := 0; part < parts; part++ {
+		end := min(len(body), (part+1)*chunkSize)
+		text := lead + fmt.Sprintf("Правила (версия %s, часть %d/%d):\n", oneLine(rules.VersionLabel), part+1, parts) + string(body[part*chunkSize:end])
+		if part == parts-1 {
+			return p.sendView(ctx, maxID, text, rows)
+		}
+		if err := p.sendView(ctx, maxID, text, nil); err != nil {
+			return err
+		}
+	}
+	return errors.New("rules text is empty")
 }
 
 func (p Bootstrap) cancelCheckout(ctx context.Context, item dataapi.InboxClaimItem, actor string, maxID int64, state dataapi.CurrentState, checkoutID string, version int64, confirm bool) error {
@@ -617,6 +705,9 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 		rows := [][]maxsdk.Button{}
 		if state.Checkout.Step == "math" {
 			rows = append(rows, []maxsdk.Button{{Text: "Продолжить оформление", Payload: fmt.Sprintf("math:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
+		}
+		if state.Checkout.Step == "rules" {
+			rows = append(rows, []maxsdk.Button{{Text: "Прочитать правила", Payload: fmt.Sprintf("rules:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 		}
 		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 	}
