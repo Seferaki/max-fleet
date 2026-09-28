@@ -225,6 +225,22 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 			return nil
 		},
+		"checkout.issue-before": func(s scenarioContext) error {
+			hold := s.hold("scenario-before-issue-hold")
+			input := dataapi.IssueCreateInput{Category: "mechanical", Description: "Синтетическая неисправность", InspectionID: &hold.Inspection.ID}
+			result, err := s.client.IssueCreate(s.ctx, driverID, firstVehicleID, s.mock.vehicles[0].Version, input, "scenario-before-issue", nil)
+			if err != nil {
+				return err
+			}
+			issue, err := dataapi.DecodeAggregate[dataapi.Issue](result)
+			if err != nil || issue.Stage != "before" || issue.Status != "open" || !issue.BlocksIssuance || s.mock.checkouts[hold.ID].Status != "rejected" || s.mock.vehicles[0].Status != "unavailable" || !s.mock.vehicles[0].NeedsReview || len(s.mock.trips) != 0 {
+				s.t.Fatalf("before issue did not cancel hold and block vehicle: %+v %v", issue, err)
+			}
+			if _, err := s.client.CheckoutCreate(s.ctx, "8000000000000000002", firstVehicleID, s.mock.vehicles[0].Version, "scenario-before-issue-second", nil); err == nil {
+				s.t.Fatal("blocked vehicle was issued")
+			}
+			return nil
+		},
 		"checkout.race-loser": func(s scenarioContext) error {
 			type outcome struct {
 				result dataapi.CommandResult
@@ -590,7 +606,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 		})
 	}
-	if len(runs) != 30 {
+	if len(runs) != 31 {
 		t.Fatal("scenario runner count changed")
 	}
 	for id := range runs {
