@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "c52b6904-b47a-47b3-9bcf-ec03a54cc4da"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T14:15:04Z"
+heartbeat_utc: "2026-09-28T14:18:58Z"
 current_task: BE-03
-current_substep: "BE-03: MAX callback keyboard transport проверен; далее кнопки меню/каталога"
-last_verified_code_commit: "409c86a3393b5f1b6a5efef10aec7f6b0d57d781"
+current_substep: "BE-03: карточка по свежим данным проверена; далее работающие MAX кнопки"
+last_verified_code_commit: "5e6bb139414fbf6873d010a750abf02604565511"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-03: короткие callback-кнопки меню/каталога с actor check и повторным чтением; затем карточка и previous inspection"
+next_step: "BE-03: callback-кнопки меню/каталога/карточки с actor check и повторным чтением; затем previous inspection и проверка версии"
 human_required: [H-01]
 ```
 
@@ -30,7 +30,7 @@ human_required: [H-01]
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
-| BE-03 | IN_PROGRESS | `409c86a3393b5f1b6a5efef10aec7f6b0d57d781` — SDK callback transport; каталог по 5/ACL; dialog кнопки WIP | Кнопки, карточка, previous inspection, версии |
+| BE-03 | IN_PROGRESS | `5e6bb139414fbf6873d010a750abf02604565511` — свежая карточка и компания timezone; MAX кнопки WIP | Кнопки, previous inspection, версии |
 | BE-04 | TODO | — | См. план |
 | BE-05 | TODO | — | См. план |
 | BE-06 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-03 code commit: `5e6bb139414fbf6873d010a750abf02604565511`. `/car <uuid>` заново проверяет actor через `/me`/`/state` и читает `/vehicles/{id}` через DataAPI, не использует данные из старого списка. Карточка показывает статус, координаты/ориентир и время подтверждения парковки, топливо/пробег с датами, описание, неблокирующие замечания, ключи; отсутствующие значения — «Не указано». Часовой пояс берётся из `COMPANY_TIMEZONE`, в dev по умолчанию `Europe/Moscow`, IANA tzdata встроена в Go binary; неверный TZ отвергается, production требует явный TZ. Неизвестный actor не получает карточку, неверный UUID и 404 дают безопасный ответ без доменного действия. `go test ./internal/dialog ./cmd/gateway -count=1 -v` → 12 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA/реальный MAX не проверены. В карточке пока нет MAX кнопок, previous inspection или кнопки выдачи; BE-03 WIP.
 
 - BE-03 code commit: `409c86a3393b5f1b6a5efef10aec7f6b0d57d781`. `maxsdk.Transport.SendButtons` создаёт callback inline keyboard через pinned MAX Go SDK v2.4.1; проверяет пользователя, текст, число строк/кнопок, длину и UTF-8 payload до SDK вызова. `RecordingTransport` глубоко копирует кнопки и не допускает изменения записанной отправки. HTTP-тест официального SDK проверил JSON attachment `inline_keyboard`, callback type/payload и message ID; отдельные тесты — валидацию и копирование. `go test ./internal/maxsdk -count=1 -v` → 13 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA/реальный MAX не проверены. Кнопки ещё не используются диалогом, BE-03 WIP.
 
