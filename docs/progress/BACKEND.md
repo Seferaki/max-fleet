@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "8b0ea984-1cd7-4f3f-9642-16bace154c9c"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T15:13:25Z"
-current_task: BE-04
-current_substep: "Показ и принятие версии правил проверены; ожидается удалённый CI"
+heartbeat_utc: "2026-09-28T15:15:41Z"
+current_task: BE-05
+current_substep: "Проверить контракт фото и реализовать безопасный приём одного изображения по очереди"
 last_verified_code_commit: "d4b39da40e99c6be07512f634b370b9603818673"
-checkpoint_state: WIP
+checkpoint_state: VERIFIED
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-04: проверить CI нового SHA, закрыть задачу только по опубликованным проверкам; затем BE-05 фото. UI-01 React карта остаётся P0"
+next_step: "BE-05: обработка одного фото осмотра с ограничениями источника/типа/размера/времени и подтверждённым ready; затем замена и просмотр. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -31,8 +31,8 @@ human_required: [H-01]
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
-| BE-04 | IN_PROGRESS | `dd9c6259710aec65f6d1e0c94ae9789331d080c6` — hold, восстановление /menu и подтверждённая отмена через DataAPI | Math, rules, TTL/версии |
-| BE-05 | TODO | — | См. план |
+| BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
+| BE-05 | IN_PROGRESS | — | Один безопасный upload фото, затем замена и просмотр |
 | BE-06 | TODO | — | См. план |
 | BE-07 | TODO | — | См. план |
 | UI-01 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-04 DONE: code commit `d4b39da40e99c6be07512f634b370b9603818673` и status `a08bcf6c8a99d1158b282d2bde1932a051607f06` опубликованы; `git ls-remote --heads origin codex/backend` подтвердил status SHA. [CI status checkpoint](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) → completed/success (включая Go race/Docker/контрактные проверки). Локальные mock сценарии hold, cancel, math, rules, expired, stale/conflict и duplicate event проверены командами следующего пункта и ранее опубликованными checkpoint; повторный callback не создаёт вторую попытку. Это завершение BE-04 на mock, не приёмка реального MAX. Далее BE-05.
 
 - BE-04 code commit: `d4b39da40e99c6be07512f634b370b9603818673`. `/menu` восстанавливает шаг rules; callback читает текущие правила из DataAPI, показывает точную версию и текст (до 10000 символов разбивается на сообщения короче лимита MAX 4000), затем предлагает явное принятие. `checkout.accept_rules` вызывается только по отдельному durable inbox callback с lease, повторной проверкой actor/hold/version и совпадением показанной версии с текущей; только подтверждённый агрегат `inspection` считается успехом. `go test ./internal/dialog -run '^TestRules|^TestLongRules|^TestMath' -count=1 -v` → 4 PASS; после проверки дубля event `go test ./internal/dialog -run '^TestRules|^TestLongRules' -count=1 -v` → 2 PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `docker build -f services/gateway/Dockerfile.gateway -t max-fleet-gateway:rules services/gateway` → exit 0 после автоматического запуска Docker Desktop. Тесты проверили чужого actor, отсутствие lease, старую версию правил/кнопку, повтор event, истечение hold, длинный текст. CI нового SHA и реальный MAX ещё не проверены; BE-04 IN_PROGRESS.
 
