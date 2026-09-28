@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/inboxworker"
@@ -123,7 +125,19 @@ func (p Bootstrap) checkoutPhotoUpload(ctx context.Context, item dataapi.InboxCl
 	if !ok {
 		return p.sendView(ctx, maxID, "Состояние осмотра недоступно. Обновите /menu.", nil)
 	}
-	if slot == 0 {
+	replacing := false
+	if item.Event.Payload.Text != nil && strings.TrimSpace(*item.Event.Payload.Text) != "" {
+		fields := strings.Fields(*item.Event.Payload.Text)
+		if len(fields) != 2 || fields[0] != "/replace" {
+			return p.sendView(ctx, maxID, "Для замены выберите ракурс через /menu и отправьте фото с подписью /replace N.", nil)
+		}
+		selected, parseErr := strconv.Atoi(fields[1])
+		if parseErr != nil || selected < 1 || selected > 8 || !containsPhotoSlot(checkout.Inspection.OccupiedSlots, selected) {
+			return p.sendView(ctx, maxID, "Этот ракурс ещё не сохранён или номер неверен. Выберите сохранённый ракурс через /menu.", nil)
+		}
+		slot, replacing = selected, true
+	}
+	if slot == 0 && !replacing {
 		return p.sendView(ctx, maxID, "Комплект 8/8 уже сохранён. Девятое фото не добавлено; выберите замену ракурса после открытия /menu.", nil)
 	}
 	if p.Photos == nil || p.PhotoStore == nil {
@@ -172,10 +186,65 @@ func (p Bootstrap) checkoutPhotoUpload(ctx context.Context, item dataapi.InboxCl
 		return errors.New("photo upload returned an unexpected inspection version")
 	}
 	_, saved, valid := photoSlot(result.Inspection)
-	if !valid || saved != count+1 || !containsPhotoSlot(result.Inspection.OccupiedSlots, slot) {
+	expectedCount := count + 1
+	if replacing {
+		expectedCount = count
+	}
+	if !valid || saved != expectedCount || !containsPhotoSlot(result.Inspection.OccupiedSlots, slot) || result.Inspection.PhotosConfirmedAt != nil {
 		return errors.New("photo upload did not confirm the selected slot")
 	}
+	if replacing {
+		return p.sendView(ctx, maxID, fmt.Sprintf("Фото %d/8 — %s заменено. Остальные ракурсы сохранены. %s", slot, photoAngles[slot-1], photoProgress(result.Inspection)), nil)
+	}
 	return p.sendView(ctx, maxID, photoProgress(result.Inspection), nil)
+}
+
+func replacePhotoSlotTarget(event dataapi.NormalizedEvent) (string, int64, int, bool) {
+	if event.EventType != "message_callback" || event.Payload.Kind != "callback" || event.Payload.CallbackData == nil || !strings.HasPrefix(*event.Payload.CallbackData, "replace-slot:") {
+		return "", 0, 0, false
+	}
+	parts := strings.Split(strings.TrimPrefix(*event.Payload.CallbackData, "replace-slot:"), ":")
+	if len(parts) != 3 {
+		return "", 0, 0, true
+	}
+	version, versionErr := strconv.ParseInt(parts[1], 10, 64)
+	slot, slotErr := strconv.Atoi(parts[2])
+	if versionErr != nil || slotErr != nil || version < 1 || slot < 1 || slot > 8 {
+		return "", 0, 0, true
+	}
+	return parts[0], version, slot, true
+}
+
+func replacementCheckout(state dataapi.CurrentState, checkoutID string, version int64) (*dataapi.Checkout, bool) {
+	checkout := state.Checkout
+	if !vehicleIDPattern.MatchString(checkoutID) || version < 1 || checkout == nil || checkout.ID != checkoutID || checkout.Version != version || checkout.Status != "holding" || checkout.Step != "inspection" {
+		return nil, false
+	}
+	_, _, ok := photoSlot(checkout.Inspection)
+	return checkout, ok
+}
+
+func (p Bootstrap) chooseReplacement(ctx context.Context, maxID int64, state dataapi.CurrentState, checkoutID string, version int64) error {
+	checkout, ok := replacementCheckout(state, checkoutID, version)
+	if !ok {
+		return p.sendView(ctx, maxID, "Выбор замены устарел или hold истёк. Обновите /menu.", nil)
+	}
+	rows := make([][]maxsdk.Button, 0, len(checkout.Inspection.OccupiedSlots))
+	for _, slot := range checkout.Inspection.OccupiedSlots {
+		rows = append(rows, []maxsdk.Button{{Text: fmt.Sprintf("%d. %s", slot, photoAngles[slot-1]), Payload: fmt.Sprintf("replace-slot:%s:%d:%d", checkoutID, version, slot)}})
+	}
+	if len(rows) == 0 {
+		return p.sendView(ctx, maxID, "Сохранённых фото для замены пока нет.", nil)
+	}
+	return p.sendView(ctx, maxID, "Выберите ракурс для замены. Старое фото сохранится, пока новое не примет хранилище.", rows)
+}
+
+func (p Bootstrap) requestReplacement(ctx context.Context, maxID int64, state dataapi.CurrentState, checkoutID string, version int64, slot int) error {
+	checkout, ok := replacementCheckout(state, checkoutID, version)
+	if !ok || slot < 1 || slot > 8 || !containsPhotoSlot(checkout.Inspection.OccupiedSlots, slot) {
+		return p.sendView(ctx, maxID, "Ракурс для замены изменился или hold истёк. Обновите /menu.", nil)
+	}
+	return p.sendView(ctx, maxID, fmt.Sprintf("Заменить фото %d/8 — %s. Пришлите одно изображение с подписью /replace %d. Старое фото останется до успешной загрузки нового.", slot, photoAngles[slot-1], slot), nil)
 }
 
 func containsPhotoSlot(slots []int, selected int) bool {

@@ -68,8 +68,10 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	acceptCheckoutID, acceptVersion, acceptedRulesID, acceptRules := acceptRulesTarget(item.Event)
 	photoCheckoutID, photoVersion, photos := vehicleActionTarget(item.Event, "photos:")
 	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
+	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
+	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !confirmPhotos && !photoMessage && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -129,6 +131,12 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	}
 	if confirmPhotos {
 		return p.confirmCheckoutPhotos(ctx, item, actor, maxID, state, confirmInspectionID, confirmInspectionVersion)
+	}
+	if replacePhotos {
+		return p.chooseReplacement(ctx, maxID, state, replaceCheckoutID, replaceVersion)
+	}
+	if replaceSlot {
+		return p.requestReplacement(ctx, maxID, state, replaceSlotCheckoutID, replaceSlotVersion, selectedSlot)
 	}
 	if photoMessage {
 		return p.checkoutPhotoUpload(ctx, item, actor, maxID, state)
@@ -737,8 +745,13 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 		}
 		if state.Checkout.Step == "inspection" {
 			rows = append(rows, []maxsdk.Button{{Text: "Продолжить фото", Payload: fmt.Sprintf("photos:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
-			if slot, _, ok := photoSlot(state.Checkout.Inspection); ok && slot == 0 && state.Checkout.Inspection.PhotosConfirmedAt == nil {
-				rows = append(rows, []maxsdk.Button{{Text: "Подтвердить фотографии", Payload: fmt.Sprintf("confirm-photos:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)}})
+			if slot, count, ok := photoSlot(state.Checkout.Inspection); ok {
+				if slot == 0 && state.Checkout.Inspection.PhotosConfirmedAt == nil {
+					rows = append(rows, []maxsdk.Button{{Text: "Подтвердить фотографии", Payload: fmt.Sprintf("confirm-photos:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)}})
+				}
+				if count > 0 {
+					rows = append(rows, []maxsdk.Button{{Text: "Заменить фотографию", Payload: fmt.Sprintf("replace-photos:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
+				}
 			}
 		}
 		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})

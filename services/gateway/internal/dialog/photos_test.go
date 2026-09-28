@@ -201,7 +201,7 @@ func TestPhotoUploadCountsOnlyStoredImageAndStopsAtEight(t *testing.T) {
 		t.Fatal(err)
 	}
 	menu := sender.Messages()[len(sender.Messages())-1]
-	if len(menu.Buttons) != 3 || !strings.HasPrefix(menu.Buttons[1][0].Payload, "confirm-photos:") {
+	if len(menu.Buttons) != 4 || !strings.HasPrefix(menu.Buttons[1][0].Payload, "confirm-photos:") {
 		t.Fatalf("full photo menu: %+v", menu)
 	}
 	if err := processor.Handle(context.Background(), callbackItem(driver, "photo-confirm-no-lease", menu.Buttons[1][0].Payload, now)); err == nil || !strings.Contains(err.Error(), "durable inbox lease") {
@@ -225,6 +225,56 @@ func TestPhotoUploadCountsOnlyStoredImageAndStopsAtEight(t *testing.T) {
 	state, err = actor.State(context.Background(), driver)
 	if err != nil || state.Checkout.Inspection.Version != confirmedVersion {
 		t.Fatalf("stale confirmation changed state: %+v %v", state, err)
+	}
+	if err := processor.Handle(context.Background(), menuItem(driver, "photo-replace-menu", now)); err != nil {
+		t.Fatal(err)
+	}
+	menu = sender.Messages()[len(sender.Messages())-1]
+	if len(menu.Buttons) != 3 || !strings.HasPrefix(menu.Buttons[1][0].Payload, "replace-photos:") {
+		t.Fatalf("replacement menu: %+v", menu)
+	}
+	if err := processor.Handle(context.Background(), callbackItem(driver, "photo-replace-choose", menu.Buttons[1][0].Payload, now)); err != nil {
+		t.Fatal(err)
+	}
+	choices := sender.Messages()[len(sender.Messages())-1]
+	if len(choices.Buttons) != 8 || !strings.HasSuffix(choices.Buttons[2][0].Payload, ":3") {
+		t.Fatalf("replacement choices: %+v", choices)
+	}
+	if err := processor.Handle(context.Background(), callbackItem(driver, "photo-replace-slot-3", choices.Buttons[2][0].Payload, now)); err != nil || !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, "/replace 3") {
+		t.Fatalf("replacement instruction: %v", err)
+	}
+	replacement := photoItem(driver, "photo-replacement", now).Event
+	caption := "/replace 3"
+	replacement.Payload.Text = &caption
+	fetcher.err = maxsdk.ErrPhotoUnavailable
+	failed := replacement
+	failed.EventKey = "message:photo-replacement-failed:message_created"
+	failedMessageID := "photo-replacement-failed"
+	failed.MessageID = &failedMessageID
+	if _, err := store.StoreInbox(context.Background(), failed, maxsdk.InboxIdempotencyKey(failed)); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := worker.RunOnce(context.Background(), 1); err != nil || result.Acked != 1 {
+		t.Fatalf("failed replacement: %+v %v", result, err)
+	}
+	state, err = actor.State(context.Background(), driver)
+	if err != nil || state.Checkout.Inspection.PhotosConfirmedAt == nil || state.Checkout.Inspection.Version != confirmedVersion {
+		t.Fatalf("failed replacement changed set: %+v %v", state, err)
+	}
+	fetcher.err = nil
+	fetcher.image = samplePhoto(t, 99)
+	if _, err := store.StoreInbox(context.Background(), replacement, maxsdk.InboxIdempotencyKey(replacement)); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := worker.RunOnce(context.Background(), 1); err != nil || result.Acked != 1 || !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, "заменено") {
+		t.Fatalf("replacement: %+v %v", result, err)
+	}
+	state, err = actor.State(context.Background(), driver)
+	if err != nil || state.Checkout.Inspection.PhotosConfirmedAt != nil || state.Checkout.Inspection.Version != confirmedVersion+1 || len(state.Checkout.Inspection.OccupiedSlots) != 8 {
+		t.Fatalf("replacement set: %+v %v", state, err)
+	}
+	if err := processor.Handle(context.Background(), callbackItem(driver, "photo-replace-stale", choices.Buttons[2][0].Payload, now)); err != nil || !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, "изменился") {
+		t.Fatalf("stale replacement selection: %v", err)
 	}
 }
 

@@ -121,6 +121,12 @@ func normalizeMessage(payload *dataapi.NormalizedPayload, body model.MessageBody
 		}
 		payload.Kind = "photo"
 		payload.PhotoSourceKey = stringPtr(source)
+		if body.Text != "" {
+			if !utf8.ValidString(body.Text) || utf8.RuneCountInString(body.Text) > 1000 {
+				return ErrInvalidUpdate
+			}
+			payload.Text = stringPtr(body.Text)
+		}
 	case model.AttachLocation:
 		if !validCoordinate(attachment.Latitude, 90) || !validCoordinate(attachment.Longitude, 180) {
 			return ErrInvalidUpdate
