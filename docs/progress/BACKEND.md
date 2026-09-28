@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "8b0ea984-1cd7-4f3f-9642-16bace154c9c"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T15:05:16Z"
+heartbeat_utc: "2026-09-28T15:06:52Z"
 current_task: BE-04
-current_substep: "Takeover A: проверить опубликованный code commit da38173 и продолжить BE-04 math"
-last_verified_code_commit: "dd9c6259710aec65f6d1e0c94ae9789331d080c6"
+current_substep: "Math code da38173 проверен после takeover; далее правила"
+last_verified_code_commit: "da38173606551c19468eca3a6277a3bee5253e85"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-04: проверить code commit da38173 после предыдущего checkpoint; затем завершить math и правила по фактам. UI-01 React карта остаётся P0"
+next_step: "BE-04: добавить показ текущих правил и явное принятие через DataAPI; проверить версию правил, TTL и восстановление /state. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- После takeover A проверен опубликованный B code commit `da38173606551c19468eca3a6277a3bee5253e85`, который был после предыдущего status: dialog создаёт math challenge только для своего действующего hold с inbox lease, показывает 4 ответа, обрабатывает три ошибки, устаревшую кнопку и верный ответ через DataAPI. `go test ./internal/dialog -run '^TestMath' -count=1 -v` → 2 PASS, включая actor mismatch, истёкший hold, повторную выдачу challenge после трёх ошибок и восстановление /state; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0. [CI code commit](https://github.com/Seferaki/max-fleet/actions/runs/36440488211) → пять jobs success. Нового code commit в этой проверке нет; исправлен пропущенный status checkpoint. Правила и реальный MAX ещё WIP.
 
 - BE-04 code commit: `dd9c6259710aec65f6d1e0c94ae9789331d080c6`. `/menu` по `/state` показывает срок активного hold и кнопку отмены. Первый callback только запрашивает подтверждение; второй вызывает `checkout.cancel` через DataAPI с inbox lease и стабильным ключом. После успеха проверяется агрегат `cancelled`; 409 stale/expired/invalid даёт безопасное обновление без ложного успеха. Тест persistent mock проверил, что первый клик не освобождает машину, подтверждение освобождает её, повтор и другой actor не выполняют действие, команда без lease отвергается. `go test ./internal/dialog -count=1 -v` → 19 top-level PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. `git ls-remote` подтвердил push; CI этого SHA и реальный MAX не проверены. Math/правила и полноценное продолжение hold ещё WIP, BE-04 IN_PROGRESS.
 
