@@ -2,7 +2,7 @@
 
 Чат-бот MAX для общего корпоративного автопарка: сотрудник выбирает машину, фиксирует состояние до и после поездки, возвращает её с точкой парковки; администратор управляет доступом и разбирает замечания.
 
-**Статус на 27.09.2026:** в ветке `codex/backend` опубликованы S-01, контракт S-02 и каркас S-03: Go gateway/data-mock, React/Vite shell, Dockerfile, приватный bootstrap, локальные проверки и GitHub Actions. Бизнес-маршруты mock, Python-сервис, миграции, Compose и экран карты ещё предстоит реализовать. Актуальный checkpoint и очередь — в [прогрессе backend](docs/progress/BACKEND.md).
+**Статус на 28.09.2026:** в ветке `codex/backend` завершены S-01…S-03 и BE-01; BE-02 (приём событий MAX и inbox worker) в работе. Опубликованы контракт Data API v1, типизированный Go-клиент, persistent HTTP mock с бизнес-сценариями, gateway с opt-in webhook и dev polling, проверки Go/контракта/Docker в CI. Реальный MAX без токена H-01 не проверен; Python-сервис, финальная интеграция и обязательный экран карты React ещё не завершены. Актуальный checkpoint и очередь — в [прогрессе backend](docs/progress/BACKEND.md).
 
 ## Начать работу
 
@@ -46,7 +46,7 @@ Mermaid-диаграммы встроены в документы и отобр�
 
 `S-01…S-03: подготовка и контракт → backend с mock / Python и БД / QA отдельно → INT-01…INT-06: соединение, проверка, демонстрация`.
 
-Следующая задача backend — BE-01, HTTP-клиент и управляемый mock. Каркас проверяется `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` при наличии Go 1.27.1, Python 3.12 с зависимостями из `contracts/requirements-dev.txt`, Node 22 и Docker Engine. Подготовка приватных локальных секретов: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap.ps1`. Подробности — в [OPERATIONS](docs/OPERATIONS.md). Каркас пока не выполняет поездки и не доказывает работу MAX или Python-сервиса.
+Текущая задача backend — BE-02: безопасно связать inbox worker с обработкой диалогов и решить случай нескольких фото в dev polling. Проверка каркаса: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` при наличии Go 1.27.1, Python 3.12 с зависимостями из `contracts/requirements-dev.txt`, Node 22 и Docker Engine. Подготовка приватных локальных секретов: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap.ps1`. Подробности — в [OPERATIONS](docs/OPERATIONS.md). Работа mock не доказывает готовность реального MAX или Python-сервиса.
 
 ## Секреты
 
