@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,9 +28,11 @@ type contractScenarios struct {
 type scenarioContext struct {
 	t      *testing.T
 	client *dataapi.Client
+	worker *dataapi.WorkerClient
 	mock   *Server
 	ctx    context.Context
 	now    time.Time
+	clock  *time.Time
 }
 
 func (s scenarioContext) hold(key string) dataapi.Checkout {
@@ -348,6 +351,28 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 			return err
 		},
+		"delivery.lease-expired": func(s scenarioContext) error {
+			var event dataapi.NormalizedEvent
+			if err := json.Unmarshal(inboxFixture(s.t), &event); err != nil {
+				s.t.Fatal(err)
+			}
+			stored, err := s.worker.StoreInbox(s.ctx, event, "scenario-store-lease")
+			if err != nil {
+				s.t.Fatal(err)
+			}
+			claim, err := s.worker.ClaimInbox(s.ctx, "scenario-worker", 1, "scenario-claim-lease")
+			if err != nil || len(claim.Items) != 1 || claim.Items[0].ID != stored.ID {
+				s.t.Fatalf("lease setup: %+v %v", claim, err)
+			}
+			*s.clock = claim.Items[0].LeaseExpiresAt.Add(time.Second)
+			_, err = s.worker.AckInbox(s.ctx, stored.ID, claim.Items[0].LeaseToken, "scenario-ack-expired")
+			for _, item := range s.mock.inbox {
+				if item.Stored.ID == stored.ID && item.Status != "leased" {
+					s.t.Fatalf("expired lease changed inbox state: %s", item.Status)
+				}
+			}
+			return err
+		},
 	}
 	seen := map[string]bool{}
 	for _, item := range spec.Cases {
@@ -361,11 +386,17 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 		}
 		t.Run(item.ID, func(t *testing.T) {
 			now := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
-			mock, err := NewWithSnapshot("test-service-token", filepath.Join(t.TempDir(), "state.json"), func() time.Time { return now })
+			mock, err := NewWithSnapshotAndWorkerToken("test-service-token", "worker-token", filepath.Join(t.TempDir(), "state.json"), func() time.Time { return now })
 			if err != nil {
 				t.Fatal(err)
 			}
-			s := scenarioContext{t: t, client: commandClient(t, mock), mock: mock, ctx: context.Background(), now: now}
+			server := httptest.NewServer(mock.Handler())
+			t.Cleanup(server.Close)
+			worker, err := dataapi.NewWorker(dataapi.WorkerConfig{BaseURL: server.URL + "/internal/v1", Token: "worker-token"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := scenarioContext{t: t, client: commandClient(t, mock), worker: worker, mock: mock, ctx: context.Background(), now: now, clock: &now}
 			err = run(s)
 			status, code := 200, ""
 			if err != nil {
@@ -384,7 +415,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 		})
 	}
-	if len(runs) != 22 {
+	if len(runs) != 23 {
 		t.Fatal("scenario runner count changed")
 	}
 	for id := range runs {
