@@ -708,3 +708,70 @@ func TestCardWithoutParkingOrKeysHidesCheckoutAction(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckoutMenuRestoresHoldAndCancelsOnlyAfterConfirmation(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	actor, store, closeServer := mockClients(t, now)
+	defer closeServer()
+	const driver = "8000000000000000001"
+	available := true
+	page, err := actor.Vehicles(context.Background(), driver, dataapi.VehicleFilter{Available: &available, Limit: 5})
+	if err != nil || len(page.Items) == 0 {
+		t.Fatal(err)
+	}
+	vehicle := page.Items[0]
+	if _, err := actor.CheckoutCreate(context.Background(), driver, vehicle.ID, vehicle.Version, "cancel-setup-hold", nil); err != nil {
+		t.Fatal(err)
+	}
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: actor, Commands: actor, MAX: sender, Location: time.UTC}
+	if err := processor.Handle(context.Background(), menuItem(driver, "hold-menu", now)); err != nil {
+		t.Fatal(err)
+	}
+	menu := sender.Messages()[0]
+	if !strings.Contains(menu.Text, "Hold до: 28.09.2026 09:15 UTC") || len(menu.Buttons) != 1 || !strings.HasPrefix(menu.Buttons[0][0].Payload, "cancel-intent:") {
+		t.Fatalf("recovered hold menu = %+v", menu)
+	}
+	intent := callbackItem(driver, "cancel-intent", menu.Buttons[0][0].Payload, now)
+	if err := processor.Handle(context.Background(), intent); err != nil {
+		t.Fatal(err)
+	}
+	confirmation := sender.Messages()[1]
+	if !strings.Contains(confirmation.Text, "Отменить оформление") || len(confirmation.Buttons) != 2 || !strings.HasPrefix(confirmation.Buttons[0][0].Payload, "cancel:") {
+		t.Fatalf("cancel confirmation = %+v", confirmation)
+	}
+	state, err := actor.State(context.Background(), driver)
+	if err != nil || state.Checkout == nil {
+		t.Fatalf("cancel intent removed hold: %+v %v", state, err)
+	}
+	confirm := callbackItem(driver, "cancel-confirm", confirmation.Buttons[0][0].Payload, now)
+	if err := processor.Handle(context.Background(), confirm); err == nil {
+		t.Fatal("accepted cancel without inbox lease")
+	}
+	if _, err := store.StoreInbox(context.Background(), confirm.Event, maxsdk.InboxIdempotencyKey(confirm.Event)); err != nil {
+		t.Fatal(err)
+	}
+	worker := inboxworker.Worker{ID: "cancel-worker", Store: store, Processor: processor, Now: func() time.Time { return now }}
+	result, err := worker.RunOnce(context.Background(), 1)
+	if err != nil || result.Acked != 1 {
+		t.Fatalf("cancel worker = %+v %v", result, err)
+	}
+	state, err = actor.State(context.Background(), driver)
+	if err != nil || state.Checkout != nil || state.Trip != nil {
+		t.Fatalf("cancel state = %+v %v", state, err)
+	}
+	if got := sender.Messages()[2].Text; !strings.Contains(got, "Машина освобождена") {
+		t.Fatalf("cancel reply = %q", got)
+	}
+	page, err = actor.Vehicles(context.Background(), driver, dataapi.VehicleFilter{Available: &available, Limit: 5})
+	if err != nil || len(page.Items) == 0 || page.Items[0].ID != vehicle.ID {
+		t.Fatalf("released vehicle list = %+v %v", page, err)
+	}
+	if err := processor.Handle(context.Background(), confirm); err != nil || !strings.Contains(sender.Messages()[3].Text, "не найдено") {
+		t.Fatalf("replayed cancel = %v, %+v", err, sender.Messages())
+	}
+	other := callbackItem("8000000000000000002", "other-cancel", confirmation.Buttons[0][0].Payload, now)
+	if err := processor.Handle(context.Background(), other); err != nil || !strings.Contains(sender.Messages()[4].Text, "не найдено") {
+		t.Fatalf("other actor cancel = %v, %+v", err, sender.Messages())
+	}
+}

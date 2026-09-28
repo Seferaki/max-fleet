@@ -24,6 +24,7 @@ type Reader interface {
 
 type CheckoutCommander interface {
 	CheckoutCreate(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	CheckoutCancel(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 }
 
 // Bootstrap handles implemented menu, catalog and checkout entry events. Other
@@ -43,7 +44,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	previousVehicleID, previous := previousTarget(item.Event)
 	actionVehicleID, actionVersion, intent := vehicleActionTarget(item.Event, "intent:")
 	confirmVehicleID, confirmVersion, confirm := vehicleActionTarget(item.Event, "take:")
-	if !catalog && !card && !previous && !intent && !confirm && !isMenuEvent(item.Event) {
+	cancelID, cancelVersion, cancelIntent := vehicleActionTarget(item.Event, "cancel-intent:")
+	confirmedCancelID, confirmedCancelVersion, confirmedCancel := vehicleActionTarget(item.Event, "cancel:")
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -77,6 +80,13 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 			vehicleID, version = confirmVehicleID, confirmVersion
 		}
 		return p.checkoutIntent(ctx, item, actor, maxID, *me.Employee, state, vehicleID, version, confirm)
+	}
+	if cancelIntent || confirmedCancel {
+		checkoutID, version := cancelID, cancelVersion
+		if confirmedCancel {
+			checkoutID, version = confirmedCancelID, confirmedCancelVersion
+		}
+		return p.cancelCheckout(ctx, item, actor, maxID, state, checkoutID, version, confirmedCancel)
 	}
 	if catalog {
 		if pageNumber == 0 {
@@ -132,7 +142,48 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		}
 		return p.sendView(ctx, maxID, message, [][]maxsdk.Button{{{Text: "К списку", Payload: "cars:1"}}})
 	}
-	return p.sendView(ctx, maxID, menuText(*me.Employee, state), menuRows(*me.Employee, state))
+	message := menuText(*me.Employee, state)
+	if state.Checkout != nil {
+		message += "\nHold до: " + formatMoment(state.Checkout.ExpiresAt, p.Location)
+	}
+	return p.sendView(ctx, maxID, message, menuRows(*me.Employee, state))
+}
+
+func (p Bootstrap) cancelCheckout(ctx context.Context, item dataapi.InboxClaimItem, actor string, maxID int64, state dataapi.CurrentState, checkoutID string, version int64, confirm bool) error {
+	if !vehicleIDPattern.MatchString(checkoutID) || version < 1 {
+		return p.sendView(ctx, maxID, "Кнопка отмены повреждена. Откройте /menu.", nil)
+	}
+	checkout := state.Checkout
+	if checkout == nil || checkout.ID != checkoutID {
+		return p.sendView(ctx, maxID, "Активное оформление не найдено. Откройте /menu.", nil)
+	}
+	if checkout.Version != version || checkout.Status != "holding" {
+		return p.sendView(ctx, maxID, "Оформление изменилось. Обновите /menu.", nil)
+	}
+	if !confirm {
+		rows := [][]maxsdk.Button{{{Text: "Да, отменить", Payload: fmt.Sprintf("cancel:%s:%d", checkout.ID, checkout.Version)}}, {{Text: "Нет, оставить", Payload: "menu"}}}
+		return p.sendView(ctx, maxID, "Отменить оформление и освободить машину? Поездка не начата.", rows)
+	}
+	if p.Commands == nil || item.LeaseToken == "" {
+		return errors.New("checkout cancellation requires a durable inbox lease")
+	}
+	key, err := inboxworker.CommandKey(item, "checkout.cancel")
+	if err != nil {
+		return err
+	}
+	result, err := p.Commands.CheckoutCancel(ctx, actor, checkout.ID, version, key, &dataapi.InboxLease{EventID: item.ID, Token: item.LeaseToken})
+	if err != nil {
+		var apiErr *dataapi.APIError
+		if errors.As(err, &apiErr) && apiErr.Status == 409 && (apiErr.Code == "HOLD_EXPIRED" || apiErr.Code == "STALE_VERSION" || apiErr.Code == "INVALID_STATE") {
+			return p.sendView(ctx, maxID, "Оформление уже изменилось или истекло. Обновите /menu.", nil)
+		}
+		return err
+	}
+	cancelled, err := dataapi.DecodeAggregate[dataapi.Checkout](result)
+	if err != nil || cancelled.ID != checkout.ID || cancelled.Status != "cancelled" {
+		return errors.New("checkout cancellation returned invalid aggregate")
+	}
+	return p.sendView(ctx, maxID, "Оформление отменено. Машина освобождена. Откройте /cars.", [][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}})
 }
 
 func parkingMapURL(parking dataapi.ParkingLocation) string {
@@ -454,6 +505,9 @@ func isMenuEvent(event dataapi.NormalizedEvent) bool {
 }
 
 func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.Button {
+	if state.Checkout != nil && state.Checkout.Status == "holding" {
+		return [][]maxsdk.Button{{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}}}
+	}
 	if employee.CanStartTrip && state.Trip == nil && state.Checkout == nil {
 		return [][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}}
 	}
