@@ -34,6 +34,7 @@ type CheckoutCommander interface {
 	InspectionConfirmPhotos(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	InspectionUpdate(context.Context, string, string, int64, dataapi.InspectionUpdateInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	CheckoutSetNoNewIssues(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	CheckoutStart(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	ConversationSave(context.Context, string, string, int64, dataapi.ConversationSaveInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	IssueCreate(context.Context, string, string, int64, dataapi.IssueCreateInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 }
@@ -85,12 +86,14 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	issuePhotoID, issuePhotoVersion, issuePhotoHelp := vehicleActionTarget(item.Event, "issue-photos:")
 	issueReviewID, issueReviewVersion, issueReview := vehicleActionTarget(item.Event, "issue-review:")
 	issueSubmitID, issueSubmitVersion, issueSubmit := vehicleActionTarget(item.Event, "issue-submit:")
+	summaryID, summaryVersion, summary := vehicleActionTarget(item.Event, "checkout-summary:")
+	startID, startVersion, start := vehicleActionTarget(item.Event, "checkout-start:")
 	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
 	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !issueReview && !issueSubmit && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -184,6 +187,13 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 			inspectionID, version = issueSubmitID, issueSubmitVersion
 		}
 		return p.checkoutIssueSubmit(ctx, item, actor, maxID, *me.Employee, state, inspectionID, version, issueSubmit)
+	}
+	if summary || start {
+		checkoutID, version := summaryID, summaryVersion
+		if start {
+			checkoutID, version = startID, startVersion
+		}
+		return p.checkoutSummaryStart(ctx, item, actor, maxID, *me.Employee, state, checkoutID, version, start)
 	}
 	if confirmPhotos {
 		return p.confirmCheckoutPhotos(ctx, item, actor, maxID, state, confirmInspectionID, confirmInspectionVersion)
@@ -831,10 +841,16 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 				rows = append(rows, []maxsdk.Button{{Text: "Фото замечания", Payload: fmt.Sprintf("issue-photos:%s:%d", state.Checkout.Inspection.ID, draft.Version)}})
 				rows = append(rows, []maxsdk.Button{{Text: "Проверить замечание", Payload: fmt.Sprintf("issue-review:%s:%d", state.Checkout.Inspection.ID, draft.Version)}})
 			}
+			if readyForCheckoutStart(*state.Checkout) {
+				rows = append(rows, []maxsdk.Button{{Text: "Проверить итог перед выездом", Payload: fmt.Sprintf("checkout-summary:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
+			}
 		}
 		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 	}
 	rows := [][]maxsdk.Button{{{Text: "Мои поездки", Payload: "trip-list:mine:1"}}}
+	if state.Trip != nil && state.Trip.Status == "active" {
+		rows = append([][]maxsdk.Button{{{Text: "Текущая поездка", Payload: "trip:" + state.Trip.ID}}}, rows...)
+	}
 	if employee.CanStartTrip && state.Trip == nil && state.Checkout == nil {
 		rows = append([][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}}, rows...)
 	}
