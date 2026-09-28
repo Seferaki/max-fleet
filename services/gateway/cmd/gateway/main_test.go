@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/datamock"
+	"github.com/Seferaki/max-fleet/services/gateway/internal/dialog"
 	maxbot "github.com/max-messenger/max-bot-api-client-go/v2"
 )
 
@@ -124,6 +125,10 @@ func TestInboxWorkerSetupUsesPrivateFilesAndKeepsPartialMode(t *testing.T) {
 	if err != nil || !enabled || worker.Processor == nil || worker.Store == nil {
 		t.Fatalf("worker setup = enabled=%v, err=%v", enabled, err)
 	}
+	bootstrap, ok := worker.Processor.(dialog.Bootstrap)
+	if !ok || bootstrap.Location == nil {
+		t.Fatal("gateway dialog timezone was not configured")
+	}
 	result, err := worker.RunOnce(context.Background(), 1)
 	if err != nil || result.Claimed != 0 {
 		t.Fatalf("empty durable inbox cycle = %+v, %v", result, err)
@@ -132,5 +137,9 @@ func TestInboxWorkerSetupUsesPrivateFilesAndKeepsPartialMode(t *testing.T) {
 	diagnosticsHandler().ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
 	if ready.Code != http.StatusServiceUnavailable || !strings.Contains(ready.Body.String(), "dialog flows incomplete") {
 		t.Fatalf("partial readiness = %d: %s", ready.Code, ready.Body.String())
+	}
+	t.Setenv("COMPANY_TIMEZONE", "invalid/timezone")
+	if _, enabled, err := inboxWorkerSetup(); err == nil || enabled {
+		t.Fatalf("invalid company timezone accepted: enabled=%v err=%v", enabled, err)
 	}
 }

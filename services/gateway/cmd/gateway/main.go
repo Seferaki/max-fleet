@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dialog"
@@ -217,7 +218,18 @@ func inboxWorkerSetup() (inboxworker.Worker, bool, error) {
 	if err != nil {
 		return inboxworker.Worker{}, false, err
 	}
-	return inboxworker.Worker{ID: "gateway-inbox-worker", Store: store, Processor: dialog.Bootstrap{Data: actor, MAX: sender}, Now: time.Now}, true, nil
+	zone := os.Getenv("COMPANY_TIMEZONE")
+	if zone == "" {
+		if strings.EqualFold(os.Getenv("APP_ENV"), "production") {
+			return inboxworker.Worker{}, false, errors.New("gateway: COMPANY_TIMEZONE required in production")
+		}
+		zone = "Europe/Moscow"
+	}
+	location, err := time.LoadLocation(zone)
+	if err != nil {
+		return inboxworker.Worker{}, false, errors.New("gateway: COMPANY_TIMEZONE is invalid")
+	}
+	return inboxworker.Worker{ID: "gateway-inbox-worker", Store: store, Processor: dialog.Bootstrap{Data: actor, MAX: sender, Location: location}, Now: time.Now}, true, nil
 }
 
 func observeInbox(result inboxworker.Result, err error) {

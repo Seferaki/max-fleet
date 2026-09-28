@@ -204,6 +204,9 @@ func (emptyCatalogReader) State(context.Context, string) (dataapi.CurrentState, 
 func (emptyCatalogReader) Vehicles(context.Context, string, dataapi.VehicleFilter) (dataapi.Page[dataapi.Vehicle], error) {
 	return dataapi.Page[dataapi.Vehicle]{}, nil
 }
+func (emptyCatalogReader) Vehicle(context.Context, string, string) (dataapi.Vehicle, error) {
+	return dataapi.Vehicle{}, errors.New("unexpected vehicle read")
+}
 
 func TestCatalogEmptyListMessage(t *testing.T) {
 	sender := &maxsdk.RecordingTransport{}
@@ -215,5 +218,59 @@ func TestCatalogEmptyListMessage(t *testing.T) {
 	}
 	if got := sender.Messages()[0].Text; got != "Сейчас нет доступных автомобилей. Попробуйте обновить список позже." {
 		t.Fatalf("empty catalog = %q", got)
+	}
+}
+
+func TestCardReadsFreshVehicleAndHandlesInvalidOrStaleLink(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	actor, _, closeServer := mockClients(t, now)
+	defer closeServer()
+	const driver = "8000000000000000001"
+	available := true
+	page, err := actor.Vehicles(context.Background(), driver, dataapi.VehicleFilter{Available: &available, Limit: 5})
+	if err != nil || len(page.Items) == 0 {
+		t.Fatalf("available vehicles = %+v, %v", page, err)
+	}
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: actor, MAX: sender, Location: time.FixedZone("MSK", 3*3600)}
+	item := menuItem(driver, "card-open", now)
+	command := "/car " + page.Items[0].ID
+	item.Event.Payload.Text = &command
+	if err := processor.Handle(context.Background(), item); err != nil {
+		t.Fatal(err)
+	}
+	card := sender.Messages()[0].Text
+	for _, required := range []string{page.Items[0].Plate, "Место парковки:", "Место подтверждено:", "MSK", "Топливо:", "Пробег:", "Ключи:", "К списку: /cars"} {
+		if !strings.Contains(card, required) {
+			t.Fatalf("card misses %q: %q", required, card)
+		}
+	}
+	if strings.Contains(card, "Тестовый сотрудник") || strings.Contains(card, "Взять машину") {
+		t.Fatalf("card leaked another actor or unfinished action: %q", card)
+	}
+	command = "/car invalid"
+	item.Event.Payload.Text = &command
+	if err := processor.Handle(context.Background(), item); err != nil || !strings.Contains(sender.Messages()[1].Text, "Некорректная ссылка") {
+		t.Fatalf("invalid card = %v, %+v", err, sender.Messages())
+	}
+	command = "/car 10000000-0000-4000-8000-000000000999"
+	item.Event.Payload.Text = &command
+	if err := processor.Handle(context.Background(), item); err != nil || !strings.Contains(sender.Messages()[2].Text, "больше не доступен") {
+		t.Fatalf("missing card = %v, %+v", err, sender.Messages())
+	}
+	unknown := menuItem("8000000000000000009", "card-unknown", now)
+	unknown.Event.Payload.Text = &command
+	if err := processor.Handle(context.Background(), unknown); err != nil || strings.Contains(sender.Messages()[3].Text, "Ключи:") {
+		t.Fatalf("unknown actor card = %v, %+v", err, sender.Messages())
+	}
+}
+
+func TestCardShowsMissingFieldsAsUnknown(t *testing.T) {
+	vehicle := dataapi.Vehicle{Plate: "DEMO-NEW", Status: "unavailable"}
+	card := cardText(vehicle, time.UTC)
+	for _, required := range []string{"Место парковки: Не указано", "Топливо: Не указано", "Пробег: Не указано", "Описание: Не указано", "Ключи: Не указано"} {
+		if !strings.Contains(card, required) {
+			t.Fatalf("card misses %q: %q", required, card)
+		}
 	}
 }

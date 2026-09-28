@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/inboxworker"
@@ -16,18 +18,23 @@ type Reader interface {
 	Me(context.Context, string) (dataapi.Me, error)
 	State(context.Context, string) (dataapi.CurrentState, error)
 	Vehicles(context.Context, string, dataapi.VehicleFilter) (dataapi.Page[dataapi.Vehicle], error)
+	Vehicle(context.Context, string, string) (dataapi.Vehicle, error)
 }
 
 // Bootstrap handles only entry/menu events. Every other accepted event remains
 // durable and unacknowledged until its dialog flow is implemented.
 type Bootstrap struct {
-	Data Reader
-	MAX  maxsdk.Transport
+	Data     Reader
+	MAX      maxsdk.Transport
+	Location *time.Location
 }
+
+var vehicleIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) error {
 	pageNumber, catalog := catalogPage(item.Event)
-	if !catalog && !isMenuEvent(item.Event) {
+	vehicleID, card := cardTarget(item.Event)
+	if !catalog && !card && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -58,8 +65,99 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		_, err = p.MAX.SendText(ctx, maxID, message)
 		return err
 	}
+	if card {
+		message := "Некорректная ссылка на автомобиль. Откройте /cars."
+		if vehicleIDPattern.MatchString(vehicleID) {
+			vehicle, readErr := p.Data.Vehicle(ctx, actor, vehicleID)
+			if readErr != nil {
+				var apiErr *dataapi.APIError
+				if !errors.As(readErr, &apiErr) || apiErr.Status != 404 {
+					return readErr
+				}
+				message = "Автомобиль больше не доступен по этой ссылке. Обновите /cars."
+			} else {
+				message = cardText(vehicle, p.Location)
+			}
+		}
+		_, err = p.MAX.SendText(ctx, maxID, message)
+		return err
+	}
 	_, err = p.MAX.SendText(ctx, maxID, menuText(*me.Employee, state))
 	return err
+}
+
+func cardTarget(event dataapi.NormalizedEvent) (string, bool) {
+	if event.EventType != "message_created" || event.Payload.Kind != "text" || event.Payload.Text == nil {
+		return "", false
+	}
+	command := strings.TrimSpace(*event.Payload.Text)
+	if !strings.HasPrefix(command, "/car ") {
+		return "", false
+	}
+	return strings.TrimSpace(strings.TrimPrefix(command, "/car ")), true
+}
+
+func cardText(vehicle dataapi.Vehicle, location *time.Location) string {
+	lines := []string{
+		fmt.Sprintf("%s · %s %s", oneLine(vehicle.Plate), oneLine(vehicle.Make), oneLine(vehicle.Model)),
+		"Статус: " + oneLine(vehicle.Status),
+	}
+	if vehicle.CurrentParking == nil {
+		lines = append(lines, "Место парковки: Не указано")
+	} else {
+		parking := vehicle.CurrentParking
+		lines = append(lines, fmt.Sprintf("Место парковки: %.6f, %.6f", parking.Latitude, parking.Longitude))
+		if parking.Landmark != nil && strings.TrimSpace(*parking.Landmark) != "" {
+			lines = append(lines, "Ориентир: "+oneLine(*parking.Landmark))
+		}
+		lines = append(lines, "Место подтверждено: "+formatMoment(parking.ConfirmedAt, location))
+	}
+	if vehicle.CurrentFuel == nil {
+		lines = append(lines, "Топливо: Не указано")
+	} else {
+		lines = append(lines, fmt.Sprintf("Топливо: %d%%", *vehicle.CurrentFuel))
+	}
+	if vehicle.FuelConfirmedAt != nil {
+		lines = append(lines, "Топливо обновлено: "+formatMoment(*vehicle.FuelConfirmedAt, location))
+	}
+	if vehicle.CurrentOdometerKM == nil {
+		lines = append(lines, "Пробег: Не указано")
+	} else {
+		lines = append(lines, fmt.Sprintf("Пробег: %d км", *vehicle.CurrentOdometerKM))
+	}
+	if vehicle.OdometerConfirmedAt != nil {
+		lines = append(lines, "Пробег обновлён: "+formatMoment(*vehicle.OdometerConfirmedAt, location))
+	}
+	lines = append(lines, "Описание: "+valueOrUnknown(vehicle.Description))
+	if len(vehicle.KnownNonblockingIssues) == 0 {
+		lines = append(lines, "Известные замечания: Нет")
+	} else {
+		issues := make([]string, 0, len(vehicle.KnownNonblockingIssues))
+		for _, issue := range vehicle.KnownNonblockingIssues {
+			issues = append(issues, oneLine(issue))
+		}
+		lines = append(lines, "Известные замечания: "+strings.Join(issues, "; "))
+	}
+	lines = append(lines, "Ключи: "+valueOrUnknown(vehicle.KeyInstructions), "К списку: /cars")
+	return strings.Join(lines, "\n")
+}
+
+func valueOrUnknown(value string) string {
+	value = oneLine(value)
+	if value == "" {
+		return "Не указано"
+	}
+	return value
+}
+
+func formatMoment(moment time.Time, location *time.Location) string {
+	if moment.IsZero() {
+		return "Не указано"
+	}
+	if location == nil {
+		location = time.UTC
+	}
+	return moment.In(location).Format("02.01.2006 15:04 MST")
 }
 
 func catalogPage(event dataapi.NormalizedEvent) (int, bool) {
