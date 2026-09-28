@@ -42,6 +42,7 @@ type PhotoFetcher interface {
 
 type PhotoStore interface {
 	UploadInspectionPhoto(context.Context, string, dataapi.InspectionPhotoInput) (dataapi.PhotoUploadResult, error)
+	StageIssueAsset(context.Context, string, dataapi.IssueStageInput) (dataapi.StagedAsset, error)
 }
 
 // Bootstrap handles implemented menu, catalog and checkout entry events. Other
@@ -79,12 +80,13 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	issueDraftID, issueDraftVersion, issueDraftPrompt := vehicleActionTarget(item.Event, "issue-draft:")
 	issueKindID, issueKindVersion, issueKind, issueKindPrompt := issueCategoryTarget(item.Event)
 	issueDraftText, issueDraftCommand := issueDraftInput(item.Event)
+	issuePhotoID, issuePhotoVersion, issuePhotoHelp := vehicleActionTarget(item.Event, "issue-photos:")
 	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
 	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -169,6 +171,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		}
 		return p.checkoutIssueDraft(ctx, item, actor, maxID, *me.Employee, state, inspectionID, version, issueKind, issueDraftText, issueDraftCommand)
 	}
+	if issuePhotoHelp {
+		return p.issuePhotoHelp(ctx, maxID, state, issuePhotoID, issuePhotoVersion)
+	}
 	if confirmPhotos {
 		return p.confirmCheckoutPhotos(ctx, item, actor, maxID, state, confirmInspectionID, confirmInspectionVersion)
 	}
@@ -179,6 +184,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		return p.requestReplacement(ctx, maxID, state, replaceSlotCheckoutID, replaceSlotVersion, selectedSlot)
 	}
 	if photoMessage {
+		if state.Conversation != nil && state.Conversation.Flow == "issue_before" && state.Conversation.Step == "collect_photos" {
+			return p.issuePhotoStage(ctx, item, actor, maxID, state)
+		}
 		return p.checkoutPhotoUpload(ctx, item, actor, maxID, state)
 	}
 	if catalog {
@@ -240,6 +248,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		message += "\nHold до: " + formatMoment(state.Checkout.ExpiresAt, p.Location)
 		if state.Checkout.Status == "holding" && state.Checkout.Step == "inspection" {
 			message += "\n" + photoProgress(state.Checkout.Inspection)
+			if draft, ok := issuePhotoDraft(state); ok {
+				message += fmt.Sprintf("\nДополнительные фото замечания: %d/3 (черновик).", len(draft.Context.AssetIDs))
+			}
 		}
 	}
 	return p.sendView(ctx, maxID, message, menuRows(*me.Employee, state))
@@ -801,6 +812,9 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 				} else if state.Checkout.NoNewIssues == nil || !*state.Checkout.NoNewIssues {
 					rows = append(rows, []maxsdk.Button{{Text: "Новые замечания", Payload: fmt.Sprintf("new-issues:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)}})
 				}
+			}
+			if draft, ok := issuePhotoDraft(state); ok {
+				rows = append(rows, []maxsdk.Button{{Text: "Фото замечания", Payload: fmt.Sprintf("issue-photos:%s:%d", state.Checkout.Inspection.ID, draft.Version)}})
 			}
 		}
 		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
