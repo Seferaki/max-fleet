@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "c52b6904-b47a-47b3-9bcf-ec03a54cc4da"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T13:52:26Z"
+heartbeat_utc: "2026-09-28T13:56:03Z"
 current_task: BE-02
-current_substep: "Deferred inbox event переживает lease/restart; далее безопасный processor/wiring"
-last_verified_code_commit: "e344d13088d90ec4f00f4815db136397fd9dd0a0"
+current_substep: "Dev polling отвечает на несколько вложений; далее безопасный processor/wiring"
+last_verified_code_commit: "c6f817252d157053cc6344faf7f7aed4bd9ca3e9"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-02: ограниченный processor и runtime wiring без ACK неподдержанных диалогов; затем политика multi-photo polling"
+next_step: "BE-02: ограниченный processor и runtime wiring без ACK неподдержанных диалогов; проверить восстановление после ошибки checkpoint ответа MAX"
 human_required: [H-01]
 ```
 
@@ -29,7 +29,7 @@ human_required: [H-01]
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
-| BE-02 | IN_PROGRESS | `e344d13088d90ec4f00f4815db136397fd9dd0a0` — durable deferred event; [CI race gate](https://github.com/Seferaki/max-fleet/actions/runs/36405603485) success | Processor/wiring и политика multi-photo polling; H-01 не блокирует mock |
+| BE-02 | IN_PROGRESS | `c6f817252d157053cc6344faf7f7aed4bd9ca3e9` — ответ на multi-photo в dev polling; [CI race gate](https://github.com/Seferaki/max-fleet/actions/runs/36405603485) success | Processor/wiring и повтор ответа при сбое checkpoint; H-01 не блокирует mock |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
 | BE-05 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-02 code commit: `c6f817252d157053cc6344faf7f7aed4bd9ca3e9`. Dev polling для личного сообщения с несколькими вложениями отправляет через MAX transport инструкцию «одно фото или геопозиция», затем допускает checkpoint marker; при ошибке отправки marker не меняется и batch повторяется. Некорректное событие не попадает в inbox, уже сохранённое поддержанное событие остаётся идемпотентным при повторе пачки. Gateway создаёт responder из того же pinned SDK; логирует только число отклонений. `go test ./internal/maxsdk ./internal/maxpoll ./cmd/gateway -count=1 -v` → 18 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA и реальный MAX не проверены. Ограничение: сбой после успешного MAX-ответа, но до checkpoint может повторить только текст ошибки; доменная команда не исполняется. Webhook по-прежнему возвращает 400 на multi-photo. BE-02 WIP; следующий шаг — ограниченный runtime processor без ложного ACK.
 
 - BE-02 code commit: `e344d13088d90ec4f00f4815db136397fd9dd0a0`. `inboxworker.ErrDeferred` оставляет пока не реализованный диалоговый event в durable inbox под lease: нет ложного ACK, retry/dead перехода или изменения домена; после истечения lease его можно обработать новой версией processor. Тест с persistent mock проверил 7 аренд, рестарт, порядок двух событий одного actor, независимую обработку другого actor и последующий ACK. `go test ./internal/inboxworker -count=1 -v` → 6 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA/реальный MAX не проверены; runtime processor и multi-photo polling WIP. Следующий шаг: ограниченный processor/wiring, не ACK-ать ещё не поддержанные диалоги.
 
