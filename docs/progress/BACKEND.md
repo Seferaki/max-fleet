@@ -6,18 +6,18 @@
 status_schema: 1
 track: backend
 lock_state: ACTIVE
-owner: B
-session_id: "598236e0-6118-4815-9686-f1cda6630793"
+owner: A
+session_id: "8b0ea984-1cd7-4f3f-9642-16bace154c9c"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T14:47:56Z"
+heartbeat_utc: "2026-09-28T15:05:16Z"
 current_task: BE-04
-current_substep: "BE-04: восстановление hold и подтверждённая отмена проверены; далее math"
+current_substep: "Takeover A: проверить опубликованный code commit da38173 и продолжить BE-04 math"
 last_verified_code_commit: "dd9c6259710aec65f6d1e0c94ae9789331d080c6"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-04: показать math challenge активного hold, проверить 4 ответа/три ошибки/TTL/stale callback и восстановление по /state; UI-01 React карта остаётся P0"
+next_step: "BE-04: проверить code commit da38173 после предыдущего checkpoint; затем завершить math и правила по фактам. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -333,3 +333,4 @@ human_required: [H-01]
 | 2026-09-27 20:07 | B → HANDOFF | BE-01 / `e4a2d67` | 22/44 сценария и admin reads опубликованы; Go test/vet/build и contract validation прошли, inbox WIP |
 | 2026-09-27 20:54 | HANDOFF → B | BE-01 / `609e6ca` | Новая сессия B; отдельный claim-коммит до изменения кода |
 | 2026-09-27 22:47 | B → A | BE-01 / `8af36a6` | Владелец подтвердил остановку B; takeover отдельным claim-коммитом до изменения кода |
+| 2026-09-28 15:05 | B → A | BE-04 / `da38173` | Пользователь подтвердил остановку сессии B `598236e0-6118-4815-9686-f1cda6630793`; takeover отдельным claim-коммитом до изменения кода. Код math после последнего status ещё не переоценён. |
