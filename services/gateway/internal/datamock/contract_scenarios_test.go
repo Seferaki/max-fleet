@@ -70,6 +70,25 @@ func (s scenarioContext) photoSet(count int) dataapi.Checkout {
 	return hold
 }
 
+func (s scenarioContext) readyCheckout() dataapi.Checkout {
+	s.t.Helper()
+	hold := s.photoSet(8)
+	ready := s.mock.checkouts[hold.ID]
+	stamp, yes := *s.clock, true
+	rulesID := s.mock.rules.ID
+	fuel, odometer := 75, int64(12010)
+	ready.IntentConfirmedAt = &stamp
+	ready.RulesAcceptedAt = &stamp
+	ready.RulesVersionID = &rulesID
+	ready.NoNewIssues = &yes
+	ready.Inspection.FuelLevel = &fuel
+	ready.Inspection.OdometerKM = &odometer
+	ready.Inspection.PhotosConfirmedAt = &stamp
+	ready.Inspection.MissingSlots = []int{}
+	s.mock.checkouts[hold.ID] = ready
+	return ready
+}
+
 func (s scenarioContext) readyReturn(damage, parkingAllowed bool) (dataapi.Trip, dataapi.Return) {
 	s.t.Helper()
 	tripID := "20000000-0000-4000-8000-000000000001"
@@ -160,6 +179,23 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 				s.t.Fatal("busy checkout created another hold")
 			}
 			return err
+		},
+		"checkout.happy": func(s scenarioContext) error {
+			ready := s.readyCheckout()
+			result, err := s.client.CheckoutStart(s.ctx, driverID, ready.ID, ready.Version, "scenario-happy-start", nil)
+			if err != nil {
+				return err
+			}
+			trip, err := dataapi.DecodeAggregate[dataapi.Trip](result)
+			if err != nil || trip.Status != "active" || len(s.mock.trips) != 1 || s.mock.checkouts[ready.ID].Status != "started" || s.mock.vehicles[0].Status != "in_trip" || s.mock.employees[driverID].ActiveTripID == nil || *s.mock.employees[driverID].ActiveTripID != trip.ID {
+				s.t.Fatalf("checkout did not atomically become one trip: %+v %v", trip, err)
+			}
+			_, secondErr := s.client.CheckoutCreate(s.ctx, "8000000000000000002", firstVehicleID, s.mock.vehicles[0].Version, "scenario-happy-second-driver", nil)
+			var apiErr *dataapi.APIError
+			if !errors.As(secondErr, &apiErr) || apiErr.Code != "VEHICLE_UNAVAILABLE" || len(s.mock.trips) != 1 {
+				s.t.Fatalf("second assignment was not blocked: %v", secondErr)
+			}
+			return nil
 		},
 		"checkout.cancel": func(s scenarioContext) error {
 			hold := s.hold("scenario-cancel-hold")
@@ -377,20 +413,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			return err
 		},
 		"delivery.timeout-after-commit": func(s scenarioContext) error {
-			hold := s.photoSet(8)
-			ready := s.mock.checkouts[hold.ID]
-			stamp, yes := *s.clock, true
-			rulesID := s.mock.rules.ID
-			fuel, odometer := 75, int64(12010)
-			ready.IntentConfirmedAt = &stamp
-			ready.RulesAcceptedAt = &stamp
-			ready.RulesVersionID = &rulesID
-			ready.NoNewIssues = &yes
-			ready.Inspection.FuelLevel = &fuel
-			ready.Inspection.OdometerKM = &odometer
-			ready.Inspection.PhotosConfirmedAt = &stamp
-			ready.Inspection.MissingSlots = []int{}
-			s.mock.checkouts[hold.ID] = ready
+			ready := s.readyCheckout()
 			var attempts int
 			var firstRequestID, firstBody string
 			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -427,7 +450,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			if err != nil {
 				s.t.Fatal(err)
 			}
-			result, err := client.CheckoutStart(s.ctx, driverID, hold.ID, ready.Version, "scenario-start-lost-response", nil)
+			result, err := client.CheckoutStart(s.ctx, driverID, ready.ID, ready.Version, "scenario-start-lost-response", nil)
 			if err != nil {
 				return err
 			}
@@ -479,7 +502,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 		})
 	}
-	if len(runs) != 24 {
+	if len(runs) != 25 {
 		t.Fatal("scenario runner count changed")
 	}
 	for id := range runs {
