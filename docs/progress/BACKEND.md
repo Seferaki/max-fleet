@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "0b57d4b9-be94-4558-b500-eff5594ee587"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T09:32:58Z"
+heartbeat_utc: "2026-09-28T09:34:58Z"
 current_task: BE-02
-current_substep: "Webhook подключён к gateway в явном режиме; далее polling/worker"
-last_verified_code_commit: "17bfba169b89d58f5e7c1f4808b8f857f846c0e2"
+current_substep: "SDK polling source готов; далее lease/store/checkpoint цикл"
+last_verified_code_commit: "9c841ffc7199e6d1e0c22e7cfe17bf8900d46eeb"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-02: добавить dev polling с single-poller lease и durable marker; затем inbox worker с actor ordering"
+next_step: "BE-02: реализовать один polling цикл: integration lease, SDK updates, durable inbox каждого события, marker checkpoint после всей пачки"
 human_required: [H-01]
 ```
 
@@ -29,7 +29,7 @@ human_required: [H-01]
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
-| BE-02 | IN_PROGRESS | `17bfba169b89d58f5e7c1f4808b8f857f846c0e2` — opt-in webhook gateway, durable inbox, нормализация и transport | Dev polling/worker; H-01 не блокирует mock |
+| BE-02 | IN_PROGRESS | `9c841ffc7199e6d1e0c22e7cfe17bf8900d46eeb` — SDK polling source, opt-in webhook и transport | Lease/store/checkpoint цикл; H-01 не блокирует mock |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
 | BE-05 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-02 code commit: `9c841ffc7199e6d1e0c22e7cfe17bf8900d46eeb`. `maxsdk.UpdateSource` отделяет dev polling от pinned SDK v2.4.1; HTTP-тест проверил GET /updates, marker=42, auth header и декодированный bot_started/marker=43. `go test ./internal/maxsdk -run '^TestSDKUpdateSource' -count=1 -v` → 2 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Polling цикл с lease/checkpoint ещё не реализован; реальный MAX/CI SHA не проверены, BE-02 WIP.
 
 - BE-02 code commit: `17bfba169b89d58f5e7c1f4808b8f857f846c0e2`. Исполняемый gateway монтирует `POST /max/webhook` только при `MAX_UPDATE_MODE=webhook`; читает webhook/worker secrets из приватных файлов, а в production требует реальный DataAPI meta и явный integration key. По умолчанию режим `disabled`; `/health/ready` остаётся 503 до inbox worker. `go test ./cmd/gateway -count=1 -v` → 2 PASS: синтетический webhook через реальный route/mock и отказ production+mock; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Реальный MAX, polling и обработка inbox ещё не проверены; CI SHA не проверена, BE-02 WIP.
 
