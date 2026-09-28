@@ -139,4 +139,10 @@ func fingerprint(parts ...string) string {
 	return fmt.Sprintf("fingerprint:%s", hex.EncodeToString(sum[:]))
 }
 
+// InboxIdempotencyKey is shared by webhook and polling, including mode changes.
+func InboxIdempotencyKey(event dataapi.NormalizedEvent) string {
+	sum := sha256.Sum256([]byte(event.IntegrationKey + "\x00" + event.EventKey))
+	return "inbox:" + hex.EncodeToString(sum[:])
+}
+
 func stringPtr(value string) *string { return &value }

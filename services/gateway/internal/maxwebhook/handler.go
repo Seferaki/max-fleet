@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -75,8 +74,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
-	sum := sha256.Sum256([]byte(event.IntegrationKey + "\x00" + event.EventKey))
-	key := "inbox:" + hex.EncodeToString(sum[:])
+	key := maxsdk.InboxIdempotencyKey(event)
 	if _, err := h.store.StoreInbox(r.Context(), event, key); err != nil {
 		respond(w, http.StatusServiceUnavailable, "DATA_UNAVAILABLE")
 		return
