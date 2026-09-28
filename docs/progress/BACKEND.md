@@ -6,12 +6,12 @@
 status_schema: 1
 track: backend
 lock_state: ACTIVE
-owner: A
-session_id: "7426ea1e-c20b-4d5b-9fb3-690bfac56398"
+owner: B
+session_id: "2931dab3-6fbe-41df-9b53-e44eade06330"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T16:09:07Z"
+heartbeat_utc: "2026-09-28T20:06:36Z"
 current_task: BE-05
-current_substep: "Отказы video/document/multi-image и повтор после сбоя проверены; ожидается CI checkpoint"
+current_substep: "Takeover после подтверждённой остановки A; проверить CI BE-05 и текущий checkpoint"
 last_verified_code_commit: "856785401024a28f7b0ba4a92c65219a6774ad27"
 checkpoint_state: WIP
 contract_commit: "1aaea964e253dce7338283ca4c012a14c8c93f6d"
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- TAKEOVER ноутбуком B, session `2931dab3-6fbe-41df-9b53-e44eade06330`: владелец подтвердил, что прежний исполнитель A с session `7426ea1e-c20b-4d5b-9fb3-690bfac56398` остановлен. Перед claim рабочее дерево было чистым, `codex/backend` fast-forward до опубликованного `c2a39a5646985c825a1a7da8a1ce9eaabbc003b1`. Старая локальная recovery-ветка `codex/recovery-be04-20260928` сохранена отдельно и не сливалась; опубликованный BE-04 уже DONE. Сначала проверить CI checkpoint BE-05, затем продолжить ближайший готовый шаг.
 
 - BE-05 code commit: `856785401024a28f7b0ba4a92c65219a6774ad27`. Неподдерживаемые video/document и несколько вложений получают безопасный ответ без URL/token/body: dev polling продвигает marker только после успешной отправки, webhook отвечает 200 только после отправки и 503 для повтора при сбое MAX. Дополнен счётчик `rejected`. Проверены file/video/multi-image, неверный webhook secret, отказ MAX и восстановление ответа; прямое чтение фото после временного 503 повторно доставляет байты без ложной отправки при ошибке. README обновлён до фактического BE-05/контракта v1.1. `go test ./internal/maxsdk ./internal/maxpoll ./internal/maxwebhook ./cmd/gateway -count=1` после исправления формата счётчика → PASS; `go test ./internal/dialog -run '^TestTripPhotoDialogOwnerAdminPhaseAndVersion$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Первый прогон целевых тестов выявил старое ожидание JSON счётчика в gateway; обновлено, повтор пройден. CI нового SHA и реальный MAX/Python ещё не проверены; BE-05 пока IN_PROGRESS. Следующий шаг: CI checkpoint, затем BE-06 при success.
 
