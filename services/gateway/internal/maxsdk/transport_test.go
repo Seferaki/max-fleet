@@ -38,8 +38,57 @@ func TestTransportRejectsInvalidSendBeforeSDK(t *testing.T) {
 	if sdk.calls != 0 {
 		t.Fatalf("SDK called for invalid message %d times", sdk.calls)
 	}
+	for _, rows := range [][][]Button{nil, {{}}, {{{Text: "", Payload: "cars:1"}}}, {{{Text: "Далее", Payload: strings.Repeat("x", 201)}}}} {
+		if _, err := transport.SendButtons(context.Background(), 123, "Список", rows); err == nil {
+			t.Fatalf("invalid buttons accepted: %+v", rows)
+		}
+	}
+	if sdk.calls != 0 {
+		t.Fatalf("SDK called for invalid keyboard %d times", sdk.calls)
+	}
 	if _, err := NewTransport(nil); err == nil {
 		t.Fatal("accepted nil SDK")
+	}
+}
+
+func TestSDKTransportSendsPinnedInlineKeyboard(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Text        string `json:"text"`
+			Attachments []struct {
+				Type    string `json:"type"`
+				Payload struct {
+					Buttons [][]struct {
+						Text    string `json:"text"`
+						Type    string `json:"type"`
+						Payload string `json:"payload"`
+					} `json:"buttons"`
+				} `json:"payload"`
+			} `json:"attachments"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Text != "Список" || len(body.Attachments) != 1 || body.Attachments[0].Type != "inline_keyboard" {
+			t.Errorf("wrong SDK keyboard envelope: err=%v type=%+v", err, body.Attachments)
+		} else {
+			buttons := body.Attachments[0].Payload.Buttons
+			if len(buttons) != 1 || len(buttons[0]) != 1 || buttons[0][0].Text != "Далее" || buttons[0][0].Type != "callback" || buttons[0][0].Payload != "cars:2" {
+				t.Errorf("wrong SDK callback buttons: %+v", buttons)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"message":{"body":{"mid":"max-buttons-1"}}}`))
+	}))
+	defer server.Close()
+	api, err := maxbot.NewApi("synthetic-test-token", maxbot.WithBaseURL(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, err := NewTransport(api)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := transport.SendButtons(context.Background(), 123, "Список", [][]Button{{{Text: "Далее", Payload: "cars:2"}}})
+	if err != nil || id != "max-buttons-1" {
+		t.Fatalf("SDK button send = %q, %v", id, err)
 	}
 }
 
@@ -99,7 +148,7 @@ func TestRecordingTransportCapturesMessagesAndContext(t *testing.T) {
 		t.Fatalf("first send = %q, %v", id, err)
 	}
 	messages := transport.Messages()
-	if len(messages) != 1 || messages[0] != (RecordedText{UserID: 123, Text: "Меню", ID: "recorded-1"}) {
+	if len(messages) != 1 || messages[0].UserID != 123 || messages[0].Text != "Меню" || messages[0].ID != "recorded-1" || messages[0].Buttons != nil {
 		t.Fatalf("recorded messages = %+v", messages)
 	}
 	messages[0].Text = "changed"
@@ -113,5 +162,23 @@ func TestRecordingTransportCapturesMessagesAndContext(t *testing.T) {
 	}
 	if len(transport.Messages()) != 1 {
 		t.Fatal("canceled send was recorded")
+	}
+}
+
+func TestRecordingTransportCopiesCallbackButtons(t *testing.T) {
+	var transport RecordingTransport
+	rows := [][]Button{{{Text: "Далее", Payload: "cars:2"}}}
+	id, err := transport.SendButtons(context.Background(), 123, "Список", rows)
+	if err != nil || id != "recorded-1" {
+		t.Fatalf("recorded button send = %q, %v", id, err)
+	}
+	rows[0][0].Payload = "changed"
+	messages := transport.Messages()
+	if messages[0].Buttons[0][0].Payload != "cars:2" {
+		t.Fatal("caller changed recorded callback")
+	}
+	messages[0].Buttons[0][0].Payload = "changed-again"
+	if transport.Messages()[0].Buttons[0][0].Payload != "cars:2" {
+		t.Fatal("snapshot changed recorded callback")
 	}
 }
