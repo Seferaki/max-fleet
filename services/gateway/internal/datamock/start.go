@@ -87,5 +87,6 @@ func (s *Server) startCheckout(w http.ResponseWriter, requestID, actor string, c
 	vehicle.OdometerConfirmedAt = &now
 	vehicle.Version++
 	vehicle.UpdatedAt = now
+	s.enqueueAdminNotification("trip_started", trip.ID, trip.VehicleID, now)
 	return commandResult("checkout.start", trip), true
 }

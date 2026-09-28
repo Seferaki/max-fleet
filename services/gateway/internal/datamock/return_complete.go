@@ -115,5 +115,6 @@ func (s *Server) completeReturn(w http.ResponseWriter, requestID, actor string, 
 	}
 	vehicle.Version++
 	vehicle.UpdatedAt = now
+	s.enqueueAdminNotification("trip_completed", trip.ID, trip.VehicleID, now)
 	return commandResult("return.complete", draft), true
 }

@@ -36,7 +36,7 @@ func TestBeforeIssueCancelsHoldAndBlocksVehicle(t *testing.T) {
 	expectAPIError(t, err, "TEMPORARY_FAILURE")
 	mock.saveSnapshot = save
 	stillHolding, err := client.Checkout(ctx, driverID, hold.ID)
-	if err != nil || stillHolding.Status != "holding" || len(mock.issues) != 0 {
+	if err != nil || stillHolding.Status != "holding" || len(mock.issues) != 0 || len(mock.notifications) != 0 {
 		t.Fatalf("failed save changed issue state: %+v %v", stillHolding, err)
 	}
 	issued, err := client.IssueCreate(ctx, driverID, firstVehicleID, 2, input, "before-issue-1", nil)
@@ -47,6 +47,9 @@ func TestBeforeIssueCancelsHoldAndBlocksVehicle(t *testing.T) {
 	if err != nil || issue.Stage != "before" || issue.Status != "open" || !issue.BlocksIssuance {
 		t.Fatalf("before issue: %+v %v", issue, err)
 	}
+	if len(mock.notifications) != 1 {
+		t.Fatalf("issue outbox count: %d", len(mock.notifications))
+	}
 	replayed, err := client.IssueCreate(ctx, driverID, firstVehicleID, 2, input, "before-issue-1", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -54,6 +57,9 @@ func TestBeforeIssueCancelsHoldAndBlocksVehicle(t *testing.T) {
 	same, _ := dataapi.DecodeAggregate[dataapi.Issue](replayed)
 	if same.ID != issue.ID {
 		t.Fatal("duplicate issue created another record")
+	}
+	if len(mock.notifications) != 1 {
+		t.Fatal("duplicate issue created another notification")
 	}
 	checkout, err := client.Checkout(ctx, driverID, hold.ID)
 	if err != nil || checkout.Status != "rejected" || checkout.Inspection.Status != "abandoned" {

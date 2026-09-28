@@ -150,6 +150,7 @@ func (s *Server) createIssue(w http.ResponseWriter, requestID, actor string, com
 	vehicle.NeedsReview = true
 	vehicle.Version++
 	vehicle.UpdatedAt = now
+	s.enqueueAdminNotification("issue_created", issue.ID, issue.VehicleID, now)
 	return commandResult("issue.create", issue), true
 }
 
