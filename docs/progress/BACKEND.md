@@ -5,13 +5,13 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: HANDOFF
-owner: A
-session_id: "de2e37a7-1a31-4a70-81c1-a9988c8c22bf"
+lock_state: ACTIVE
+owner: B
+session_id: "0b57d4b9-be94-4558-b500-eff5594ee587"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T08:45:39Z"
+heartbeat_utc: "2026-09-28T08:50:30Z"
 current_task: BE-01
-current_substep: "Notification outbox и claim проверены; передача следующему исполнителю"
+current_substep: "Новая сессия B: notifications ack/retry и typed WorkerClient"
 last_verified_code_commit: "14ed77e7b6aa2db638f15636d0ce0a45fe3fdd69"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
