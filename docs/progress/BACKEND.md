@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "c52b6904-b47a-47b3-9bcf-ec03a54cc4da"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T13:50:04Z"
+heartbeat_utc: "2026-09-28T13:52:26Z"
 current_task: BE-02
-current_substep: "Claim HANDOFF; BE-02: безопасный processor/wiring и photo poison policy"
-last_verified_code_commit: "0cc89a0c261a8b68e6ab7cc378190cfd089e23d2"
+current_substep: "Deferred inbox event переживает lease/restart; далее безопасный processor/wiring"
+last_verified_code_commit: "e344d13088d90ec4f00f4815db136397fd9dd0a0"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-02: безопасный processor/wiring и политика poison multi-photo polling без потери событий"
+next_step: "BE-02: ограниченный processor и runtime wiring без ACK неподдержанных диалогов; затем политика multi-photo polling"
 human_required: [H-01]
 ```
 
@@ -29,7 +29,7 @@ human_required: [H-01]
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
-| BE-02 | IN_PROGRESS | `0cc89a0c261a8b68e6ab7cc378190cfd089e23d2` — worker lifecycle; [CI race gate](https://github.com/Seferaki/max-fleet/actions/runs/36405603485) success | Processor/wiring и политика multi-photo polling; H-01 не блокирует mock |
+| BE-02 | IN_PROGRESS | `e344d13088d90ec4f00f4815db136397fd9dd0a0` — durable deferred event; [CI race gate](https://github.com/Seferaki/max-fleet/actions/runs/36405603485) success | Processor/wiring и политика multi-photo polling; H-01 не блокирует mock |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
 | BE-05 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-02 code commit: `e344d13088d90ec4f00f4815db136397fd9dd0a0`. `inboxworker.ErrDeferred` оставляет пока не реализованный диалоговый event в durable inbox под lease: нет ложного ACK, retry/dead перехода или изменения домена; после истечения lease его можно обработать новой версией processor. Тест с persistent mock проверил 7 аренд, рестарт, порядок двух событий одного actor, независимую обработку другого actor и последующий ACK. `go test ./internal/inboxworker -count=1 -v` → 6 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA/реальный MAX не проверены; runtime processor и multi-photo polling WIP. Следующий шаг: ограниченный processor/wiring, не ACK-ать ещё не поддержанные диалоги.
 
 - Handoff 2026-09-28 13:48 UTC: `last_verified_code_commit=0cc89a0c261a8b68e6ab7cc378190cfd089e23d2`; [CI этого SHA](https://github.com/Seferaki/max-fleet/actions/runs/36430894002) → completed/success, включая Linux race gate. Документация README опубликована `6f71994896608485d1dfdab652b54cc5e8d5da47`; status checkpoint перед этим handoff — `ab8cbea9ec92b44a0980259d5bd62dd46f75103e`. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/enter-max-token.ps1 -Check` → `False`, значение секрета не выводилось. Имя нужного секрета: `MAX_BOT_TOKEN_FILE`; локальный путь создаёт `scripts/enter-max-token.ps1 -Enter`, Git его не переносит. `docker stop max-fleet-gateway max-fleet-data-mock` → оба остановлены; посторонний `order-queue-redis` не тронут. Данные mock — синтетический seed/локальный snapshot; приватный backup для следующего ноутбука не нужен. Реальный MAX consumer не запускался. WIP: gateway worker пока не подключён к безопасному диалоговому Processor, multi-photo polling удерживает marker; не ставить BE-02 DONE и не выдавать mock за приёмку MAX. Следующий исполнитель сначала claim-ит HANDOFF, затем продолжает BE-02.
 
