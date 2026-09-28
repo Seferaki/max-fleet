@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "2a3026c7-1c0f-4258-9d7c-020601272841"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T20:48:27Z"
+heartbeat_utc: "2026-09-28T20:53:27Z"
 current_task: BE-06
-current_substep: "BE-06: категория и описание issue-before сохраняются в разговорном черновике; далее до 3 фото"
-last_verified_code_commit: "f73ccbec636c39309202cc68716b087622d96e3c"
+current_substep: "BE-06: черновик с категорией, описанием и до 3 фото проверен; далее review/issue.create"
+last_verified_code_commit: "79e98ba3b09f26997d6867a60650c9367b0a27a2"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-06: до 3 stage-фото в разговорном черновике с retry/restart, затем review/issue.create с восстановлением, сводка/start. UI-01 React карта остаётся P0"
+next_step: "BE-06: review/issue.create из сохранённого черновика с тем же ключом при retry и состоянием done, затем сводка/start. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -33,7 +33,7 @@ human_required: [H-01]
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
 | BE-05 | DONE | `856785401024a28f7b0ba4a92c65219a6774ad27` — 8 ракурсов, upload/replace/view/media/recovery; [CI c2a39a5](https://github.com/Seferaki/max-fleet/actions/runs/36476231053) success и локальный gateway verify | Реальный MAX/Python остаются INT; BE-06 |
-| BE-06 | IN_PROGRESS | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ; `da3931879aeb663dd529c8c5af8cdb1e744d9cdd` — контракт v1.2; `d3a54dc7cfa6a0b93253527751671f6cf3c81ebc` — Go conversation; `f73ccbec636c39309202cc68716b087622d96e3c` — категория/описание | Дополнительные фото, issue.create и start ещё не реализованы |
+| BE-06 | IN_PROGRESS | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ; `da3931879aeb663dd529c8c5af8cdb1e744d9cdd` — контракт v1.2; `d3a54dc7cfa6a0b93253527751671f6cf3c81ebc` — Go conversation; `f73ccbec636c39309202cc68716b087622d96e3c` — описание; `79e98ba3b09f26997d6867a60650c9367b0a27a2` — до 3 фото | issue.create и start ещё не реализованы |
 | BE-07 | TODO | — | См. план |
 | UI-01 | TODO | — | См. план |
 | BE-08 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-06 issue-photo code commit `79e98ba3b09f26997d6867a60650c9367b0a27a2` опубликован обычным push. Одно фото MAX проходит ограниченную загрузку и `StageIssueAsset`, затем его ID входит в `conversation.save`; обязательные 8 ракурсов не меняются. Счётчик черновика ограничен 3/3. Повтор последнего события после сохранения распознаётся по `cursor` без нового скачивания; если staging прошёл, а conversation.save временно упал, тот же idempotency key позволяет повторить шаг. Синтетический тест проверил 0…3, четвёртое, ошибку скачивания, дубль hash, отсутствие lease, устаревшую кнопку и неизменность 8 слотов. `go test ./internal/dialog -run '^TestIssuePhotoStageKeepsEightSlotsAndCapsThree$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. `issue.create` ещё не вызывается; real MAX/Python не проверены, BE-06 WIP.
 
 - BE-06 draft dialog code commit `f73ccbec636c39309202cc68716b087622d96e3c` опубликован обычным push. После ответа «Есть замечание» меню предлагает пять категорий; `/issue <категория> <описание>` сохраняет текст до 1000 Unicode-знаков в `conversation.save`, привязанный к сотруднику, машине и before-осмотру. Повтор того же сообщения распознаёт уже сохранённый черновик без новой версии. Ошибочные команды и устаревшие кнопки получают безопасный ответ. Синтетический тест проверил меню, категорию, неверный ввод, lease, сохранение и повтор. `go test ./internal/dialog -run '^TestIssueDraftCategoryDescriptionAndReplay$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Замечание ещё не отправлено и машина не заблокирована доменным issue; real MAX/Python не проверены, BE-06 WIP.
 
