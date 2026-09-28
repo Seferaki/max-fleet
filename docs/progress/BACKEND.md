@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "8b0ea984-1cd7-4f3f-9642-16bace154c9c"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T15:32:29Z"
+heartbeat_utc: "2026-09-28T15:36:59Z"
 current_task: BE-05
-current_substep: "Подтверждение 8/8 проверено; следующий шаг — безопасный выбор и замена ракурса"
-last_verified_code_commit: "2405e85a72b976026f3c0256fea99747663eb3af"
+current_substep: "Выбор и замена ракурса проверены; следующий шаг — ACL просмотра до/после и unsupported media"
+last_verified_code_commit: "0b056e6408c8c5fbb1379c4f10fdfbb7e275e62e"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-05: выбор ракурса замены без потери прежнего файла, просмотр до/после с ACL; затем unsupported media и recovery. UI-01 React карта остаётся P0"
+next_step: "BE-05: просмотр до/после с ACL, ошибки video/document/multi-image, recovery после сбоя загрузки; затем BE-06. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -32,7 +32,7 @@ human_required: [H-01]
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
-| BE-05 | IN_PROGRESS | `ed6c6f0` — ракурс; `5225d0c` — загрузчик; `ec796e8` — upload; `2405e85a72b976026f3c0256fea99747663eb3af` — подтверждение | Замена, просмотр и recovery |
+| BE-05 | IN_PROGRESS | `ed6c6f0` — ракурс; `5225d0c` — загрузчик; `ec796e8` — upload; `2405e85` — подтверждение; `0b056e6408c8c5fbb1379c4f10fdfbb7e275e62e` — замена | Просмотр, unsupported media и recovery |
 | BE-06 | TODO | — | См. план |
 | BE-07 | TODO | — | См. план |
 | UI-01 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-05 code commit: `0b056e6408c8c5fbb1379c4f10fdfbb7e275e62e`. В `/menu` после сохранения хотя бы одного фото есть выбор замены из уже занятых ракурсов. Кнопка ракурса проверяет текущий checkout/version и даёт точную инструкцию: отправить одно изображение с подписью `/replace N`. Нормализатор MAX переносит допустимый caption фото в уже существующее поле `payload.text` (схема v1 не менялась). Только явная подпись выбирает занятый slot; DataAPI получает текущую inspection version, при успехе остаются все восемь слотов, `photos_confirmed_at` сбрасывается. Сбой скачивания оставляет старый подтверждённый комплект; устаревшая кнопка замены отклоняется. `go test ./internal/dialog ./internal/maxsdk -run '^TestPhoto|^TestNormalizeMessageKinds' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK до дополнительной проверки stale кнопки. Первое новое утверждение теста ожидало неверный текст ответа, тест был красным; ожидаемый текст исправлен, focused тест повторно PASS. Реальный MAX caption ещё не проверен; просмотр до/после и unsupported media остаются WIP.
 
 - BE-05 code commit: `2405e85a72b976026f3c0256fea99747663eb3af`. После реально сохранённых 8/8 `/menu` предлагает «Подтвердить фотографии» с inspection ID/version. Callback повторно проверяет owner через `/me`/`/state`, holding inspection, полный комплект и версию; только durable inbox lease вызывает `inspection.confirm_photos` с стабильным ключом. Успех засчитывается лишь по aggregate с `photos_confirmed_at`; неполный комплект, старый callback и отсутствие lease не подтверждают фото. `go test ./internal/dialog -run '^TestPhoto' -count=1 -v` → 4 PASS, включая 7/8, 8/8 и повтор; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK до добавления одного тестового утверждения об отсутствии lease, после него focused тест повторно PASS. Первая команда gofmt/test использовала неверный относительный путь, тесты не запустились; исправленный запуск указан выше. Замена и просмотр ещё WIP, реальный MAX/Python не проверены.
 
