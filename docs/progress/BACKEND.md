@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "c52b6904-b47a-47b3-9bcf-ec03a54cc4da"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T14:31:33Z"
+heartbeat_utc: "2026-09-28T14:33:18Z"
 current_task: BE-03
-current_substep: "BE-03: отображение доступности выдачи проверено; далее карта/BE-04"
-last_verified_code_commit: "c91ad7583a2954c1c46906146c363c5ffa5bc995"
+current_substep: "BE-03: некорректные callback-кнопки каталога подтверждаются; далее намерение/hold"
+last_verified_code_commit: "9ec9dc076c73c9394cc98a1067591d9e1a2f915d"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-03/BE-04: добавить безопасное намерение оформления с повторной проверкой версии и 15-минутным hold; карту UI-01 реализовать до завершения P0"
+next_step: "BE-03/BE-04: добавить отдельное подтверждение намерения оформления и команду checkout.create с inbox lease/idempotency, повторной проверкой actor/version и 15-минутным hold; UI-01 карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -30,7 +30,7 @@ human_required: [H-01]
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
-| BE-03 | IN_PROGRESS | `c91ad7583a2954c1c46906146c363c5ffa5bc995` — карточка объясняет доступность выдачи, включая admin без права поездки | Кнопка намерения, UI-01 карта, версии |
+| BE-03 | IN_PROGRESS | `9ec9dc076c73c9394cc98a1067591d9e1a2f915d` — ошибочный callback каталога не блокирует actor inbox | Кнопка намерения, UI-01 карта, версии |
 | BE-04 | TODO | — | См. план |
 | BE-05 | TODO | — | См. план |
 | BE-06 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-03 code commit: `9ec9dc076c73c9394cc98a1067591d9e1a2f915d`. Неверное значение `cars:N` (включая переполнение числа и страницу >20) больше не остаётся deferred в inbox: после actor access check диалог отправляет безопасное предложение обновить список и отвечает на MAX callback. Worker тест проверил `Acked=1`, `Deferred=0`, кнопку обновления и answer; `go test ./internal/dialog -count=1`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA/реальный MAX не проверены; BE-03 IN_PROGRESS.
 
 - BE-03 code commit: `c91ad7583a2954c1c46906146c363c5ffa5bc995`. Карточка после свежих `/me`, `/state` и `/vehicle` объясняет, почему выдача недоступна: нет права на поездку, активный checkout/trip, машина недоступна/заблокирована/под review, нет подтверждённой парковки или инструкции по ключам. При полной готовности текст честно сообщает, что сценарий оформления ещё будет подключён; никаких доменных переходов Go не делает. Отдельный тест администратора без trip-права и проверки отсутствующих полей; после исправления фикстуры `go test ./internal/dialog -count=1` → PASS (13 тестов), `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA/реальный MAX не проверены; кнопка намерения/hold и карта WIP, BE-03 IN_PROGRESS.
 
