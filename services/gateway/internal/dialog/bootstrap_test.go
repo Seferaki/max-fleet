@@ -269,6 +269,29 @@ func TestCardReadsFreshVehicleAndHandlesInvalidOrStaleLink(t *testing.T) {
 	}
 }
 
+type noTripAdminReader struct{ emptyCatalogReader }
+
+func (noTripAdminReader) Me(_ context.Context, actor string) (dataapi.Me, error) {
+	return dataapi.Me{Allowed: true, MaxUserID: actor, Employee: &dataapi.Employee{Role: "admin", CanStartTrip: false}}, nil
+}
+func (noTripAdminReader) Vehicle(_ context.Context, _, id string) (dataapi.Vehicle, error) {
+	return dataapi.Vehicle{ID: id, Status: "available", KeyInstructions: "У диспетчера", CurrentParking: &dataapi.ParkingLocation{ConfirmedAt: time.Now()}}, nil
+}
+
+func TestAdminWithoutTripRightSeesNoCheckoutOffer(t *testing.T) {
+	const vehicleID = "10000000-0000-4000-8000-000000000001"
+	sender := &maxsdk.RecordingTransport{}
+	item := menuItem("8000000000000000003", "admin-no-trip", time.Now())
+	command := "/car " + vehicleID
+	item.Event.Payload.Text = &command
+	if err := (Bootstrap{Data: noTripAdminReader{}, MAX: sender}).Handle(context.Background(), item); err != nil {
+		t.Fatal(err)
+	}
+	if got := sender.Messages()[0].Text; !strings.Contains(got, "Выдача: недоступна") {
+		t.Fatalf("admin without trip permission card = %q", got)
+	}
+}
+
 func TestCardShowsMissingFieldsAsUnknown(t *testing.T) {
 	vehicle := dataapi.Vehicle{Plate: "DEMO-NEW", Status: "unavailable"}
 	card := cardText(vehicle, time.UTC)
@@ -276,6 +299,37 @@ func TestCardShowsMissingFieldsAsUnknown(t *testing.T) {
 		if !strings.Contains(card, required) {
 			t.Fatalf("card misses %q: %q", required, card)
 		}
+	}
+}
+
+func TestCardAvailabilityRequiresAccessParkingAndKeys(t *testing.T) {
+	vehicle := dataapi.Vehicle{Status: "available", KeyInstructions: "У диспетчера", CurrentParking: &dataapi.ParkingLocation{ConfirmedAt: time.Now()}}
+	employee := dataapi.Employee{CanStartTrip: true}
+	if got := checkoutAvailabilityText(vehicle, employee, dataapi.CurrentState{}); !strings.Contains(got, "машина доступна") {
+		t.Fatalf("ready vehicle = %q", got)
+	}
+	withoutParking := vehicle
+	withoutParking.CurrentParking = nil
+	if got := checkoutAvailabilityText(withoutParking, employee, dataapi.CurrentState{}); !strings.Contains(got, "требуется подтверждённая парковка") {
+		t.Fatalf("missing parking = %q", got)
+	}
+	withoutKeys := vehicle
+	withoutKeys.KeyInstructions = " \n "
+	if got := checkoutAvailabilityText(withoutKeys, employee, dataapi.CurrentState{}); !strings.Contains(got, "инструкция по ключам") {
+		t.Fatalf("missing keys = %q", got)
+	}
+	blocked := employee
+	blocked.CanStartTrip = false
+	if got := checkoutAvailabilityText(vehicle, blocked, dataapi.CurrentState{}); !strings.Contains(got, "недоступна для текущего пользователя") {
+		t.Fatalf("blocked employee = %q", got)
+	}
+	if got := checkoutAvailabilityText(vehicle, employee, dataapi.CurrentState{Checkout: &dataapi.Checkout{}}); !strings.Contains(got, "текущий сценарий") {
+		t.Fatalf("active checkout = %q", got)
+	}
+	underReview := vehicle
+	underReview.NeedsReview = true
+	if got := checkoutAvailabilityText(underReview, employee, dataapi.CurrentState{}); !strings.Contains(got, "автомобиль сейчас недоступен") {
+		t.Fatalf("needs review = %q", got)
 	}
 }
 

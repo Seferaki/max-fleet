@@ -84,6 +84,7 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 				message = "Автомобиль больше не доступен по этой ссылке. Обновите /cars."
 			} else {
 				message = cardText(vehicle, p.Location)
+				message += "\n" + checkoutAvailabilityText(vehicle, *me.Employee, state)
 				rows = append([][]maxsdk.Button{{{Text: "Предыдущий осмотр", Payload: "prev:" + vehicle.ID}}}, rows...)
 				if expectedVersion > 0 && vehicle.Version != expectedVersion {
 					message = "Данные автомобиля изменились. Ниже актуальная карточка.\n" + message
@@ -109,6 +110,19 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		return p.sendView(ctx, maxID, message, [][]maxsdk.Button{{{Text: "К списку", Payload: "cars:1"}}})
 	}
 	return p.sendView(ctx, maxID, menuText(*me.Employee, state), menuRows(*me.Employee, state))
+}
+
+func checkoutAvailabilityText(vehicle dataapi.Vehicle, employee dataapi.Employee, state dataapi.CurrentState) string {
+	if !employee.CanStartTrip || state.Trip != nil || state.Checkout != nil {
+		return "Выдача: недоступна для текущего пользователя или пока не завершён текущий сценарий."
+	}
+	if vehicle.Status != "available" || vehicle.ManualBlocked || vehicle.NeedsReview {
+		return "Выдача: автомобиль сейчас недоступен. Обновите список."
+	}
+	if vehicle.CurrentParking == nil || vehicle.CurrentParking.ConfirmedAt.IsZero() || strings.TrimSpace(vehicle.KeyInstructions) == "" {
+		return "Выдача: требуется подтверждённая парковка и инструкция по ключам."
+	}
+	return "Выдача: машина доступна; оформление будет доступно после запуска сценария приёмки."
 }
 
 func previousTarget(event dataapi.NormalizedEvent) (string, bool) {
