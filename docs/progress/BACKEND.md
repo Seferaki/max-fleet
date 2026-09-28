@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "8b0ea984-1cd7-4f3f-9642-16bace154c9c"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T15:06:52Z"
+heartbeat_utc: "2026-09-28T15:13:25Z"
 current_task: BE-04
-current_substep: "Math code da38173 проверен после takeover; далее правила"
-last_verified_code_commit: "da38173606551c19468eca3a6277a3bee5253e85"
+current_substep: "Показ и принятие версии правил проверены; ожидается удалённый CI"
+last_verified_code_commit: "d4b39da40e99c6be07512f634b370b9603818673"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-04: добавить показ текущих правил и явное принятие через DataAPI; проверить версию правил, TTL и восстановление /state. UI-01 React карта остаётся P0"
+next_step: "BE-04: проверить CI нового SHA, закрыть задачу только по опубликованным проверкам; затем BE-05 фото. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-04 code commit: `d4b39da40e99c6be07512f634b370b9603818673`. `/menu` восстанавливает шаг rules; callback читает текущие правила из DataAPI, показывает точную версию и текст (до 10000 символов разбивается на сообщения короче лимита MAX 4000), затем предлагает явное принятие. `checkout.accept_rules` вызывается только по отдельному durable inbox callback с lease, повторной проверкой actor/hold/version и совпадением показанной версии с текущей; только подтверждённый агрегат `inspection` считается успехом. `go test ./internal/dialog -run '^TestRules|^TestLongRules|^TestMath' -count=1 -v` → 4 PASS; после проверки дубля event `go test ./internal/dialog -run '^TestRules|^TestLongRules' -count=1 -v` → 2 PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0; `docker build -f services/gateway/Dockerfile.gateway -t max-fleet-gateway:rules services/gateway` → exit 0 после автоматического запуска Docker Desktop. Тесты проверили чужого actor, отсутствие lease, старую версию правил/кнопку, повтор event, истечение hold, длинный текст. CI нового SHA и реальный MAX ещё не проверены; BE-04 IN_PROGRESS.
 
 - После takeover A проверен опубликованный B code commit `da38173606551c19468eca3a6277a3bee5253e85`, который был после предыдущего status: dialog создаёт math challenge только для своего действующего hold с inbox lease, показывает 4 ответа, обрабатывает три ошибки, устаревшую кнопку и верный ответ через DataAPI. `go test ./internal/dialog -run '^TestMath' -count=1 -v` → 2 PASS, включая actor mismatch, истёкший hold, повторную выдачу challenge после трёх ошибок и восстановление /state; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build exit 0. [CI code commit](https://github.com/Seferaki/max-fleet/actions/runs/36440488211) → пять jobs success. Нового code commit в этой проверке нет; исправлен пропущенный status checkpoint. Правила и реальный MAX ещё WIP.
 
