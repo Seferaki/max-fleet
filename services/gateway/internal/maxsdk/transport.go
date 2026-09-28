@@ -1,9 +1,12 @@
 package maxsdk
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -21,6 +24,11 @@ type Transport interface {
 	AnswerCallback(ctx context.Context, callbackID string) error
 }
 
+// PhotoSender sends a private, actor-authorized DataAPI image back through MAX.
+type PhotoSender interface {
+	SendImage(context.Context, int64, string, string, []byte) (string, error)
+}
+
 type Button struct {
 	Text    string
 	Payload string
@@ -32,15 +40,43 @@ type messageSender interface {
 	AnswerOnCallback(context.Context, string, model.CallbackAnswer) (model.SimpleQueryResult, error)
 }
 
+type imageUploader interface {
+	Upload(context.Context, model.UploadType, io.Reader, string, int64) (string, error)
+}
+
 type SDKTransport struct {
 	messages messageSender
+	uploader imageUploader
 }
 
 func NewTransport(api *maxbot.Api) (*SDKTransport, error) {
-	if api == nil || api.Messages == nil {
+	if api == nil || api.Messages == nil || api.Upload == nil {
 		return nil, errors.New("MAX messages client is missing")
 	}
-	return &SDKTransport{messages: api.Messages}, nil
+	return &SDKTransport{messages: api.Messages, uploader: api.Upload}, nil
+}
+
+func (t *SDKTransport) SendImage(ctx context.Context, userID int64, caption, contentType string, imageBytes []byte) (string, error) {
+	if t == nil || t.messages == nil || t.uploader == nil {
+		return "", errors.New("MAX image transport is missing")
+	}
+	if err := validateTextMessage(userID, caption); err != nil {
+		return "", err
+	}
+	names := map[string]string{"image/jpeg": "photo.jpg", "image/png": "photo.png", "image/webp": "photo.webp"}
+	if len(imageBytes) == 0 || len(imageBytes) > maxPhotoBytes || names[contentType] == "" || http.DetectContentType(imageBytes) != contentType {
+		return "", ErrPhotoFormat
+	}
+	token, err := t.uploader.Upload(ctx, model.UploadImage, bytes.NewReader(imageBytes), names[contentType], int64(len(imageBytes)))
+	if err != nil || token == "" {
+		return "", errors.New("MAX image upload failed")
+	}
+	message := maxbot.NewMessage().SetUser(userID).SetText(caption).AddAttachByToken(token, model.AttachImage)
+	result, err := t.messages.Send(ctx, message)
+	if err != nil || result.Message.Body.Mid == "" {
+		return "", errors.New("MAX image send failed")
+	}
+	return result.Message.Body.Mid, nil
 }
 
 func (t *SDKTransport) SendText(ctx context.Context, userID int64, text string) (string, error) {
