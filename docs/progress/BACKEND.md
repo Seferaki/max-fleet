@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "0b57d4b9-be94-4558-b500-eff5594ee587"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T09:26:40Z"
+heartbeat_utc: "2026-09-28T09:30:04Z"
 current_task: BE-02
-current_substep: "Нормализация MAX update готова; далее webhook с durable inbox"
-last_verified_code_commit: "0454436d69faa82476a4f4bf53ca5f318f1a7f47"
+current_substep: "Webhook handler сохраняет inbox до 200; далее подключить в gateway"
+last_verified_code_commit: "afc8fbacd6c58e6f67e449031ad5cd96a1fea88f"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-02: webhook с secret header, body limit, schema validation и durable inbox до HTTP 200; не запускать реальный consumer"
+next_step: "BE-02: подключить webhook handler к gateway с приватным secret-файлом и явным режимом; затем worker/проверки restart"
 human_required: [H-01]
 ```
 
@@ -29,7 +29,7 @@ human_required: [H-01]
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
-| BE-02 | IN_PROGRESS | `0454436d69faa82476a4f4bf53ca5f318f1a7f47` — нормализация, SDK text transport и recording sender | Webhook durable inbox; H-01 не блокирует mock |
+| BE-02 | IN_PROGRESS | `afc8fbacd6c58e6f67e449031ad5cd96a1fea88f` — webhook durable inbox, нормализация и transport | Подключить handler к gateway; H-01 не блокирует mock |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
 | BE-05 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-02 code commit: `afc8fbacd6c58e6f67e449031ad5cd96a1fea88f`. `maxwebhook.Handler` проверяет secret header сравнением hash в constant time, метод/content type/body limit 256 KiB, декодирует MAX wire update и нормализует его; неизвестные и групповые события безопасно игнорирует, два изображения отклоняет 400. Стабильный idempotency key сохраняет событие через отдельный WorkerClient до ответа 200; ошибка сохранения даёт 503. `TestWebhookAcknowledgesOnlyAfterDurableMockStore` прошёл повтор webhook, перезапуск snapshot mock и ровно одно событие в inbox. `go test ./internal/maxsdk ./internal/maxwebhook -count=1 -v` → 13 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Handler пока не подключён к исполняемому gateway, реальный MAX/токен и CI SHA не проверены; BE-02 WIP.
 
 - BE-02 code commit: `0454436d69faa82476a4f4bf53ca5f318f1a7f47`. `maxsdk.Normalize` приводит `bot_started`, `message_created` (text, одно image, geo) и `message_callback` SDK v2.4.1 к `dataapi.NormalizedEvent`; message/callback получают стабильные ключи, start — fingerprint. Callback actor берётся из `callback.user.user_id`, а не recipient; группа/канал, bot sender, два вложения, неподдерживаемый файл, неверное фото и координаты отклоняются без записи inbox. Отправка текста теперь проверяет лимит 4000 символов из [MAX API](https://dev.max.ru/docs-api/methods/POST/messages). `go test ./internal/maxsdk -count=1 -v` → 9 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Webhook/polling/реальный MAX и CI этого SHA не проверены; BE-02 WIP.
 
