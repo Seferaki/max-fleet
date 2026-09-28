@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "7426ea1e-c20b-4d5b-9fb3-690bfac56398"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T15:55:14Z"
+heartbeat_utc: "2026-09-28T16:02:26Z"
 current_task: BE-05
-current_substep: "Контракт v1.1 и Go mock/client чтения фото проверены; далее диалог просмотра"
-last_verified_code_commit: "f7399d3771bc07a6c897a4928dc2d88a7fa46c48"
+current_substep: "Просмотр фото поездки в MAX-диалоге на mock проверен; далее unsupported media и recovery"
+last_verified_code_commit: "849accd4edb691d5116c66a22221c3f09bb371e5"
 checkpoint_state: WIP
 contract_commit: "1aaea964e253dce7338283ca4c012a14c8c93f6d"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-05: подключить просмотр до/после в диалог с проверкой роли и фазы, затем unsupported media и recovery. UI-01 React карта остаётся P0"
+next_step: "BE-05: обработать unsupported video/document/multi-image и восстановление при ошибках фото; затем BE-06. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -32,7 +32,7 @@ human_required: [H-01]
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
-| BE-05 | IN_PROGRESS | `ed6c6f0` — ракурс; `5225d0c` — загрузчик; `ec796e8` — upload; `2405e85` — подтверждение; `0b056e6` — замена; `d590c2624563d9ad78f0fe9c27babef32e06e83e` — MAX image send; `1aaea964e253dce7338283ca4c012a14c8c93f6d` — контракт v1.1; `f7399d3771bc07a6c897a4928dc2d88a7fa46c48` — mock/client | Диалог просмотра, unsupported media и recovery |
+| BE-05 | IN_PROGRESS | `ed6c6f0` — ракурс; `5225d0c` — загрузчик; `ec796e8` — upload; `2405e85` — подтверждение; `0b056e6` — замена; `d590c2624563d9ad78f0fe9c27babef32e06e83e` — MAX image send; `1aaea964e253dce7338283ca4c012a14c8c93f6d` — контракт v1.1; `f7399d3771bc07a6c897a4928dc2d88a7fa46c48` — mock/client; `849accd4edb691d5116c66a22221c3f09bb371e5` — диалог просмотра | Unsupported media и recovery |
 | BE-06 | TODO | — | См. план |
 | BE-07 | TODO | — | См. план |
 | UI-01 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-05 code commit: `849accd4edb691d5116c66a22221c3f09bb371e5`. В MAX-диалоге `/trips` и кнопка меню показывают поездки сотрудника, `/admintrips` — административный список, `/trip UUID` — доступную карточку. Кнопки «Фото до/после» дают выбор занятого ракурса 1…8, затем `TripInspectionPhoto` и `SendImage`. На каждом шаге перечитывается trip, проверяется версия кнопки; DataAPI повторно проверяет owner/admin и finalized фазы. У активной поездки after скрыто; `closed_by_admin` использует правильный статус для finalized after. Синтетический диалоговый тест проверил owner/admin, чужого сотрудника, ранний after и устаревшую кнопку; mock тест проверил finalized after после admin close. `go test ./internal/dialog ./internal/datamock -count=1` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. MAX SDK в реальном аккаунте, Python и полная 8+8 поездка здесь не проверены; BE-05 WIP. Следующий шаг: явный ответ на video/document/multi-image, сохранение прогресса фото при сбоях и проверка восстановления.
 
 - BE-05 code commit: `f7399d3771bc07a6c897a4928dc2d88a7fa46c48`. Go client использует v1.1 и приватно читает trip/phase/slot с лимитом байтов и проверкой media; mock проверяет actor, owner/admin, finalized, состояние trip, slot и hash файла. Тест на синтетических байтах проверил owner/admin, 404 для чужого actor/пустого slot/раннего after, некорректные phase/slot, after после completed и рестарта snapshot, 503 при потере файла, отказ старой версии и неверного service token. `go test ./internal/dataapi ./internal/datamock -count=1` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; `git diff --cached --check` и `py scripts/check-secrets.py --staged` → exit 0. Локальный `go` не в PATH; использован `.local/go-dist/go/bin/go.exe`, затем штатный verify.ps1. Реальный Python/MAX и диалог просмотра не проверены; BE-05 WIP. Следующий шаг: диалог просмотра с ролями и фазами, затем ответы на unsupported media и recovery.
 
