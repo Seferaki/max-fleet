@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03 и BE-01…BE-04 выполнены на Go mock; BE-05 в работе. Контракт v1.1 для чтения фото поездки реализован в Go mock/client; Python ещё должен его реализовать. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03 и BE-01…BE-05 выполнены на Go mock; BE-06 в работе. Контракт v1.1 для чтения фото поездки реализован в Go mock/client; Python ещё должен его реализовать. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "2931dab3-6fbe-41df-9b53-e44eade06330"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T20:08:32Z"
+heartbeat_utc: "2026-09-28T20:13:43Z"
 current_task: BE-06
-current_substep: "BE-05 CI и локальная проверка пройдены; BE-06: данные осмотра до выезда"
-last_verified_code_commit: "856785401024a28f7b0ba4a92c65219a6774ad27"
+current_substep: "BE-06: выбор и сохранение топлива проверены; далее ввод одометра"
+last_verified_code_commit: "fe53501113ab5238235e0d9ee4149c85d276e7fd"
 checkpoint_state: WIP
 contract_commit: "1aaea964e253dce7338283ca4c012a14c8c93f6d"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-06: ввод топлива и одометра с валидацией и версией через DataAPI, затем issue-before; UI-01 React карта остаётся P0"
+next_step: "BE-06: ввод одометра с проверкой формата, отрицательного и меньшего значения через DataAPI; затем issue-before; UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -33,7 +33,7 @@ human_required: [H-01]
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
 | BE-05 | DONE | `856785401024a28f7b0ba4a92c65219a6774ad27` — 8 ракурсов, upload/replace/view/media/recovery; [CI c2a39a5](https://github.com/Seferaki/max-fleet/actions/runs/36476231053) success и локальный gateway verify | Реальный MAX/Python остаются INT; BE-06 |
-| BE-06 | TODO | — | См. план |
+| BE-06 | IN_PROGRESS | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо 0/25/50/75/100, версия и durable command | Одометр, issue-before и start ещё не реализованы |
 | BE-07 | TODO | — | См. план |
 | UI-01 | TODO | — | См. план |
 | BE-08 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-06 fuel code commit: `fe53501113ab5238235e0d9ee4149c85d276e7fd` опубликован в `codex/backend` обычным push. Go-диалог предлагает 0/25/50/75/100%, сохраняет через `inspection.update` с версией, idempotency key и inbox lease; DataAPI mock проверяет владельца и hold. Синтетический тест проверил выбор, чужого actor, отсутствие lease, неверный уровень, сохранение и устаревшую кнопку. `go test ./internal/dialog -count=1` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; `git diff --cached --check` и `py scripts/check-secrets.py --staged` → exit 0. Реальный MAX/Python не проверены, BE-06 WIP. Следующий подшаг: одометр и его отказы.
 
 - BE-05 gate после takeover: опубликованный commit `c2a39a5646985c825a1a7da8a1ce9eaabbc003b1` имеет [GitHub Actions run 36476231053](https://github.com/Seferaki/max-fleet/actions/runs/36476231053) completed/success: `web`, `contract`, `secret-scan`, `docker`, `gateway` — все success. Свежий `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go tests/vet/build `verify gateway: OK` (exit 0); `services/gateway/internal/dialog/photos_test.go`, mock photos/trip photo и MAX downloader содержат проверки 8 slots, replace, прерванной доставки, устаревших кнопок, ACL/фазы, MIME/размера/редиректа. BE-05 отмечен DONE только для Go/mock, реальный MAX и Python не проверены. Ближайшая готовая задача BE-06.
 
