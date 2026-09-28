@@ -7,14 +7,14 @@ status_schema: 1
 track: data
 owner: Anton
 branch: codex/data
-current_task: DE-04
-current_substep: "DE-01…DE-03 проверены локально; DE-04…DE-07 реализованы, добиваются недостающие тесты гонок/отказов"
+current_task: DE-08
+current_substep: "DE-01…DE-07 проверены локально (39 тестов); далее нагрузка и backup/restore"
 last_verified_code_commit: "см. git log codex/data — checkpoint feat(DE-01…DE-07)"
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 migration_head: "0001"
 data_ready_for_integration: false
 checkpoint_state: WIP
-next_step: "DE-04: гонка vehicle.block vs checkout.start; DE-05: сбой БД после записи S3, 3 фото замечания; DE-07: истечение lease старого worker; затем DE-08 нагрузка и backup/restore"
+next_step: "DE-08: нагрузка 50 users / 20 rps / 10 мин и 10×5 MiB, EXPLAIN основных списков, backup/restore с проверкой хэшей"
 human_required: []
 ```
 
@@ -23,10 +23,10 @@ human_required: []
 | DE-01 | DONE | FastAPI/SQLAlchemy 2/Alembic/psycopg3/boto3, uv.lock; `deploy/compose.data.yaml` (PostgreSQL 17.6 + SeaweedFS S3 по digest, migrate, data-api, data-worker); /health/live, /health/ready (БД + alembic head + bucket), service/worker auth. Локально: compose up, smoke `scripts/smoke.py` PASS | CI `.github/workflows/data.yml` добавлен, первый прогон на GitHub — после push |
 | DE-02 | DONE | Миграция 0001: 21 таблица, 42 FK, 69 CHECK, 20 UNIQUE, partial unique для hold/trip/draft; отложенные циклические FK. empty→head, повтор head, downgrade→upgrade, `alembic check` без расхождений. Seed идемпотентный, bootstrap-admin из секрет-файла. Роли БД: migrator (владелец схемы) и app (только DML, не superuser — DROP отклонён) | — |
 | DE-03 | DONE | Все GET контракта; ACL/IDOR: чужой trip/return/asset/issue → 404, не-admin → ACCESS_DENIED; object_key и правильный ответ примера наружу не выходят; ответы валидируются JSON Schema из OpenAPI (`tests/test_contract.py`) | — |
-| DE-04 | IN_PROGRESS | hold/math/правила/старт; 20 сотрудников на 1 машину → 1 assignment; 1 сотрудник на 10 машин → 1; TTL vs start; повтор ключа, конфликт тела | Тест гонки vehicle.block vs checkout.start |
-| DE-05 | IN_PROGRESS | Фото: 7/8/9, дубликат события/хэша, замена ракурса, неверный формат/MIME, сбой S3 → 503 без занятого слота; stage + issue.create; orphan cleanup не трогает привязанные | Тесты: сбой БД после S3, лимит 3 фото замечания, 10 MiB/25 MP |
-| DE-06 | IN_PROGRESS | Возврат, отмена→новый ID, UNSAFE_RETURN, повреждение→needs_review, admin close с missing_data, block/unblock с math proof, employee.grant/access, issue.resolve; двойной complete → один 200 | Тесты vehicle.edit/correct_snapshot/annotate |
-| DE-07 | IN_PROGRESS | Inbox: дубликаты, порядок по actor, claim/ack/retry, fencing команд по lease; integration lease/checkpoint CAS; outbox + получатели в доменной транзакции; claim/ack/retry/dead уведомлений | Тест: истёкший lease старого worker после перехвата другим |
+| DE-04 | DONE | hold/math/правила/старт; 20 сотрудников на 1 машину → 1 assignment; 1 сотрудник на 10 машин → 1; TTL vs start; block vs start (3 прогона: поездка либо отказ, без промежуточно свободной машины); повтор ключа, конфликт тела | — |
+| DE-05 | DONE | Фото: 7/8/9, дубликат события/хэша, замена ракурса, неверный формат/MIME, 10 MiB → 413, 30 MP → 415, сбой S3 → 503 без занятого слота, сбой БД после S3 → прежний снимок цел, новый остаётся staged; 4 фото замечания → 400; orphan cleanup не трогает привязанные | — |
+| DE-06 | DONE | Возврат, отмена→новый ID, UNSAFE_RETURN, повреждение→needs_review, admin close с missing_data, block/unblock с math proof, employee.grant/access, issue.resolve, vehicle.edit/correct_snapshot (только свободная машина)/annotate; двойной complete → один 200 | — |
+| DE-07 | DONE | Inbox: дубликаты, порядок по actor, claim/ack/retry, fencing команд по lease; истёкший lease старого worker не ack-ает и не выполняет команду после перехвата; integration lease/checkpoint CAS; outbox + получатели в доменной транзакции; claim/ack/retry/dead уведомлений | — |
 | DE-08 | TODO | — | Нагрузка 50 users / 20 rps / 10 мин, 10×5 MiB, EXPLAIN, backup/restore |
 | DE-09 | TODO | — | Gate DATA_READY_FOR_INTEGRATION |
 
@@ -34,7 +34,7 @@ human_required: []
 
 Реализован весь внутренний API v1 (36 маршрутов) в `services/data/`. Проверено локально (Windows 11, Docker Desktop, PostgreSQL 17.6):
 
-- `uv run pytest` — 34 passed (реальный PostgreSQL, S3 — in-memory адаптер в тестах);
+- `uv run pytest` — 39 passed (реальный PostgreSQL, S3 — in-memory адаптер в тестах);
 - `uv run ruff check .` и `uv run mypy app` — без ошибок;
 - `docker compose -f deploy/compose.data.yaml up -d --build` с `SEED_SYNTHETIC=1` — migrate exit 0, data-api healthy;
 - `scripts/smoke.py` против живого контура (реальные PostgreSQL + SeaweedFS S3): взятие → 8 фото → поездка → возврат → 8 фото → точка → завершение — PASS;

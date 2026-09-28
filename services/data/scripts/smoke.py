@@ -33,9 +33,10 @@ def call(method: str, path: str, actor: str | None, body: bytes | None = None, *
         headers["Idempotency-Key"] = key
     if ctype:
         headers["Content-Type"] = ctype
-    req = urllib.request.Request(BASE + path, data=body, headers=headers, method=method)
+    # BASE — адрес data-api из окружения оператора (http), не пользовательский ввод.
+    req = urllib.request.Request(BASE + path, data=body, headers=headers, method=method)  # noqa: S310
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
             return resp.status, json.loads(resp.read())
     except urllib.error.HTTPError as err:
         return err.code, json.loads(err.read())
