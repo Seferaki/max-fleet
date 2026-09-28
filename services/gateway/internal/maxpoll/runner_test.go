@@ -10,6 +10,7 @@ import (
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/datamock"
+	"github.com/Seferaki/max-fleet/services/gateway/internal/maxsdk"
 	"github.com/max-messenger/max-bot-api-client-go/v2/model"
 )
 
@@ -27,6 +28,18 @@ func (s *source) GetUpdates(_ context.Context, marker int64) ([]model.Update, in
 type failingStore struct {
 	*dataapi.WorkerClient
 	fail bool
+}
+
+type rejectTransport struct {
+	maxsdk.RecordingTransport
+	fail bool
+}
+
+func (s *rejectTransport) SendText(ctx context.Context, actor int64, body string) (string, error) {
+	if s.fail {
+		return "", errors.New("synthetic MAX send failure")
+	}
+	return s.RecordingTransport.SendText(ctx, actor, body)
 }
 
 func (s *failingStore) StoreInbox(ctx context.Context, event dataapi.NormalizedEvent, key string) (dataapi.InboxStored, error) {
@@ -125,5 +138,39 @@ func TestPollingInvalidPhotoDoesNotAdvanceMarker(t *testing.T) {
 	integration, err := worker.GetIntegration(context.Background(), "demo-bot")
 	if err != nil || integration.Marker != nil {
 		t.Fatalf("invalid photo advanced marker: %+v, %v", integration, err)
+	}
+}
+
+func TestPollingMultiPhotoNeedsSuccessfulReplyBeforeCheckpoint(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "snapshot.json")
+	mock, err := datamock.NewWithSnapshotAndWorkerToken("synthetic-service-token", "synthetic-worker-token", path, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, server := workerAgainst(t, mock)
+	defer server.Close()
+	multi := model.Update{UpdateType: model.UpdateMessageCreated, Timestamp: 1790586000000, ChatID: 8000000000000000001, UserID: 8000000000000000001, Message: &model.MessageUpdate{Recipient: model.Recipient{ChatID: 8000000000000000001, ChatType: model.ChatTypeDialog}, Sender: model.Sender{UserID: 8000000000000000001}, Body: model.MessageBody{Mid: "multi-photo", Attachments: []model.Attachment{{Type: model.AttachImage}, {Type: model.AttachImage}}}}}
+	src := &source{updates: []model.Update{testUpdate(), multi}, next: 43}
+	reply := &rejectTransport{fail: true}
+	runner := Runner{IntegrationKey: "demo-bot", WorkerID: "poller-one", Source: src, Store: worker, Reject: reply}
+	if result, err := runner.RunOnce(context.Background()); err == nil || result.Stored != 1 {
+		t.Fatalf("failed reply was checkpointed: %+v, %v", result, err)
+	}
+	integration, err := worker.GetIntegration(context.Background(), "demo-bot")
+	if err != nil || integration.Marker != nil {
+		t.Fatalf("failed reply advanced marker: %+v, %v", integration, err)
+	}
+	reply.fail = false
+	result, err := runner.RunOnce(context.Background())
+	if err != nil || result.Rejected != 1 || result.Stored != 1 || result.Marker == nil || *result.Marker != "43" || src.markerSeen != 0 {
+		t.Fatalf("recovered poll result = %+v, %v", result, err)
+	}
+	messages := reply.Messages()
+	if len(messages) != 1 || messages[0].UserID != 8000000000000000001 {
+		t.Fatalf("invalid media reply count/actor = %+v", messages)
+	}
+	claim, err := worker.ClaimInbox(context.Background(), "inbox-worker", 10, "claim-multi-photo")
+	if err != nil || len(claim.Items) != 1 || claim.Items[0].Event.Payload.Kind != "start" {
+		t.Fatalf("rejected photo reached inbox or valid event lost: %+v, %v", claim, err)
 	}
 }

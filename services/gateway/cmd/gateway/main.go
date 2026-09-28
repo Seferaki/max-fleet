@@ -124,7 +124,11 @@ func pollingSetup() (http.Handler, maxpoll.Runner, error) {
 	if err != nil {
 		return nil, maxpoll.Runner{}, err
 	}
-	return diagnosticsHandler(), maxpoll.Runner{IntegrationKey: key, WorkerID: "gateway-dev-poller", Source: source, Store: worker}, nil
+	transport, err := maxsdk.NewTransport(api)
+	if err != nil {
+		return nil, maxpoll.Runner{}, err
+	}
+	return diagnosticsHandler(), maxpoll.Runner{IntegrationKey: key, WorkerID: "gateway-dev-poller", Source: source, Store: worker, Reject: transport}, nil
 }
 
 func pollingLoop(ctx context.Context, runner maxpoll.Runner) {
@@ -136,6 +140,9 @@ func pollingLoop(ctx context.Context, runner maxpoll.Runner) {
 			log.Print("gateway: polling cycle failed; retrying")
 		} else if err == nil && result.Ignored > 0 {
 			log.Printf("gateway: polling ignored %d unsupported events", result.Ignored)
+		}
+		if err == nil && result.Rejected > 0 {
+			log.Printf("gateway: polling rejected %d multi-attachment events", result.Rejected)
 		}
 		select {
 		case <-ctx.Done():

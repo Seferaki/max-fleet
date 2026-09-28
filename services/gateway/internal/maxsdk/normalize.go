@@ -16,10 +16,11 @@ import (
 )
 
 var (
-	ErrInvalidUpdate      = errors.New("invalid MAX update")
-	ErrUnsupportedUpdate  = errors.New("unsupported MAX update")
-	ErrGroupEvent         = errors.New("MAX group event")
-	ErrUnsupportedContent = errors.New("unsupported MAX message content")
+	ErrInvalidUpdate       = errors.New("invalid MAX update")
+	ErrUnsupportedUpdate   = errors.New("unsupported MAX update")
+	ErrGroupEvent          = errors.New("MAX group event")
+	ErrUnsupportedContent  = errors.New("unsupported MAX message content")
+	ErrMultipleAttachments = errors.New("MAX message has multiple attachments")
 )
 
 // Normalize converts the pinned SDK's update into the private DataAPI inbox
@@ -59,6 +60,9 @@ func Normalize(integrationKey string, update model.Update) (dataapi.NormalizedEv
 		event.MessageID = stringPtr(update.Message.Body.Mid)
 		event.EventKey = "message:" + update.Message.Body.Mid + ":message_created"
 		if err := normalizeMessage(&event.Payload, update.Message.Body); err != nil {
+			if errors.Is(err, ErrMultipleAttachments) {
+				return event, err // actor is validated; polling can answer without storing malformed media
+			}
 			return dataapi.NormalizedEvent{}, err
 		}
 	case model.UpdateMessageCallback:
@@ -92,7 +96,7 @@ func normalizeMessage(payload *dataapi.NormalizedPayload, body model.MessageBody
 		return ErrInvalidUpdate
 	}
 	if payload.AttachmentCount > 1 {
-		return ErrUnsupportedContent
+		return ErrMultipleAttachments
 	}
 	if payload.AttachmentCount == 0 {
 		if strings.TrimSpace(body.Text) == "" {

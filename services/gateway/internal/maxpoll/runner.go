@@ -24,12 +24,14 @@ type Runner struct {
 	WorkerID       string
 	Source         maxsdk.UpdateSource
 	Store          Store
+	Reject         maxsdk.Transport
 }
 
 type Result struct {
-	Stored  int
-	Ignored int
-	Marker  *string
+	Stored   int
+	Ignored  int
+	Rejected int
+	Marker   *string
 }
 
 // RunOnce leases one polling integration and advances its marker only after
@@ -72,6 +74,17 @@ func (r Runner) RunOnce(ctx context.Context) (Result, error) {
 			result.Ignored++
 			continue
 		}
+		if errors.Is(err, maxsdk.ErrMultipleAttachments) && r.Reject != nil {
+			actor, parseErr := strconv.ParseInt(event.ActorMaxUserID, 10, 64)
+			if parseErr != nil || actor <= 0 {
+				return result, errors.New("MAX invalid media actor")
+			}
+			if _, sendErr := r.Reject.SendText(ctx, actor, "Отправьте только одно фото или одну геопозицию в сообщении. Несколько вложений не сохранены."); sendErr != nil {
+				return result, errors.New("MAX invalid media reply failed")
+			}
+			result.Rejected++
+			continue
+		}
 		if err != nil {
 			return result, fmt.Errorf("MAX update cannot be normalized: %w", err)
 		}
@@ -94,7 +107,7 @@ func (r Runner) RunOnce(ctx context.Context) (Result, error) {
 	if err != nil {
 		return result, err
 	}
-	return Result{Stored: result.Stored, Ignored: result.Ignored, Marker: checkpoint.Marker}, nil
+	return Result{Stored: result.Stored, Ignored: result.Ignored, Rejected: result.Rejected, Marker: checkpoint.Marker}, nil
 }
 
 func parseMarker(marker *string) (int64, error) {

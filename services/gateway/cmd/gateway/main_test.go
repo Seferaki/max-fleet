@@ -80,7 +80,7 @@ func TestPollingModeIsSeparateAndDevelopmentOnly(t *testing.T) {
 	t.Setenv("WORKER_API_TOKEN_FILE", secretFile(t, "worker", "synthetic-worker-token"))
 	t.Setenv("MAX_BOT_TOKEN_FILE", secretFile(t, "bot", "synthetic-bot-token"))
 	handler, runner, err := pollingSetup()
-	if err != nil || runner.Source == nil || runner.Store == nil {
+	if err != nil || runner.Source == nil || runner.Store == nil || runner.Reject == nil {
 		t.Fatalf("polling setup = %+v, %v", runner, err)
 	}
 	webhook := httptest.NewRecorder()

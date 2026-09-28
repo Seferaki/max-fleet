@@ -100,8 +100,9 @@ func TestNormalizeRejectsGroupAndAmbiguousMedia(t *testing.T) {
 		t.Fatalf("group message = %v", err)
 	}
 	multi := directMessage(model.MessageBody{Mid: "multi-1", Attachments: []model.Attachment{{Type: model.AttachImage}, {Type: model.AttachImage}}})
-	if _, err := Normalize("demo-bot", multi); !errors.Is(err, ErrUnsupportedContent) {
-		t.Fatalf("two images = %v", err)
+	partial, err := Normalize("demo-bot", multi)
+	if !errors.Is(err, ErrMultipleAttachments) || partial.ActorMaxUserID == "" || partial.MessageID == nil || partial.Payload.AttachmentCount != 2 {
+		t.Fatalf("two images = %+v, %v", partial, err)
 	}
 	unsupported := directMessage(model.MessageBody{Mid: "file-1", Attachments: []model.Attachment{{Type: model.AttachFile}}})
 	if _, err := Normalize("demo-bot", unsupported); !errors.Is(err, ErrUnsupportedContent) {
