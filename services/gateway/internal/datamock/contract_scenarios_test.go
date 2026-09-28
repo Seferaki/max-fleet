@@ -197,6 +197,36 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 			return nil
 		},
+		"checkout.race-loser": func(s scenarioContext) error {
+			type outcome struct {
+				result dataapi.CommandResult
+				err    error
+			}
+			start := make(chan struct{})
+			results := make(chan outcome, 2)
+			for _, actor := range []string{driverID, "8000000000000000002"} {
+				actor := actor
+				go func() {
+					<-start
+					result, err := s.client.CheckoutCreate(s.ctx, actor, firstVehicleID, 1, "scenario-race-"+actor, nil)
+					results <- outcome{result, err}
+				}()
+			}
+			close(start)
+			first, second := <-results, <-results
+			winner, loser := first, second
+			if winner.err != nil {
+				winner, loser = second, first
+			}
+			if winner.err != nil || loser.err == nil || len(s.mock.checkouts) != 1 || s.mock.vehicles[0].Status != "holding" {
+				s.t.Fatalf("race did not select exactly one winner: %v / %v", first.err, second.err)
+			}
+			checkout, err := dataapi.DecodeAggregate[dataapi.Checkout](winner.result)
+			if err != nil || checkout.Status != "holding" || s.mock.checkouts[checkout.ID].ID != checkout.ID {
+				s.t.Fatalf("winning hold missing: %+v %v", checkout, err)
+			}
+			return loser.err
+		},
 		"checkout.cancel": func(s scenarioContext) error {
 			hold := s.hold("scenario-cancel-hold")
 			_, err := s.client.CheckoutCancel(s.ctx, driverID, hold.ID, hold.Version, "scenario-cancel", nil)
@@ -502,7 +532,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 		})
 	}
-	if len(runs) != 25 {
+	if len(runs) != 26 {
 		t.Fatal("scenario runner count changed")
 	}
 	for id := range runs {
