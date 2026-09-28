@@ -27,12 +27,19 @@ type mockNotification struct {
 	WorkerID       string                    `json:"worker_id"`
 	Attempt        int                       `json:"attempt"`
 	NextAttemptAt  *time.Time                `json:"next_attempt_at"`
+	ProviderID     *string                   `json:"provider_message_id"`
+	ErrorCode      *string                   `json:"error_code"`
 	Sequence       int64                     `json:"sequence"`
 }
 
 type notificationClaimRecord struct {
 	Signature string                    `json:"signature"`
 	Result    dataapi.NotificationClaim `json:"result"`
+}
+
+type notificationTransitionRecord struct {
+	Signature string                  `json:"signature"`
+	Result    dataapi.QueueTransition `json:"result"`
 }
 
 // Called under the domain command mutex, before its snapshot commit.

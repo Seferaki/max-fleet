@@ -62,6 +62,43 @@ func (c *WorkerClient) RetryInbox(ctx context.Context, id, leaseToken, errorCode
 	}{leaseToken, errorCode, nextAttemptAt.UTC()}, key)
 }
 
+func (c *WorkerClient) ClaimNotifications(ctx context.Context, workerID string, maxItems int, key string) (NotificationClaim, error) {
+	if !validWorkerString(workerID, 1, 100) || maxItems < 1 || maxItems > 50 || !validKey(key) {
+		return NotificationClaim{}, errors.New("data-api: invalid notification claim")
+	}
+	return workerPost[NotificationClaim](ctx, c, "/notifications/claim", struct {
+		WorkerID string `json:"worker_id"`
+		MaxItems int    `json:"max_items"`
+	}{workerID, maxItems}, key)
+}
+
+func (c *WorkerClient) AckNotification(ctx context.Context, id, leaseToken, providerMessageID, key string) (QueueTransition, error) {
+	if !validUUID(id) || !validWorkerLease(leaseToken) || !validWorkerString(providerMessageID, 1, 200) || !validKey(key) {
+		return QueueTransition{}, errors.New("data-api: invalid notification ack")
+	}
+	return workerPost[QueueTransition](ctx, c, "/notifications/"+id+"/ack", struct {
+		LeaseToken        string `json:"lease_token"`
+		ProviderMessageID string `json:"provider_message_id"`
+	}{leaseToken, providerMessageID}, key)
+}
+
+func (c *WorkerClient) RetryNotification(ctx context.Context, id, leaseToken, errorCode string, retryAfter *time.Time, dead bool, key string) (QueueTransition, error) {
+	if !validUUID(id) || !validWorkerLease(leaseToken) || !validWorkerString(errorCode, 1, 80) || !validKey(key) || dead && retryAfter != nil || !dead && (retryAfter == nil || retryAfter.IsZero()) {
+		return QueueTransition{}, errors.New("data-api: invalid notification retry")
+	}
+	var next *time.Time
+	if retryAfter != nil {
+		utc := retryAfter.UTC()
+		next = &utc
+	}
+	return workerPost[QueueTransition](ctx, c, "/notifications/"+id+"/retry", struct {
+		LeaseToken string     `json:"lease_token"`
+		ErrorCode  string     `json:"error_code"`
+		RetryAfter *time.Time `json:"retry_after"`
+		Dead       bool       `json:"dead"`
+	}{leaseToken, errorCode, next, dead}, key)
+}
+
 func (c *WorkerClient) GetIntegration(ctx context.Context, integrationKey string) (Integration, error) {
 	if !validIntegrationKey(integrationKey) {
 		return Integration{}, errors.New("data-api: invalid integration key")

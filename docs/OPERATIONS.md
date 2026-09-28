@@ -105,6 +105,8 @@ docker compose --env-file .env -f deploy/compose.full.yaml -p max-fleet-full up 
 
 Не запускать все три окружения на общих портах/токене. Backend-mock не подключается к production MAX по умолчанию. По необходимости локальные debug-порты bind только 127.0.0.1.
 
+Для локальной проверки входа webhook используется дополнительный `deploy/compose.backend.webhook.yaml`: он включает `MAX_UPDATE_MODE=webhook` поверх базового Compose, оставляя mock DataAPI и bind на `127.0.0.1`. Файл `MAX_FLEET_MAX_WEBHOOK_SECRET_FILE` должен быть приватным локальным файлом; для синтетического smoke допустим отдельный тестовый secret без настоящего MAX token. На Windows подготовить копии `data_api_token` и `worker_api_token` для Docker Desktop через `scripts/prepare-compose-token.ps1 -Name data_api_token` и `-Name worker_api_token`, затем передать их пути в `MAX_FLEET_DATA_API_TOKEN_FILE` и `MAX_FLEET_WORKER_API_TOKEN_FILE`. Запуск: `docker compose -f deploy/compose.backend.yaml -f deploy/compose.backend.webhook.yaml -p max-fleet-backend up -d --build --wait`. Без `MAX_BOT_TOKEN_FILE` webhook только сохраняет inbox; `/health/ready` остаётся 503. Не включать этот overlay на публичном сервере и не считать такой smoke проверкой реального MAX.
+
 ### Требования к контейнерам
 
 - Multi-stage builds для Go/frontend, non-root, pinned versions/digests, lock files.
