@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "2931dab3-6fbe-41df-9b53-e44eade06330"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T20:16:59Z"
+heartbeat_utc: "2026-09-28T20:21:28Z"
 current_task: BE-06
-current_substep: "BE-06: топливо и одометр проверены; далее new_damage и issue-before"
-last_verified_code_commit: "e1352c0742974c8ba69096cbcaf279642a6ab701"
+current_substep: "BE-06: ответ о новых замечаниях после 8 фото проверен; далее категория/описание issue-before"
+last_verified_code_commit: "47d0369c527eb60a6d62acbc3cb205496b6c1b1b"
 checkpoint_state: WIP
 contract_commit: "1aaea964e253dce7338283ca4c012a14c8c93f6d"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-06: сохранение признака нового повреждения, issue-before с категорией/описанием/до 3 stage-фото, затем сводка/start; UI-01 React карта остаётся P0"
+next_step: "BE-06: для нового замечания добавить категорию/описание, до 3 stage-фото и issue.create; затем сводка/start; UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -33,7 +33,7 @@ human_required: [H-01]
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
 | BE-05 | DONE | `856785401024a28f7b0ba4a92c65219a6774ad27` — 8 ракурсов, upload/replace/view/media/recovery; [CI c2a39a5](https://github.com/Seferaki/max-fleet/actions/runs/36476231053) success и локальный gateway verify | Реальный MAX/Python остаются INT; BE-06 |
-| BE-06 | IN_PROGRESS | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр | New damage, issue-before и start ещё не реализованы |
+| BE-06 | IN_PROGRESS | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ о новых замечаниях | Категория/описание/фото issue-before и start ещё не реализованы |
 | BE-07 | TODO | — | См. план |
 | UI-01 | TODO | — | См. план |
 | BE-08 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-06 new issue answer code commit: `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` опубликован в `codex/backend` обычным push. После сохранения и подтверждения 8 фото, топлива и пробега диалог спрашивает о новых замечаниях. «Нет» сохраняет `new_damage=false`, затем `checkout.set_no_new_issues` двумя отдельными idempotent-командами с обработкой повторного события после первого сохранения; «Есть» сохраняет `new_damage=true`, выдача остаётся заблокированной до оформления issue. Синтетические тесты проверили чужого actor, отсутствие lease, версии, два сохранения и отказ `checkout.start` при новом замечании. `go test ./internal/dialog -run '^TestNoNewIssuesPersistsAfterInspectionAndRejectsStaleChoice$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; `git diff --cached --check` и `py scripts/check-secrets.py --staged` → exit 0. Категория/описание/дополнительные фото и начало поездки ещё отсутствуют; реальный MAX/Python не проверены, BE-06 WIP.
 
 - BE-06 odometer code commit: `e1352c0742974c8ba69096cbcaf279642a6ab701` опубликован в `codex/backend` обычным push. Диалог предлагает `/odometer N`, отклоняет отрицательное, дробное, нечисловое, лишние аргументы и переполнение; `inspection.update` с актуальной версией и inbox lease сохраняет значение, mock отклоняет снижение относительно подтверждённого пробега. Синтетический тест проверил отказ, неизменность состояния, успешное сохранение и устаревшую кнопку. `go test ./internal/dialog -count=1` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; `git diff --cached --check` и `py scripts/check-secrets.py --staged` → exit 0. Реальный MAX/Python не проверены, BE-06 WIP. Следующий подшаг: new damage и issue-before.
 
