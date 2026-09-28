@@ -114,3 +114,38 @@ func TestCheckoutSummaryStartAndLostReplyRecovery(t *testing.T) {
 		t.Fatal("active trip card missing from menu")
 	}
 }
+
+func TestCheckoutStartRejectsExpiredHold(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	current := now
+	actor, _, closeServer := mockClientsClock(t, func() time.Time { return current })
+	defer closeServer()
+	const driver = "8000000000000000001"
+	checkout := readyIssueCheckout(t, actor, driver)
+	noDamage := false
+	if _, err := actor.InspectionUpdate(context.Background(), driver, checkout.Inspection.ID, checkout.Inspection.Version, dataapi.InspectionUpdateInput{NewDamage: &noDamage}, "expired-start-answer", nil); err != nil {
+		t.Fatal(err)
+	}
+	state, err := actor.State(context.Background(), driver)
+	if err != nil || state.Checkout == nil {
+		t.Fatalf("before expiry: %+v %v", state, err)
+	}
+	if _, err := actor.CheckoutSetNoNewIssues(context.Background(), driver, checkout.ID, state.Checkout.Version, "expired-start-no-issues", nil); err != nil {
+		t.Fatal(err)
+	}
+	state, err = actor.State(context.Background(), driver)
+	if err != nil || state.Checkout == nil {
+		t.Fatalf("ready before expiry: %+v %v", state, err)
+	}
+	payload := fmt.Sprintf("checkout-start:%s:%d", checkout.ID, state.Checkout.Version)
+	current = now.Add(16 * time.Minute)
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: actor, Commands: actor, MAX: sender}
+	if err := processor.Handle(context.Background(), callbackItem(driver, "expired-start", payload, current)); err != nil || !strings.Contains(sender.Messages()[0].Text, "истёк") {
+		t.Fatalf("expired start response: %v %+v", err, sender.Messages())
+	}
+	state, err = actor.State(context.Background(), driver)
+	if err != nil || state.Trip != nil || state.Checkout != nil {
+		t.Fatalf("expired hold started trip: %+v %v", state, err)
+	}
+}
