@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "2931dab3-6fbe-41df-9b53-e44eade06330"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T20:06:36Z"
-current_task: BE-05
-current_substep: "Takeover после подтверждённой остановки A; проверить CI BE-05 и текущий checkpoint"
+heartbeat_utc: "2026-09-28T20:08:32Z"
+current_task: BE-06
+current_substep: "BE-05 CI и локальная проверка пройдены; BE-06: данные осмотра до выезда"
 last_verified_code_commit: "856785401024a28f7b0ba4a92c65219a6774ad27"
 checkpoint_state: WIP
 contract_commit: "1aaea964e253dce7338283ca4c012a14c8c93f6d"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "Проверить CI для BE-05 checkpoint и закрыть BE-05 при success; затем BE-06. UI-01 React карта остаётся P0"
+next_step: "BE-06: ввод топлива и одометра с валидацией и версией через DataAPI, затем issue-before; UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -32,7 +32,7 @@ human_required: [H-01]
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
-| BE-05 | IN_PROGRESS | `ed6c6f0` — ракурс; `5225d0c` — загрузчик; `ec796e8` — upload; `2405e85` — подтверждение; `0b056e6` — замена; `d590c2624563d9ad78f0fe9c27babef32e06e83e` — MAX image send; `1aaea964e253dce7338283ca4c012a14c8c93f6d` — контракт v1.1; `f7399d3771bc07a6c897a4928dc2d88a7fa46c48` — mock/client; `849accd4edb691d5116c66a22221c3f09bb371e5` — диалог просмотра; `856785401024a28f7b0ba4a92c65219a6774ad27` — media/recovery | Проверить CI, затем BE-06 |
+| BE-05 | DONE | `856785401024a28f7b0ba4a92c65219a6774ad27` — 8 ракурсов, upload/replace/view/media/recovery; [CI c2a39a5](https://github.com/Seferaki/max-fleet/actions/runs/36476231053) success и локальный gateway verify | Реальный MAX/Python остаются INT; BE-06 |
 | BE-06 | TODO | — | См. план |
 | BE-07 | TODO | — | См. план |
 | UI-01 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-05 gate после takeover: опубликованный commit `c2a39a5646985c825a1a7da8a1ce9eaabbc003b1` имеет [GitHub Actions run 36476231053](https://github.com/Seferaki/max-fleet/actions/runs/36476231053) completed/success: `web`, `contract`, `secret-scan`, `docker`, `gateway` — все success. Свежий `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go tests/vet/build `verify gateway: OK` (exit 0); `services/gateway/internal/dialog/photos_test.go`, mock photos/trip photo и MAX downloader содержат проверки 8 slots, replace, прерванной доставки, устаревших кнопок, ACL/фазы, MIME/размера/редиректа. BE-05 отмечен DONE только для Go/mock, реальный MAX и Python не проверены. Ближайшая готовая задача BE-06.
 
 - TAKEOVER ноутбуком B, session `2931dab3-6fbe-41df-9b53-e44eade06330`: владелец подтвердил, что прежний исполнитель A с session `7426ea1e-c20b-4d5b-9fb3-690bfac56398` остановлен. Перед claim рабочее дерево было чистым, `codex/backend` fast-forward до опубликованного `c2a39a5646985c825a1a7da8a1ce9eaabbc003b1`. Старая локальная recovery-ветка `codex/recovery-be04-20260928` сохранена отдельно и не сливалась; опубликованный BE-04 уже DONE. Сначала проверить CI checkpoint BE-05, затем продолжить ближайший готовый шаг.
 
