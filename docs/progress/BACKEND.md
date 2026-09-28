@@ -5,19 +5,19 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: ACTIVE
+lock_state: HANDOFF
 owner: B
 session_id: "0b57d4b9-be94-4558-b500-eff5594ee587"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T13:47:19Z"
+heartbeat_utc: "2026-09-28T13:48:33Z"
 current_task: BE-02
-current_substep: "Worker lifecycle проверен; продолжается BE-02 processor/wiring"
+current_substep: "Webhook counters и worker lifecycle опубликованы; безопасный runtime processor ещё не подключён"
 last_verified_code_commit: "0cc89a0c261a8b68e6ab7cc378190cfd089e23d2"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-02: безопасный processor/wiring и политика poison multi-photo polling"
+next_step: "Claim отдельным коммитом/push; BE-02: безопасный processor/wiring и политика poison multi-photo polling без потери событий"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- Handoff 2026-09-28 13:48 UTC: `last_verified_code_commit=0cc89a0c261a8b68e6ab7cc378190cfd089e23d2`; [CI этого SHA](https://github.com/Seferaki/max-fleet/actions/runs/36430894002) → completed/success, включая Linux race gate. Документация README опубликована `6f71994896608485d1dfdab652b54cc5e8d5da47`; status checkpoint перед этим handoff — `ab8cbea9ec92b44a0980259d5bd62dd46f75103e`. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/enter-max-token.ps1 -Check` → `False`, значение секрета не выводилось. Имя нужного секрета: `MAX_BOT_TOKEN_FILE`; локальный путь создаёт `scripts/enter-max-token.ps1 -Enter`, Git его не переносит. `docker stop max-fleet-gateway max-fleet-data-mock` → оба остановлены; посторонний `order-queue-redis` не тронут. Данные mock — синтетический seed/локальный snapshot; приватный backup для следующего ноутбука не нужен. Реальный MAX consumer не запускался. WIP: gateway worker пока не подключён к безопасному диалоговому Processor, multi-photo polling удерживает marker; не ставить BE-02 DONE и не выдавать mock за приёмку MAX. Следующий исполнитель сначала claim-ит HANDOFF, затем продолжает BE-02.
 
 - BE-02 documentation commit: `6f71994896608485d1dfdab652b54cc5e8d5da47`. README больше не направляет к выполненной BE-01: отражены S-01…S-03/BE-01 DONE, BE-02 WIP, mock/CI и отсутствие проверки реального MAX/Python/UI карты. Проверены `git diff -- README.md` и наличие указанных артефактов (`contracts/data-api.openapi.yaml`, `deploy/compose.backend.yaml`, `services/gateway/internal/maxpoll/runner.go`, `web/package.json`); staged diff/secret scan → exit 0. Код не менялся, `last_verified_code_commit` остаётся `0cc89a0c261a8b68e6ab7cc378190cfd089e23d2`. Следующий шаг: processor/wiring и политика multi-photo polling.
 
@@ -284,6 +286,7 @@ human_required: [H-01]
 
 | UTC | От → кому | Задача / SHA | Результат |
 |---|---|---|---|
+| 2026-09-28 13:48 | B → HANDOFF | BE-02 / `0cc89a0` | Webhook counters и worker lifecycle проверены, CI success; код обработчика диалогов и политика multi-photo polling WIP, локальные MAX Fleet контейнеры остановлены |
 | 2026-09-27 12:19 | FREE → A | S-01 / `3d53d5a` | Claim опубликован в `codex/backend` |
 | 2026-09-27 13:53 | A → B | BE-01 / `f3e6f49` | Пользователь подтвердил остановку A; takeover через отдельный claim-коммит |
 | 2026-09-27 14:47 | B → HANDOFF | BE-01 / `058a6f7` | Проверены Go test/vet/build и Docker image; следующему исполнителю захватить очередь claim-коммитом |
