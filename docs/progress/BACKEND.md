@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "c52b6904-b47a-47b3-9bcf-ec03a54cc4da"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T14:02:31Z"
-current_task: BE-02
-current_substep: "Inbox worker подключён к gateway; ожидается CI/runtime review BE-02"
-last_verified_code_commit: "95bd145568b9a7b01e83983ec21e1b5ba1290956"
+heartbeat_utc: "2026-09-28T14:08:37Z"
+current_task: BE-03
+current_substep: "BE-02 проверен и закрыт; начало доступа, меню и карточек BE-03"
+last_verified_code_commit: "9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-02: проверить CI для 95bd145 и runtime/границу BE-03; затем перейти к доступу, меню и карточкам BE-03"
+next_step: "BE-03: проверить базовое меню на восстановленном checkout/trip и реализовать список доступных машин по 5 с ACL/пагинацией"
 human_required: [H-01]
 ```
 
@@ -29,8 +29,8 @@ human_required: [H-01]
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
-| BE-02 | IN_PROGRESS | `95bd145568b9a7b01e83983ec21e1b5ba1290956` — worker подключён к gateway; [предыдущий CI race gate](https://github.com/Seferaki/max-fleet/actions/runs/36405603485) success | CI/runtime review, затем BE-03; H-01 не блокирует mock |
-| BE-03 | TODO | — | См. план |
+| BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
+| BE-03 | IN_PROGRESS | `98dd5d38b435116b2370a04d3f311511f86bb226` — ограниченный `/start`/`/menu` processor; всё остальное WIP | Список по 5, карточка, кнопки, ACL/версии |
 | BE-04 | TODO | — | См. план |
 | BE-05 | TODO | — | См. план |
 | BE-06 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-02 code/config commit: `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3`. Dev webhook Compose overlay описан в OPERATIONS. `docker compose -f deploy/compose.backend.yaml -f deploy/compose.backend.webhook.yaml config --quiet` → exit 0; Docker images собраны. Первый `up --wait` не прошёл: Docker Desktop не прочитал исходный LocalAppData token file с пользовательским ACL; контейнер ошибочно продолжил монтировать старый путь. `scripts/prepare-compose-token.ps1 -Name data_api_token/-Name worker_api_token` подготовили игнорируемые копии, `up -d --force-recreate --wait` → data-mock и gateway healthy. Синтетический webhook: неверный secret → 401, событие → 200, duplicate → 200, `/health/ready` → 503; snapshot присутствует. После `docker restart max-fleet-data-mock max-fleet-gateway` тот же webhook → 200, ready → 503, snapshot на месте. Контейнеры остановлены без удаления volume. [CI gateway commit 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) → пять jobs success, включая `go test -race ./...`; CI самого overlay SHA не проверен. BE-02 DONE как изолированный MAX ingress/worker на mock: все поддержанные события сохраняются перед ACK и переживают restart, неподдержанные диалоги остаются deferred для BE-03+. Реальный MAX/Python не проверен, backend не готов к INT; dev polling после успешного ответа о multi-photo, но перед marker checkpoint может повторить только поясняющее сообщение, без доменного перехода.
 
 - BE-02 code commit: `95bd145568b9a7b01e83983ec21e1b5ba1290956`. Gateway в webhook/dev polling режимах запускает `inboxworker.Worker` c `dialog.Bootstrap`, если `MAX_BOT_TOKEN_FILE` задан приватным файлом; без него dev webhook только сохраняет inbox и остаётся partial, production требует файл. Worker останавливается по Interrupt/SIGTERM, ждётся перед выходом; диагностический `/health/ready` остаётся 503, пока не готовы остальные диалоги. Логи содержат только счётчики/общие коды, без событий, actor или секретов. Тест проверил запуск из приватных файлов против persistent mock, пустой claim, режим без токена и отказ production без токена. `go test ./cmd/gateway -count=1 -v` → 4 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA/реальный MAX и Docker runtime новой сборки пока не проверены; BE-02 WIP до проверки CI/runtime и явной границы с BE-03.
 
