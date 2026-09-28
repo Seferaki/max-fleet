@@ -198,10 +198,11 @@ schemas = {
     "CurrentState": obj({
         "checkout": nullable(ref("Checkout")), "trip": nullable(ref("Trip")),
         "return": nullable(ref("Return")), "next_step": nullable(string(80)),
+        "conversation": nullable(ref("Conversation")),
         "conversation_version": ref("Version"),
-    }, ("checkout", "trip", "return", "next_step", "conversation_version")),
+    }, ("checkout", "trip", "return", "next_step", "conversation", "conversation_version")),
     "Meta": obj({
-        "contract_version": {"const": "1.1"}, "build_sha": string(64),
+        "contract_version": {"const": "1.2"}, "build_sha": string(64),
         "mode": string(enum=["mock", "real"]), "capabilities": array(string(80)),
     }, ("contract_version", "build_sha", "mode", "capabilities")),
     "AdminSummary": obj({
@@ -242,8 +243,8 @@ for name in ("Vehicle", "Trip", "Issue", "Employee"):
 
 spec = {
     "openapi": "3.1.0",
-    "info": {"title": "MAX Fleet Data API", "version": "1.1",
-             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.1 добавляет приватное чтение фото поездки по фазе и ракурсу."},
+    "info": {"title": "MAX Fleet Data API", "version": "1.2",
+             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.2 добавляет состояние черновика диалога в /state для восстановления замечания до поездки."},
     "servers": [{"url": "http://data-api:8000"}, {"url": "http://data-mock:8000"}],
     "tags": [{"name": name, "description": description} for name, description in (
         ("read", "Чтение доменных данных с проверкой actor и прав"),
@@ -261,7 +262,7 @@ spec = {
         },
         "parameters": {
             "ContractVersion": {"name": "X-Contract-Version", "in": "header", "required": True,
-                                "schema": {"const": "1.1"}},
+                                "schema": {"const": "1.2"}},
             "RequestID": {"name": "X-Request-ID", "in": "header", "required": True,
                           "schema": ref("UUID")},
             "ActorMaxID": {"name": "X-Actor-Max-ID", "in": "header", "required": True,
@@ -375,7 +376,10 @@ schemas["Conversation"] = obj({
                     "return_id": nullable(ref("UUID")),
                     "issue_id": nullable(ref("UUID")),
                     "cursor": nullable(string(2048)),
-                    "draft_text": nullable(string(1000))}),
+                    "draft_text": nullable(string(1000)),
+                    "issue_category": nullable(string(enum=["body_damage", "mechanical", "cleanliness", "keys", "other"])),
+                    "asset_ids": {**array(ref("UUID"), 3), "uniqueItems": True},
+                    "vehicle_version": nullable(ref("Version"))}),
     "pending_input_kind": nullable(string(enum=["text", "photo", "geo", "none"])),
     "version": ref("Version"), "updated_at": ref("Timestamp"),
 }, ("flow", "step", "context", "pending_input_kind", "version", "updated_at"))

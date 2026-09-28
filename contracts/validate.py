@@ -85,6 +85,7 @@ def main():
 
     for filename, schema_name in (
         ("state-empty.json", "CurrentStateResponse"),
+        ("issue-draft-state.json", "CurrentStateResponse"),
         ("hold-expired.json", "ErrorResponse"),
         ("previous-inspection.json", "InspectionResponse"),
         ("inbox-photo.json", "NormalizedEvent"),
@@ -141,7 +142,7 @@ def main():
             raise RuntimeError(f"Неизвестный error code: {case['id']}")
 
     print(f"OK: 2 OpenAPI, {len(data['paths'])} data routes, "
-          f"{len(commands)} command examples, 7 other examples, {len(cases)} scenarios")
+          f"{len(commands)} command examples, 8 other examples, {len(cases)} scenarios")
 
 
 if __name__ == "__main__":

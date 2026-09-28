@@ -1,0 +1,28 @@
+{
+  "data": {
+    "checkout": null,
+    "trip": null,
+    "return": null,
+    "next_step": null,
+    "conversation": {
+      "flow": "issue_before",
+      "step": "collect_photos",
+      "context": {
+        "target_id": "40000000-0000-4000-8000-000000000001",
+        "vehicle_id": "10000000-0000-4000-8000-000000000001",
+        "vehicle_version": 2,
+        "issue_category": "body_damage",
+        "draft_text": "Царапина на левом крыле",
+        "asset_ids": [
+          "70000000-0000-4000-8000-000000000001",
+          "70000000-0000-4000-8000-000000000002"
+        ]
+      },
+      "pending_input_kind": "photo",
+      "version": 3,
+      "updated_at": "2026-09-28T09:00:00Z"
+    },
+    "conversation_version": 3
+  },
+  "request_id": "a0000000-0000-4000-8000-000000000002"
+}

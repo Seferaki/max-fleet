@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.1",
+  "contract_version": "1.2",
   "fake_clock_utc": "2026-09-27T09:00:00Z",
   "seed": "../examples/synthetic-seed.json",
   "cases": [
@@ -21,6 +21,8 @@
     {"id":"checkout.race-loser","area":"checkout","given":"два actor одновременно берут DEMO-001","when":"checkout.create проигравшего","expect":{"http":409,"error":"VEHICLE_UNAVAILABLE","facts":["только один assignment"]}},
     {"id":"checkout.cancel","area":"checkout","given":"driver-1 держит hold","when":"checkout.cancel","expect":{"http":200,"error":null,"facts":["assignment освобождён","история попытки сохранена"]}},
     {"id":"checkout.issue-before","area":"checkout","given":"driver-1 заметил проблему до поездки","when":"issue.create","expect":{"http":200,"error":null,"facts":["hold отменён","issue блокирует выдачу"]}},
+    {"id":"checkout.issue-draft-restart","area":"checkout","given":"черновик issue-before с двумя staged asset IDs сохранён","when":"GET /state после restart","expect":{"http":200,"error":null,"facts":["conversation содержит категорию, описание и оба asset IDs","actor чужого сотрудника не видит черновик"]}},
+    {"id":"checkout.issue-draft-stale","area":"checkout","given":"conversation.version изменился после добавления фото","when":"conversation.save со старой expected_version","expect":{"http":409,"error":"STALE_VERSION","facts":["сохранённые asset IDs не потеряны"]}},
 
     {"id":"inspection.zero","area":"inspection","given":"осмотр без фото","when":"inspection.confirm_photos","expect":{"http":422,"error":"PHOTO_SET_INCOMPLETE","facts":["missing_slots=1..8"]}},
     {"id":"inspection.seven","area":"inspection","given":"сохранено 7 разных фото","when":"inspection.confirm_photos","expect":{"http":422,"error":"PHOTO_SET_INCOMPLETE","facts":["отсутствует ровно один slot","7 фото сохранены"]}},
