@@ -22,7 +22,7 @@ func (p Bootstrap) activeTripCard(ctx context.Context, maxID int64, trip dataapi
 		return errors.New("checkout start returned invalid active trip")
 	}
 	message := fmt.Sprintf("Поездка началась.\nАвтомобиль: %s\nНачало: %s\nФото до поездки: 8/8\nПоездка: %s", trip.VehicleID, formatMoment(trip.StartedAt, p.Location), trip.ID)
-	return p.sendView(ctx, maxID, message, [][]maxsdk.Button{{{Text: "Открыть поездку", Payload: "trip:" + trip.ID}}})
+	return p.sendView(ctx, maxID, message, [][]maxsdk.Button{{{Text: "Открыть поездку", Payload: "trip:" + trip.ID}}, {{Text: "Завершить поездку", Payload: fmt.Sprintf("return-intent:%s:%d", trip.ID, trip.Version)}}})
 }
 
 func (p Bootstrap) checkoutSummaryStart(ctx context.Context, item dataapi.InboxClaimItem, actor string, maxID int64, employee dataapi.Employee, state dataapi.CurrentState, checkoutID string, version int64, start bool) error {

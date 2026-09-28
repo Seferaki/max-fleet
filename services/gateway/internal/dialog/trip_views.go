@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxsdk"
@@ -103,7 +104,7 @@ func (p Bootstrap) showTripView(ctx context.Context, actor string, maxID int64, 
 		return err
 	}
 	if request.kind == "detail" {
-		return p.showTripDetail(ctx, maxID, trip)
+		return p.showTripDetail(ctx, actor, maxID, employee, trip)
 	}
 	if request.version < 1 || trip.Version != request.version {
 		return p.sendView(ctx, maxID, "Данные поездки изменились. Откройте её снова через /trips.", nil)
@@ -192,8 +193,11 @@ func (p Bootstrap) showTripList(ctx context.Context, actor string, maxID int64, 
 	return p.sendView(ctx, maxID, fmt.Sprintf("%s · страница %d", title, page), rows)
 }
 
-func (p Bootstrap) showTripDetail(ctx context.Context, maxID int64, trip dataapi.Trip) error {
+func (p Bootstrap) showTripDetail(ctx context.Context, actor string, maxID int64, employee dataapi.Employee, trip dataapi.Trip) error {
 	rows := [][]maxsdk.Button{}
+	if trip.EmployeeID == employee.ID && trip.Status == "active" {
+		rows = append(rows, []maxsdk.Button{{Text: "Завершить поездку", Payload: fmt.Sprintf("return-intent:%s:%d", trip.ID, trip.Version)}})
+	}
 	if _, ok := visibleTripInspection(trip, "before"); ok {
 		rows = append(rows, []maxsdk.Button{{Text: "Фото до", Payload: fmt.Sprintf("photo-phase:%s:%d:before", trip.ID, trip.Version)}})
 	}
@@ -201,7 +205,20 @@ func (p Bootstrap) showTripDetail(ctx context.Context, maxID int64, trip dataapi
 		rows = append(rows, []maxsdk.Button{{Text: "Фото после", Payload: fmt.Sprintf("photo-phase:%s:%d:after", trip.ID, trip.Version)}})
 	}
 	rows = append(rows, []maxsdk.Button{{Text: "Мои поездки", Payload: "trip-list:mine:1"}})
-	return p.sendView(ctx, maxID, fmt.Sprintf("Поездка %s\nСтатус: %s\nАвтомобиль: %s", trip.ID, oneLine(trip.Status), trip.VehicleID), rows)
+	vehicleLabel := trip.VehicleID
+	if vehicleIDPattern.MatchString(trip.VehicleID) {
+		vehicle, err := p.Data.Vehicle(ctx, actor, trip.VehicleID)
+		if err != nil {
+			return err
+		}
+		vehicleLabel = oneLine(vehicle.Plate)
+	}
+	message := fmt.Sprintf("Поездка %s\nСтатус: %s\nАвтомобиль: %s", trip.ID, oneLine(trip.Status), vehicleLabel)
+	if !trip.StartedAt.IsZero() {
+		elapsed := max(0, int(time.Since(trip.StartedAt).Minutes()))
+		message += fmt.Sprintf("\nНачало: %s\nДлительность: %d ч %d мин", formatMoment(trip.StartedAt, p.Location), elapsed/60, elapsed%60)
+	}
+	return p.sendView(ctx, maxID, message, rows)
 }
 
 func visibleTripInspection(trip dataapi.Trip, phase string) (dataapi.Inspection, bool) {
