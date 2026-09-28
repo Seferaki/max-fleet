@@ -1,0 +1,18 @@
+name: max-fleet-backend
+
+# Только для проверки dev webhook. Базовый Compose не подключается к MAX.
+# Синтетический webhook secret не требует реального bot token.
+services:
+  gateway:
+    environment:
+      MAX_UPDATE_MODE: webhook
+      MAX_INTEGRATION_KEY: demo-bot
+      MAX_WEBHOOK_SECRET_FILE: /run/secrets/max_webhook_secret
+    secrets:
+      - data_api_token
+      - worker_api_token
+      - max_webhook_secret
+
+secrets:
+  max_webhook_secret:
+    file: ${MAX_FLEET_MAX_WEBHOOK_SECRET_FILE:?Set MAX_FLEET_MAX_WEBHOOK_SECRET_FILE to a private local secret file}
