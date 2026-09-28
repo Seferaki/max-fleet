@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "598236e0-6118-4815-9686-f1cda6630793"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T14:42:47Z"
-current_task: BE-03
-current_substep: "BE-03: ссылка на подтверждённую парковку проверена; далее snapshot/golden текстов и кнопок"
-last_verified_code_commit: "5ff14a5dc5e0f07f80a226a2d927fe971b455375"
+heartbeat_utc: "2026-09-28T14:45:31Z"
+current_task: BE-04
+current_substep: "BE-03 проверен и завершён; BE-04: восстановление hold, math/cancel"
+last_verified_code_commit: "b7bd1ad5d4a67a6506251a8022919ebb60861562"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-03: закрепить golden тексты/кнопки меню, каталога и карточки, проверить скрытие выдачи без парковки/ключей; затем BE-04 math/cancel/recovery. UI-01 React карта остаётся P0"
+next_step: "BE-04: восстановить active checkout в /menu, добавить безопасную отмену hold и math с версиями/идемпотентностью; UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -30,7 +30,7 @@ human_required: [H-01]
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
-| BE-03 | IN_PROGRESS | `5ff14a5dc5e0f07f80a226a2d927fe971b455375` — карта подтверждённой парковки в карточке через MAX link-кнопку | Golden текстов/кнопок и закрытие критериев |
+| BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
 | BE-04 | IN_PROGRESS | `744980e591d1d87a0672b5431560bf797dc28624` — 15-минутный hold через DataAPI после подтверждения | Math, cancel, recovery; BE-03 ещё закрывается |
 | BE-05 | TODO | — | См. план |
 | BE-06 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-03 code/test commit: `b7bd1ad5d4a67a6506251a8022919ebb60861562`. Golden тест закрепил точный текст и кнопки меню, первой страницы из пяти машин и карточки синтетической машины, включая URL последней парковки и версию в payload. Отдельные end-to-end тесты карточки без парковки/ключей проверили отсутствие кнопки оформления, карта видна только при известной точке; ранее проверены blocked driver, admin без trip-права, stale callback, неизвестный actor, previous-inspection ACL и пагинация. `go test ./internal/dialog -count=1 -v` → 18 top-level PASS (20 с подслучаями); `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. `git ls-remote` подтвердил публикацию SHA. BE-03 DONE по mock; CI этого SHA и реальный MAX не проверены. UI-01 обязательная React карта для возврата остаётся TODO; ссылка на существующую парковку её не заменяет.
 
 - BE-03 code commit: `5ff14a5dc5e0f07f80a226a2d927fe971b455375`. `maxsdk.Transport.SendButtons` поддерживает HTTPS link-кнопки pinned SDK и отвергает mixed callback/link, HTTP и неверные URL. Карточка с `CurrentParking` показывает «Показать на карте» на OpenStreetMap с координатами последней подтверждённой парковки; отсутствие парковки не даёт ссылку и не предлагает оформление. HTTP-тест SDK проверил `type=link`/URL; диалоговые тесты — кнопки готовой и устаревшей карточки. `go test ./internal/maxsdk ./internal/dialog -count=1 -v` → 32 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. `git ls-remote` подтвердил push этого SHA. CI/реальный MAX не проверены; UI-01 ручная React карта остаётся P0 и не заменяется этой ссылкой. BE-03 IN_PROGRESS до golden проверки.
 
