@@ -294,6 +294,9 @@ func TestCatalogCallbacksUseClickerAndRefreshStaleCard(t *testing.T) {
 	if err := processor.Handle(context.Background(), callbackItem(driver, "menu-callback", "menu", now)); err != nil {
 		t.Fatal(err)
 	}
+	if got := sender.AnsweredCallbacks(); len(got) != 1 || got[0] != "menu-callback" {
+		t.Fatalf("menu callback answer = %v", got)
+	}
 	menu := sender.Messages()[0]
 	if len(menu.Buttons) != 1 || menu.Buttons[0][0].Payload != "cars:1" {
 		t.Fatalf("menu buttons = %+v", menu.Buttons)
@@ -333,5 +336,26 @@ func TestCatalogCallbacksUseClickerAndRefreshStaleCard(t *testing.T) {
 	denied := sender.Messages()[3]
 	if !strings.Contains(denied.Text, "8000000000000000009") || strings.Contains(denied.Text, "Ключи:") || len(denied.Buttons) != 0 {
 		t.Fatalf("callback actor leaked card = %+v", denied)
+	}
+	if got := sender.AnsweredCallbacks(); len(got) != 4 || got[1] != "cars-callback" || got[2] != "stale-card" || got[3] != "other-clicker" {
+		t.Fatalf("callback answers = %v", got)
+	}
+}
+
+type failedAnswerTransport struct{ maxsdk.RecordingTransport }
+
+func (*failedAnswerTransport) AnswerCallback(context.Context, string) error {
+	return errors.New("MAX answer unavailable")
+}
+
+func TestCallbackAnswerFailureDoesNotReplayDeliveredView(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	sender := &failedAnswerTransport{}
+	item := callbackItem("8000000000000000001", "click-answer-fails", "menu", now)
+	if err := (Bootstrap{Data: emptyCatalogReader{}, MAX: sender}).Handle(context.Background(), item); err != nil {
+		t.Fatalf("callback answer failure retried a delivered view: %v", err)
+	}
+	if len(sender.Messages()) != 1 {
+		t.Fatalf("delivered views = %d", len(sender.Messages()))
 	}
 }

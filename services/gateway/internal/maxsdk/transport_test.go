@@ -14,14 +14,74 @@ import (
 )
 
 type stubMessages struct {
-	calls  int
-	result model.SendMessageResult
-	err    error
+	calls        int
+	result       model.SendMessageResult
+	err          error
+	answerCalls  int
+	answerResult model.SimpleQueryResult
+	answerErr    error
 }
 
 func (s *stubMessages) Send(_ context.Context, _ *maxbot.Message) (model.SendMessageResult, error) {
 	s.calls++
 	return s.result, s.err
+}
+
+func (s *stubMessages) AnswerOnCallback(_ context.Context, _ string, _ model.CallbackAnswer) (model.SimpleQueryResult, error) {
+	s.answerCalls++
+	return s.answerResult, s.answerErr
+}
+
+func TestSDKTransportAnswersCallbackThroughPinnedSDK(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != http.MethodPost || r.URL.Path != "/answers" || r.URL.Query().Get("callback_id") != "synthetic-click-1" {
+			t.Errorf("wrong MAX callback request: %s %s", r.Method, r.URL.String())
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body) != 0 {
+			t.Errorf("unexpected callback answer body: size=%d err=%v", len(body), err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer server.Close()
+	api, err := maxbot.NewApi("synthetic-test-token", maxbot.WithBaseURL(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, err := NewTransport(api)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := transport.AnswerCallback(context.Background(), "synthetic-click-1"); err != nil || calls != 1 {
+		t.Fatalf("SDK callback answer = %v, calls=%d", err, calls)
+	}
+}
+
+func TestSDKTransportCallbackResultAndValidation(t *testing.T) {
+	sdk := &stubMessages{answerResult: model.SimpleQueryResult{Success: true}}
+	transport := &SDKTransport{messages: sdk}
+	for _, id := range []string{"", strings.Repeat("x", 156), "\xff"} {
+		if err := transport.AnswerCallback(context.Background(), id); err == nil {
+			t.Fatalf("accepted callback ID %q", id)
+		}
+	}
+	if sdk.answerCalls != 0 {
+		t.Fatal("SDK called for invalid callback ID")
+	}
+	if err := transport.AnswerCallback(context.Background(), "click-1"); err != nil {
+		t.Fatal(err)
+	}
+	sdk.answerResult.Success = false
+	if err := transport.AnswerCallback(context.Background(), "click-2"); err == nil {
+		t.Fatal("accepted unsuccessful MAX result")
+	}
+	sdk.answerErr = errors.New("MAX unavailable")
+	if err := transport.AnswerCallback(context.Background(), "click-3"); !errors.Is(err, sdk.answerErr) {
+		t.Fatalf("SDK error lost: %v", err)
+	}
 }
 
 func TestTransportRejectsInvalidSendBeforeSDK(t *testing.T) {

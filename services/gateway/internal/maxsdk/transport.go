@@ -17,6 +17,7 @@ import (
 type Transport interface {
 	SendText(ctx context.Context, userID int64, text string) (string, error)
 	SendButtons(ctx context.Context, userID int64, text string, rows [][]Button) (string, error)
+	AnswerCallback(ctx context.Context, callbackID string) error
 }
 
 type Button struct {
@@ -26,6 +27,7 @@ type Button struct {
 
 type messageSender interface {
 	Send(context.Context, *maxbot.Message) (model.SendMessageResult, error)
+	AnswerOnCallback(context.Context, string, model.CallbackAnswer) (model.SimpleQueryResult, error)
 }
 
 type SDKTransport struct {
@@ -55,6 +57,23 @@ func (t *SDKTransport) SendButtons(ctx context.Context, userID int64, text strin
 		}
 	}
 	return t.send(ctx, userID, text, keyboard)
+}
+
+func (t *SDKTransport) AnswerCallback(ctx context.Context, callbackID string) error {
+	if t == nil || t.messages == nil {
+		return errors.New("MAX transport is missing")
+	}
+	if callbackID == "" || len(callbackID) > 155 || !utf8.ValidString(callbackID) {
+		return errors.New("MAX callback ID is invalid")
+	}
+	result, err := t.messages.AnswerOnCallback(ctx, callbackID, model.CallbackAnswer{})
+	if err != nil {
+		return err
+	}
+	if !result.Success {
+		return errors.New("MAX did not confirm callback answer")
+	}
+	return nil
 }
 
 func (t *SDKTransport) send(ctx context.Context, userID int64, text string, keyboard *model.Keyboard) (string, error) {
@@ -119,6 +138,26 @@ type RecordedText struct {
 type RecordingTransport struct {
 	mu       sync.Mutex
 	messages []RecordedText
+	answered []string
+}
+
+func (t *RecordingTransport) AnswerCallback(ctx context.Context, callbackID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if callbackID == "" || len(callbackID) > 155 || !utf8.ValidString(callbackID) {
+		return errors.New("MAX callback ID is invalid")
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.answered = append(t.answered, callbackID)
+	return nil
+}
+
+func (t *RecordingTransport) AnsweredCallbacks() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]string(nil), t.answered...)
 }
 
 func (t *RecordingTransport) SendText(ctx context.Context, userID int64, text string) (string, error) {

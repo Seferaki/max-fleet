@@ -45,6 +45,11 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	if err != nil || maxID <= 0 {
 		return errors.New("invalid dialog actor")
 	}
+	if item.Event.EventType == "message_callback" && item.Event.CallbackID != nil {
+		// Callback acknowledgement is best effort: retrying this event after a
+		// successful message send would duplicate the dialog response.
+		_ = p.MAX.AnswerCallback(ctx, *item.Event.CallbackID)
+	}
 	me, err := p.Data.Me(ctx, actor)
 	if err != nil {
 		return err
