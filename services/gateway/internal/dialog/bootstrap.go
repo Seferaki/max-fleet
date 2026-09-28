@@ -55,7 +55,8 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	challengeID, challengeVersion, selectedOption, answer := answerTarget(item.Event)
 	rulesID, rulesVersion, rules := vehicleActionTarget(item.Event, "rules:")
 	acceptCheckoutID, acceptVersion, acceptedRulesID, acceptRules := acceptRulesTarget(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !isMenuEvent(item.Event) {
+	photoCheckoutID, photoVersion, photos := vehicleActionTarget(item.Event, "photos:")
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -109,6 +110,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 			checkoutID, version = acceptCheckoutID, acceptVersion
 		}
 		return p.checkoutRules(ctx, item, actor, maxID, state, checkoutID, version, acceptedRulesID, acceptRules)
+	}
+	if photos {
+		return p.checkoutPhotos(ctx, maxID, state, photoCheckoutID, photoVersion)
 	}
 	if catalog {
 		if pageNumber == 0 {
@@ -167,6 +171,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	message := menuText(*me.Employee, state)
 	if state.Checkout != nil {
 		message += "\nHold до: " + formatMoment(state.Checkout.ExpiresAt, p.Location)
+		if state.Checkout.Status == "holding" && state.Checkout.Step == "inspection" {
+			message += "\n" + photoProgress(state.Checkout.Inspection)
+		}
 	}
 	return p.sendView(ctx, maxID, message, menuRows(*me.Employee, state))
 }
@@ -708,6 +715,9 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 		}
 		if state.Checkout.Step == "rules" {
 			rows = append(rows, []maxsdk.Button{{Text: "Прочитать правила", Payload: fmt.Sprintf("rules:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
+		}
+		if state.Checkout.Step == "inspection" {
+			rows = append(rows, []maxsdk.Button{{Text: "Продолжить фото", Payload: fmt.Sprintf("photos:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 		}
 		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 	}
