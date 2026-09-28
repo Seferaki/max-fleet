@@ -36,6 +36,7 @@ type CheckoutCommander interface {
 	CheckoutSetNoNewIssues(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	CheckoutStart(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	TripBeginReturn(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	ChallengeCreateReturn(context.Context, string, string, int64, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	ConversationSave(context.Context, string, string, int64, dataapi.ConversationSaveInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	IssueCreate(context.Context, string, string, int64, dataapi.IssueCreateInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 }
@@ -91,12 +92,13 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	startID, startVersion, start := vehicleActionTarget(item.Event, "checkout-start:")
 	returnIntentID, returnIntentVersion, returnIntent := vehicleActionTarget(item.Event, "return-intent:")
 	returnConfirmID, returnConfirmVersion, returnConfirm := vehicleActionTarget(item.Event, "return-confirm:")
+	returnMathID, returnMathVersion, returnMath := vehicleActionTarget(item.Event, "return-math:")
 	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
 	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -151,7 +153,13 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	if math {
 		return p.createMath(ctx, item, actor, maxID, state, mathCheckoutID, mathVersion)
 	}
+	if returnMath {
+		return p.createReturnMath(ctx, item, actor, maxID, *me.Employee, state, returnMathID, returnMathVersion)
+	}
 	if answer {
+		if state.Return != nil && state.Trip != nil {
+			return p.answerReturnMath(ctx, item, actor, maxID, *me.Employee, state, challengeID, challengeVersion, selectedOption)
+		}
 		return p.answerMath(ctx, item, actor, maxID, state, challengeID, challengeVersion, selectedOption)
 	}
 	if rules || acceptRules {
@@ -858,6 +866,12 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 	}
 	rows := [][]maxsdk.Button{{{Text: "Мои поездки", Payload: "trip-list:mine:1"}}}
+	if state.Return != nil && state.Trip != nil && state.Trip.Status == "returning" {
+		if state.Return.Step == "math" {
+			rows = append([][]maxsdk.Button{{{Text: "Продолжить возврат · проверка", Payload: fmt.Sprintf("return-math:%s:%d", state.Return.ID, state.Return.Version)}}}, rows...)
+		}
+		rows = append(rows, []maxsdk.Button{{Text: "Текущая поездка", Payload: "trip:" + state.Trip.ID}})
+	}
 	if state.Trip != nil && state.Trip.Status == "active" {
 		rows = append([][]maxsdk.Button{{{Text: "Текущая поездка", Payload: "trip:" + state.Trip.ID}}}, rows...)
 	}
@@ -873,7 +887,11 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 func menuText(employee dataapi.Employee, state dataapi.CurrentState) string {
 	lines := []string{"MAX Fleet"}
 	if state.Trip != nil {
-		lines = append(lines, "Текущая поездка")
+		if state.Return != nil {
+			lines = append(lines, "Продолжить возврат")
+		} else {
+			lines = append(lines, "Текущая поездка")
+		}
 	} else {
 		if state.Checkout != nil {
 			lines = append(lines, "Продолжить оформление")
