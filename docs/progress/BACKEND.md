@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "0b57d4b9-be94-4558-b500-eff5594ee587"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T09:44:09Z"
+heartbeat_utc: "2026-09-28T09:45:38Z"
 current_task: BE-02
-current_substep: "Повтор после domain commit проверен; далее processor/wiring"
+current_substep: "Linux CI race gate добавлен; ожидание опубликованного результата"
 last_verified_code_commit: "dcaa43b344101cf6d248c8c0fb443bdd31a73c0e"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-02: безопасный processor и подключение inbox worker без ложного ack; затем политика poison multi-photo polling"
+next_step: "BE-02: проверить новый go test -race в CI; затем безопасный processor/wiring и политика poison multi-photo polling"
 human_required: [H-01]
 ```
 
@@ -29,7 +29,7 @@ human_required: [H-01]
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
-| BE-02 | IN_PROGRESS | `dcaa43b344101cf6d248c8c0fb443bdd31a73c0e` — stable command key across inbox leases и worker | Processor/wiring; H-01 не блокирует mock |
+| BE-02 | IN_PROGRESS | `dcaa43b344101cf6d248c8c0fb443bdd31a73c0e` — stable command key across inbox leases и worker; CI gate `dcd4509ab201433f64916b33778fa7ec43ea8547` | Проверить race CI, затем processor/wiring; H-01 не блокирует mock |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
 | BE-05 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-02 CI commit: `dcd4509ab201433f64916b33778fa7ec43ea8547`. Добавлен `go test -race ./...` в Linux gateway job, чтобы проверять concurrent mock/lease переходы. `git diff --cached --check` и `py scripts/check-secrets.py --staged` → exit 0. Локально race не запускается без CGO/gcc; локальный YAML parser отсутствует (`ModuleNotFoundError: yaml`). Проверка CI этого SHA ожидается после push, успех пока не заявлен. Следующий шаг: проверить run и устранить реальные race, затем продолжить BE-02.
 
 - BE-02 code commit: `dcaa43b344101cf6d248c8c0fb443bdd31a73c0e`. `inboxworker.CommandKey(event, step)` создаёт стабильный ключ доменной команды из ID события и шага независимо от нового lease token. Интеграционный тест на persistent mock симулировал сбой после успешного `checkout.create`, затем retry того же inbox event с новой арендой: прежний checkout ID вернулся, admin holding остался 1, ack прошёл после обработки. `go test ./internal/inboxworker -count=1 -v` → 4 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Реальный MAX/Python и CI SHA не проверены; dialog Processor/wiring и photo poison WIP, BE-02 IN_PROGRESS.
 
