@@ -133,3 +133,87 @@ func TestBootstrapWorkerAcksMenuButKeepsFollowingPhoto(t *testing.T) {
 		t.Fatalf("photo cycle = %+v, %v", second, err)
 	}
 }
+
+func TestCatalogPagesFiveWithoutLocalCursorAndRechecksAccess(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	actor, _, closeServer := mockClients(t, now)
+	defer closeServer()
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: actor, MAX: sender}
+	const driver = "8000000000000000001"
+	item := menuItem(driver, "cars-first", now)
+	command := "/cars"
+	item.Event.Payload.Text = &command
+	if err := processor.Handle(context.Background(), item); err != nil {
+		t.Fatal(err)
+	}
+	first := sender.Messages()[0].Text
+	if strings.Count(first, "DEMO-") != 5 || !strings.Contains(first, "Далее: /cars 2") || strings.Contains(first, "ключ") {
+		t.Fatalf("first catalog page = %q", first)
+	}
+	// A fresh processor reconstructs page two through the DataAPI cursor chain.
+	processor = Bootstrap{Data: actor, MAX: sender}
+	command = "/cars 2"
+	item.Event.Payload.Text = &command
+	if err := processor.Handle(context.Background(), item); err != nil {
+		t.Fatal(err)
+	}
+	second := sender.Messages()[1].Text
+	if strings.Count(second, "DEMO-") != 5 || !strings.Contains(second, "Назад: /cars 1") || strings.Contains(second, "Далее:") {
+		t.Fatalf("second catalog page = %q", second)
+	}
+	command = "/cars 3"
+	item.Event.Payload.Text = &command
+	if err := processor.Handle(context.Background(), item); err != nil || !strings.Contains(sender.Messages()[2].Text, "Список изменился") {
+		t.Fatalf("stale page = %v, %+v", err, sender.Messages())
+	}
+	blocked := menuItem("8000000000000000004", "cars-blocked", now)
+	command = "/cars"
+	blocked.Event.Payload.Text = &command
+	if err := processor.Handle(context.Background(), blocked); err != nil || !strings.Contains(sender.Messages()[3].Text, "нельзя начать") {
+		t.Fatalf("blocked catalog = %v, %+v", err, sender.Messages())
+	}
+	unknown := menuItem("8000000000000000009", "cars-unknown", now)
+	unknown.Event.Payload.Text = &command
+	if err := processor.Handle(context.Background(), unknown); err != nil || strings.Contains(sender.Messages()[4].Text, "DEMO-") {
+		t.Fatalf("unknown catalog = %v, %+v", err, sender.Messages())
+	}
+	available := true
+	vehicles, err := actor.Vehicles(context.Background(), driver, dataapi.VehicleFilter{Available: &available, Limit: 5})
+	if err != nil || len(vehicles.Items) == 0 {
+		t.Fatalf("seed vehicles = %+v, %v", vehicles, err)
+	}
+	vehicle := vehicles.Items[0]
+	if _, err := actor.CheckoutCreate(context.Background(), driver, vehicle.ID, vehicle.Version, "catalog-hold", nil); err != nil {
+		t.Fatal(err)
+	}
+	item.Event.Payload.Text = &command
+	if err := processor.Handle(context.Background(), item); err != nil || !strings.Contains(sender.Messages()[5].Text, "нельзя начать") {
+		t.Fatalf("active checkout catalog = %v, %+v", err, sender.Messages())
+	}
+}
+
+type emptyCatalogReader struct{}
+
+func (emptyCatalogReader) Me(_ context.Context, actor string) (dataapi.Me, error) {
+	return dataapi.Me{Allowed: true, MaxUserID: actor, Employee: &dataapi.Employee{CanStartTrip: true}}, nil
+}
+func (emptyCatalogReader) State(context.Context, string) (dataapi.CurrentState, error) {
+	return dataapi.CurrentState{}, nil
+}
+func (emptyCatalogReader) Vehicles(context.Context, string, dataapi.VehicleFilter) (dataapi.Page[dataapi.Vehicle], error) {
+	return dataapi.Page[dataapi.Vehicle]{}, nil
+}
+
+func TestCatalogEmptyListMessage(t *testing.T) {
+	sender := &maxsdk.RecordingTransport{}
+	command := "/cars"
+	item := menuItem("8000000000000000001", "cars-empty", time.Now())
+	item.Event.Payload.Text = &command
+	if err := (Bootstrap{Data: emptyCatalogReader{}, MAX: sender}).Handle(context.Background(), item); err != nil {
+		t.Fatal(err)
+	}
+	if got := sender.Messages()[0].Text; got != "Сейчас нет доступных автомобилей. Попробуйте обновить список позже." {
+		t.Fatalf("empty catalog = %q", got)
+	}
+}
