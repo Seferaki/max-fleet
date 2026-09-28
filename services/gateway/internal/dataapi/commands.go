@@ -94,6 +94,28 @@ type IssueCreateInput struct {
 	AssetIDs     []string `json:"asset_ids"`
 }
 
+type ConversationSaveInput struct {
+	Flow             string              `json:"flow"`
+	Step             string              `json:"step"`
+	Context          ConversationContext `json:"context"`
+	PendingInputKind *string             `json:"pending_input_kind,omitempty"`
+}
+
+func (c *Client) ConversationSave(ctx context.Context, actorMaxID, employeeID string, version int64, input ConversationSaveInput, key string, inbox *InboxLease) (CommandResult, error) {
+	if strings.TrimSpace(input.Flow) == "" || len(input.Flow) > 80 || strings.TrimSpace(input.Step) == "" || len(input.Step) > 80 ||
+		input.Context.DraftText != nil && len(*input.Context.DraftText) > 1000 || len(input.Context.AssetIDs) > 3 ||
+		input.Context.VehicleVersion != nil && *input.Context.VehicleVersion < 1 ||
+		input.PendingInputKind != nil && *input.PendingInputKind != "text" && *input.PendingInputKind != "photo" && *input.PendingInputKind != "geo" && *input.PendingInputKind != "none" {
+		return CommandResult{}, errors.New("data-api: invalid conversation input")
+	}
+	for _, id := range input.Context.AssetIDs {
+		if !validUUID(id) {
+			return CommandResult{}, errors.New("data-api: invalid conversation asset")
+		}
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[ConversationSaveInput]{"conversation.save", employeeID, version, input})
+}
+
 func validFuel(level int) bool {
 	return level == 0 || level == 25 || level == 50 || level == 75 || level == 100
 }

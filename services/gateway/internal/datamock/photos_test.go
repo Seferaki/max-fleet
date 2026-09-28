@@ -143,7 +143,7 @@ func TestPhotoErrorsPreserveEarlierSlots(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/internal/v1/inspections/"+checkout.Inspection.ID+"/photos/2", &oversized)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Authorization", "Bearer test-service-token")
-	req.Header.Set("X-Contract-Version", "1.1")
+	req.Header.Set("X-Contract-Version", "1.2")
 	req.Header.Set("X-Request-ID", "11111111-1111-4111-8111-111111111111")
 	req.Header.Set("X-Actor-Max-ID", driverID)
 	req.Header.Set("Idempotency-Key", "oversized-photo")

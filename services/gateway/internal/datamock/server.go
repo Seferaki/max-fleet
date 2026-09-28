@@ -54,6 +54,7 @@ type Server struct {
 	trips                   map[string]dataapi.Trip
 	returns                 map[string]dataapi.Return
 	issues                  map[string]dataapi.Issue
+	conversations           map[string]dataapi.Conversation
 	issueAssets             map[string]stagedIssueAsset
 	stageResults            map[string]stageAttempt
 	commands                map[string]commandRecord
@@ -115,7 +116,7 @@ func newServer(token, workerToken, snapshotPath string, now func() time.Time) (*
 		return nil, errors.New("data-mock: invalid synthetic seed")
 	}
 	stamp := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
-	s := &Server{token: token, workerToken: workerToken, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), trips: make(map[string]dataapi.Trip), returns: make(map[string]dataapi.Return), issues: make(map[string]dataapi.Issue), issueAssets: make(map[string]stagedIssueAsset), stageResults: make(map[string]stageAttempt), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), challenges: make(map[string]mockChallenge), inbox: make(map[string]mockInboxEvent), inboxKeys: make(map[string]inboxKeyRecord), inboxClaims: make(map[string]inboxClaimRecord), inboxTransitions: make(map[string]inboxTransitionRecord), integrations: map[string]mockIntegration{"demo-bot": {Data: dataapi.Integration{Key: "demo-bot", Mode: "polling", Version: 1, UpdatedAt: stamp}}}, integrationLeases: make(map[string]integrationLeaseRecord), integrationCheckpoints: make(map[string]integrationCheckpointRecord), notifications: make(map[string]mockNotification), notificationClaims: make(map[string]notificationClaimRecord), notificationTransitions: make(map[string]notificationTransitionRecord), now: now,
+	s := &Server{token: token, workerToken: workerToken, employees: make(map[string]dataapi.Employee), checkouts: make(map[string]dataapi.Checkout), trips: make(map[string]dataapi.Trip), returns: make(map[string]dataapi.Return), issues: make(map[string]dataapi.Issue), conversations: make(map[string]dataapi.Conversation), issueAssets: make(map[string]stagedIssueAsset), stageResults: make(map[string]stageAttempt), commands: make(map[string]commandRecord), photos: make(map[string]map[int]photoRecord), photoResults: make(map[string]photoAttempt), challenges: make(map[string]mockChallenge), inbox: make(map[string]mockInboxEvent), inboxKeys: make(map[string]inboxKeyRecord), inboxClaims: make(map[string]inboxClaimRecord), inboxTransitions: make(map[string]inboxTransitionRecord), integrations: map[string]mockIntegration{"demo-bot": {Data: dataapi.Integration{Key: "demo-bot", Mode: "polling", Version: 1, UpdatedAt: stamp}}}, integrationLeases: make(map[string]integrationLeaseRecord), integrationCheckpoints: make(map[string]integrationCheckpointRecord), notifications: make(map[string]mockNotification), notificationClaims: make(map[string]notificationClaimRecord), notificationTransitions: make(map[string]notificationTransitionRecord), now: now,
 		rules: dataapi.Rules{ID: "90000000-0000-4000-8000-000000000001", VersionLabel: "demo-v1", Body: seed.Rules}}
 	for i, item := range seed.Employees {
 		id := fmt.Sprintf("80000000-0000-4000-8000-%012d", i+1)
@@ -330,6 +331,12 @@ func (s *Server) currentState(w http.ResponseWriter, r *http.Request, requestID 
 	}
 	employee := s.employees[r.Header.Get("X-Actor-Max-ID")]
 	state := dataapi.CurrentState{ConversationVersion: 1}
+	if conversation, found := s.conversations[employee.MaxUserID]; found {
+		copy := conversation
+		copy.Context.AssetIDs = append([]string(nil), conversation.Context.AssetIDs...)
+		state.Conversation = &copy
+		state.ConversationVersion = conversation.Version
+	}
 	for _, checkout := range s.checkouts {
 		if checkout.EmployeeID == employee.ID && checkout.Status == "holding" {
 			current := checkout

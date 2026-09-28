@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-// DTOs mirror the read projections of contracts/data-api.openapi.yaml v1.1.
+// DTOs mirror the read projections of contracts/data-api.openapi.yaml v1.2.
 // Nullable fields use pointers so absent values remain distinct from zero values.
 type Meta struct {
 	ContractVersion string   `json:"contract_version"`
@@ -162,11 +162,36 @@ type Return struct {
 }
 
 type CurrentState struct {
-	Checkout            *Checkout `json:"checkout"`
-	Trip                *Trip     `json:"trip"`
-	Return              *Return   `json:"return"`
-	NextStep            *string   `json:"next_step"`
-	ConversationVersion int64     `json:"conversation_version"`
+	Checkout            *Checkout     `json:"checkout"`
+	Trip                *Trip         `json:"trip"`
+	Return              *Return       `json:"return"`
+	NextStep            *string       `json:"next_step"`
+	Conversation        *Conversation `json:"conversation"`
+	ConversationVersion int64         `json:"conversation_version"`
+}
+
+type ConversationContext struct {
+	TargetID       *string  `json:"target_id,omitempty"`
+	VehicleID      *string  `json:"vehicle_id,omitempty"`
+	VehicleVersion *int64   `json:"vehicle_version,omitempty"`
+	IssueCategory  *string  `json:"issue_category,omitempty"`
+	DraftText      *string  `json:"draft_text,omitempty"`
+	AssetIDs       []string `json:"asset_ids,omitempty"`
+	IssueID        *string  `json:"issue_id,omitempty"`
+	SelectedSlot   *int     `json:"selected_slot,omitempty"`
+	ChallengeID    *string  `json:"challenge_id,omitempty"`
+	TripID         *string  `json:"trip_id,omitempty"`
+	ReturnID       *string  `json:"return_id,omitempty"`
+	Cursor         *string  `json:"cursor,omitempty"`
+}
+
+type Conversation struct {
+	Flow             string              `json:"flow"`
+	Step             string              `json:"step"`
+	Context          ConversationContext `json:"context"`
+	PendingInputKind *string             `json:"pending_input_kind"`
+	Version          int64               `json:"version"`
+	UpdatedAt        time.Time           `json:"updated_at"`
 }
 
 type PhotoUploadResult struct {
