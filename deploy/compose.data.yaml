@@ -87,6 +87,9 @@ services:
     <<: *hardening
     image: max-fleet-data:local
     read_only: true
+    # Starlette буферизует multipart >1 MiB во временный файл; корень ФС только для чтения.
+    tmpfs:
+      - /tmp:size=128m,mode=1777
     environment: *data-env
     secrets: [data_runtime_password, data_api_token, worker_api_token, s3_access_key, s3_secret_key]
     # Только loopback: внешняя сеть к data-api не допускается, Go ходит по внутренней сети.
