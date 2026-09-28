@@ -70,12 +70,14 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	photoCheckoutID, photoVersion, photos := vehicleActionTarget(item.Event, "photos:")
 	fuelInspectionID, fuelVersion, fuel := vehicleActionTarget(item.Event, "fuel:")
 	setFuelID, setFuelVersion, fuelLevel, setFuel := fuelChoiceTarget(item.Event)
+	odometerInspectionID, odometerVersion, odometerPrompt := vehicleActionTarget(item.Event, "odometer:")
+	odometerText, odometerCommand := odometerInput(item.Event)
 	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
 	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -142,6 +144,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 			inspectionID, version = setFuelID, setFuelVersion
 		}
 		return p.checkoutFuel(ctx, item, actor, maxID, state, inspectionID, version, fuelLevel, setFuel)
+	}
+	if odometerPrompt || odometerCommand {
+		return p.checkoutOdometer(ctx, item, actor, maxID, state, odometerInspectionID, odometerVersion, odometerText, odometerCommand)
 	}
 	if confirmPhotos {
 		return p.confirmCheckoutPhotos(ctx, item, actor, maxID, state, confirmInspectionID, confirmInspectionVersion)
@@ -768,6 +773,7 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 				}
 			}
 			rows = append(rows, []maxsdk.Button{{Text: "Указать топливо", Payload: fmt.Sprintf("fuel:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)}})
+			rows = append(rows, []maxsdk.Button{{Text: "Указать пробег", Payload: fmt.Sprintf("odometer:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)}})
 		}
 		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 	}

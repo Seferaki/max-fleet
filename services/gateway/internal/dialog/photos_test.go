@@ -201,7 +201,7 @@ func TestPhotoUploadCountsOnlyStoredImageAndStopsAtEight(t *testing.T) {
 		t.Fatal(err)
 	}
 	menu := sender.Messages()[len(sender.Messages())-1]
-	if len(menu.Buttons) != 5 || !strings.HasPrefix(menu.Buttons[1][0].Payload, "confirm-photos:") {
+	if len(menu.Buttons) != 6 || !strings.HasPrefix(menu.Buttons[1][0].Payload, "confirm-photos:") {
 		t.Fatalf("full photo menu: %+v", menu)
 	}
 	if err := processor.Handle(context.Background(), callbackItem(driver, "photo-confirm-no-lease", menu.Buttons[1][0].Payload, now)); err == nil || !strings.Contains(err.Error(), "durable inbox lease") {
@@ -230,7 +230,7 @@ func TestPhotoUploadCountsOnlyStoredImageAndStopsAtEight(t *testing.T) {
 		t.Fatal(err)
 	}
 	menu = sender.Messages()[len(sender.Messages())-1]
-	if len(menu.Buttons) != 4 || !strings.HasPrefix(menu.Buttons[1][0].Payload, "replace-photos:") {
+	if len(menu.Buttons) != 5 || !strings.HasPrefix(menu.Buttons[1][0].Payload, "replace-photos:") {
 		t.Fatalf("replacement menu: %+v", menu)
 	}
 	if err := processor.Handle(context.Background(), callbackItem(driver, "photo-replace-choose", menu.Buttons[1][0].Payload, now)); err != nil {
