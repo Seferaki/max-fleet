@@ -60,8 +60,8 @@ func Normalize(integrationKey string, update model.Update) (dataapi.NormalizedEv
 		event.MessageID = stringPtr(update.Message.Body.Mid)
 		event.EventKey = "message:" + update.Message.Body.Mid + ":message_created"
 		if err := normalizeMessage(&event.Payload, update.Message.Body); err != nil {
-			if errors.Is(err, ErrMultipleAttachments) {
-				return event, err // actor is validated; polling can answer without storing malformed media
+			if errors.Is(err, ErrMultipleAttachments) || errors.Is(err, ErrUnsupportedContent) {
+				return event, err // actor is validated; ingress can answer without storing rejected media
 			}
 			return dataapi.NormalizedEvent{}, err
 		}
@@ -156,3 +156,14 @@ func InboxIdempotencyKey(event dataapi.NormalizedEvent) string {
 }
 
 func stringPtr(value string) *string { return &value }
+
+// RejectionText contains no attachment URL, token or message body.
+func RejectionText(err error) string {
+	if errors.Is(err, ErrMultipleAttachments) {
+		return "Отправьте только одно фото или одну геопозицию в сообщении. Несколько вложений не сохранены."
+	}
+	if errors.Is(err, ErrUnsupportedContent) {
+		return "Видео и документы не принимаются. Отправьте одно фото JPEG, PNG или WebP либо текст; вложение не сохранено."
+	}
+	return ""
+}

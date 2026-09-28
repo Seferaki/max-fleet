@@ -3,6 +3,7 @@ package maxpoll
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
@@ -172,5 +173,36 @@ func TestPollingMultiPhotoNeedsSuccessfulReplyBeforeCheckpoint(t *testing.T) {
 	claim, err := worker.ClaimInbox(context.Background(), "inbox-worker", 10, "claim-multi-photo")
 	if err != nil || len(claim.Items) != 1 || claim.Items[0].Event.Payload.Kind != "start" {
 		t.Fatalf("rejected photo reached inbox or valid event lost: %+v, %v", claim, err)
+	}
+}
+
+func TestPollingRejectsVideoAndDocumentThenAdvances(t *testing.T) {
+	mock, err := datamock.NewWithSnapshotAndWorkerToken("synthetic-service-token", "synthetic-worker-token", filepath.Join(t.TempDir(), "snapshot.json"), time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, server := workerAgainst(t, mock)
+	defer server.Close()
+	updates := make([]model.Update, 0, 2)
+	for index, kind := range []model.AttachmentType{model.AttachVideo, model.AttachFile} {
+		update := testUpdate()
+		update.UpdateType = model.UpdateMessageCreated
+		update.UserID = 8000000000000000001
+		update.Message = &model.MessageUpdate{Recipient: model.Recipient{ChatID: 8000000000000000001, ChatType: model.ChatTypeDialog}, Sender: model.Sender{UserID: 8000000000000000001}, Body: model.MessageBody{Mid: fmt.Sprintf("unsupported-%d", index), Attachments: []model.Attachment{{Type: kind}}}}
+		updates = append(updates, update)
+	}
+	reply := &rejectTransport{}
+	runner := Runner{IntegrationKey: "demo-bot", WorkerID: "poller-media", Source: &source{updates: updates, next: 43}, Store: worker, Reject: reply}
+	result, err := runner.RunOnce(context.Background())
+	if err != nil || result.Rejected != 2 || result.Stored != 0 || result.Marker == nil || *result.Marker != "43" {
+		t.Fatalf("unsupported media polling: %+v %v", result, err)
+	}
+	messages := reply.Messages()
+	if len(messages) != 2 || messages[0].UserID != 8000000000000000001 || messages[1].UserID != 8000000000000000001 {
+		t.Fatalf("missing safe replies: %+v", messages)
+	}
+	claim, err := worker.ClaimInbox(context.Background(), "worker-media", 10, "claim-unsupported-media")
+	if err != nil || len(claim.Items) != 0 {
+		t.Fatalf("unsupported media stored in inbox: %+v %v", claim, err)
 	}
 }

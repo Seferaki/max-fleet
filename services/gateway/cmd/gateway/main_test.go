@@ -51,7 +51,7 @@ func TestGatewayWebhookWiringAndMockProductionBan(t *testing.T) {
 	}
 	stats := httptest.NewRecorder()
 	handler.ServeHTTP(stats, httptest.NewRequest(http.MethodGet, "/health/max-events", nil))
-	if stats.Code != http.StatusOK || strings.TrimSpace(stats.Body.String()) != `{"accepted":1,"ignored":0,"unavailable":0}` {
+	if stats.Code != http.StatusOK || strings.TrimSpace(stats.Body.String()) != `{"accepted":1,"ignored":0,"rejected":0,"unavailable":0}` {
 		t.Fatalf("gateway event counters = %d: %s", stats.Code, stats.Body.String())
 	}
 	ready := httptest.NewRecorder()

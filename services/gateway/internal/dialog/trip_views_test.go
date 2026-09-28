@@ -15,6 +15,7 @@ type tripViewData struct {
 	*dataapi.Client
 	trip       dataapi.Trip
 	photoCalls int
+	photoErr   error
 }
 
 func (d *tripViewData) Trip(_ context.Context, actor, id string) (dataapi.Trip, error) {
@@ -40,6 +41,9 @@ func (d *tripViewData) AdminTrips(_ context.Context, actor string, _ dataapi.Adm
 
 func (d *tripViewData) TripInspectionPhoto(_ context.Context, actor, id, phase string, slot int) (dataapi.AssetContent, error) {
 	d.photoCalls++
+	if d.photoErr != nil {
+		return dataapi.AssetContent{}, d.photoErr
+	}
 	if id != d.trip.ID || slot != 3 || actor != "8000000000000000001" && actor != "8000000000000000003" {
 		return dataapi.AssetContent{}, &dataapi.APIError{Status: http.StatusNotFound, Code: "NOT_FOUND"}
 	}
@@ -109,10 +113,15 @@ func TestTripPhotoDialogOwnerAdminPhaseAndVersion(t *testing.T) {
 	if err := processor.Handle(ctx, callbackItem(admin, "admin-detail", "trip:"+tripID, now)); err != nil || len(sender.Messages()[7].Buttons) != 3 {
 		t.Fatalf("admin trip phases: %v %+v", err, sender.Messages())
 	}
+	data.photoErr = &dataapi.APIError{Status: http.StatusServiceUnavailable, Code: "STORAGE_UNAVAILABLE", Retryable: true}
+	if err := processor.Handle(ctx, callbackItem(admin, "admin-after-failed", "photo-view:"+tripID+":3:after:3", now)); err == nil || len(sender.images) != 1 {
+		t.Fatalf("failed read sent image: %v %+v", err, sender.images)
+	}
+	data.photoErr = nil
 	if err := processor.Handle(ctx, callbackItem(admin, "admin-after", "photo-view:"+tripID+":3:after:3", now)); err != nil || len(sender.images) != 2 || !strings.Contains(sender.images[1], "synthetic-photo-after") {
 		t.Fatalf("admin after photo: %v %+v", err, sender.images)
 	}
-	if data.photoCalls != 2 {
+	if data.photoCalls != 3 {
 		t.Fatalf("unexpected private photo reads: %d", data.photoCalls)
 	}
 }

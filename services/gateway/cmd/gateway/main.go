@@ -110,7 +110,24 @@ func webhookHandler(ctx context.Context) (http.Handler, error) {
 			return nil, errors.New("gateway: production requires a real DataAPI")
 		}
 	}
-	webhook, err := maxwebhook.New(secret, integrationKey, worker)
+	var reject maxsdk.Transport
+	if os.Getenv("MAX_BOT_TOKEN_FILE") != "" {
+		token, err := readSecretFile("MAX_BOT_TOKEN_FILE")
+		if err != nil {
+			return nil, err
+		}
+		api, err := maxsdk.New(token)
+		if err != nil {
+			return nil, errors.New("gateway: invalid MAX SDK configuration")
+		}
+		reject, err = maxsdk.NewTransport(api)
+		if err != nil {
+			return nil, err
+		}
+	} else if strings.EqualFold(os.Getenv("APP_ENV"), "production") {
+		return nil, errors.New("gateway: MAX_BOT_TOKEN_FILE required in production")
+	}
+	webhook, err := maxwebhook.New(secret, integrationKey, worker, reject)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +183,7 @@ func pollingLoop(ctx context.Context, runner maxpoll.Runner) {
 			log.Printf("gateway: polling ignored %d unsupported events", result.Ignored)
 		}
 		if err == nil && result.Rejected > 0 {
-			log.Printf("gateway: polling rejected %d multi-attachment events", result.Rejected)
+			log.Printf("gateway: polling rejected %d unsupported media events", result.Rejected)
 		}
 		select {
 		case <-ctx.Done():

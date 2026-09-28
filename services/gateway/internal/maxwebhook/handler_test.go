@@ -12,6 +12,7 @@ import (
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/datamock"
+	"github.com/Seferaki/max-fleet/services/gateway/internal/maxsdk"
 	maxbot "github.com/max-messenger/max-bot-api-client-go/v2"
 )
 
@@ -25,6 +26,18 @@ type recordingStore struct {
 	event dataapi.NormalizedEvent
 	key   string
 	err   error
+}
+
+type flakyReject struct {
+	*maxsdk.RecordingTransport
+	fail bool
+}
+
+func (r *flakyReject) SendText(ctx context.Context, userID int64, message string) (string, error) {
+	if r.fail {
+		return "", errors.New("synthetic MAX failure")
+	}
+	return r.RecordingTransport.SendText(ctx, userID, message)
 }
 
 func (s *recordingStore) StoreInbox(_ context.Context, event dataapi.NormalizedEvent, key string) (dataapi.InboxStored, error) {
@@ -93,6 +106,33 @@ func TestWebhookRejectsMultiPhotoAndIgnoresGroup(t *testing.T) {
 	}
 	if store.calls != 0 {
 		t.Fatalf("rejected event reached inbox %d times", store.calls)
+	}
+}
+
+func TestWebhookRepliesToUnsupportedMediaBeforeAcknowledging(t *testing.T) {
+	store := &recordingStore{}
+	reject := &flakyReject{RecordingTransport: &maxsdk.RecordingTransport{}, fail: true}
+	handler, err := New(testSecret, "demo-bot", store, reject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := strings.Replace(photoJSON, `"type":"image"`, `"type":"file"`, 1)
+	if response := postWebhook(handler, "wrong-secret", file); response.Code != http.StatusUnauthorized || len(reject.Messages()) != 0 {
+		t.Fatalf("unauthenticated media reached MAX: %d", response.Code)
+	}
+	if response := postWebhook(handler, testSecret, file); response.Code != http.StatusServiceUnavailable || store.calls != 0 {
+		t.Fatalf("failed reply acknowledged or stored: %d calls=%d", response.Code, store.calls)
+	}
+	reject.fail = false
+	video := strings.Replace(photoJSON, `"type":"image"`, `"type":"video"`, 1)
+	multi := strings.Replace(photoJSON, `{"type":"image","payload":{"token":"synthetic-photo-source"}}`, `{"type":"image","payload":{"token":"one"}},{"type":"image","payload":{"token":"two"}}`, 1)
+	for _, body := range []string{file, video, multi} {
+		if response := postWebhook(handler, testSecret, body); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "REJECTED") {
+			t.Fatalf("unsupported media reply: %d %s", response.Code, response.Body.String())
+		}
+	}
+	if len(reject.Messages()) != 3 || store.calls != 0 || handler.Stats().Rejected != 3 || handler.Stats().Unavailable != 1 {
+		t.Fatalf("unsupported media recovery: replies=%+v calls=%d stats=%+v", reject.Messages(), store.calls, handler.Stats())
 	}
 }
 
