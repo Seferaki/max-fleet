@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	maxbot "github.com/max-messenger/max-bot-api-client-go/v2"
 	"github.com/max-messenger/max-bot-api-client-go/v2/model"
@@ -55,6 +56,9 @@ func validateTextMessage(userID int64, text string) error {
 	}
 	if strings.TrimSpace(text) == "" {
 		return errors.New("MAX message text is empty")
+	}
+	if !utf8.ValidString(text) || utf8.RuneCountInString(text) > 4000 {
+		return errors.New("MAX message text is invalid or too long")
 	}
 	return nil
 }

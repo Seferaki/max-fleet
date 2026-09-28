@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	maxbot "github.com/max-messenger/max-bot-api-client-go/v2"
@@ -29,7 +30,7 @@ func TestTransportRejectsInvalidSendBeforeSDK(t *testing.T) {
 	for _, test := range []struct {
 		id   int64
 		text string
-	}{{0, "hello"}, {-1, "hello"}, {123, " \n "}} {
+	}{{0, "hello"}, {-1, "hello"}, {123, " \n "}, {123, strings.Repeat("а", 4001)}} {
 		if _, err := transport.SendText(context.Background(), test.id, test.text); err == nil {
 			t.Fatalf("accepted recipient %d and text %q", test.id, test.text)
 		}
