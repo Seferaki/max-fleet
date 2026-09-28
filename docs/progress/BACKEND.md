@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "0b57d4b9-be94-4558-b500-eff5594ee587"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T09:12:08Z"
+heartbeat_utc: "2026-09-28T09:14:49Z"
 current_task: BE-01
-current_substep: "31/44 contract runner; далее готовые vehicle/inspection cases"
-last_verified_code_commit: "213c0ff045520905e6a940fde58e149eda584eb6"
+current_substep: "33/44 contract runner; далее identity.blocked-return"
+last_verified_code_commit: "2d361151f679d3c81a9e1d5c3363179f03c17c7d"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-01: исполнить vehicles.known-issue/incomplete и inspection.extra, затем оценить оставшиеся 10 сценариев по зависимостям; WIP"
+next_step: "BE-01: исполнить identity.blocked-return; остальные сценарии требуют BE-02/BE-07/BE-09/BE-10 или уточнения mock; WIP"
 human_required: [H-01]
 ```
 
@@ -28,7 +28,7 @@ human_required: [H-01]
 | S-01 | DONE | `76d2ac9b2b709e41734fa32d413c00695daa600b`; проверки ниже | H-01 ожидает владельца; S-02 продолжается независимо |
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
-| BE-01 | IN_PROGRESS | `213c0ff045520905e6a940fde58e149eda584eb6` — typed WorkerClient и mock notification transitions; WIP | 31/44 runner-сценарий; расширить runner и оставшиеся маршруты |
+| BE-01 | IN_PROGRESS | `2d361151f679d3c81a9e1d5c3363179f03c17c7d` — eligible vehicle filter, typed WorkerClient и notification transitions; WIP | 33/44 runner-сценария; оценить оставшиеся по зависимостям |
 | BE-02 | TODO | — | См. план |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-01 code commit: `2d361151f679d3c81a9e1d5c3363179f03c17c7d`. Исправлена единая eligibility для `/vehicles?available=true`, admin summary и `checkout.create`: нужны status available, место, инструкция ключей, отсутствие manual block/needs review. Runner добавил `vehicles.incomplete` (две неполные карточки исключены, выдача запрещена) и `vehicles.known-issue` (известное неблокирующее замечание видно и не запрещает hold). 33/44 сценария PASS. `go test ./internal/datamock -run '^TestContractScenarioSubsetAgainstHTTPMock/vehicles' -count=3 -v`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Проверка сделана на mock, не Python/реальном MAX; Docker/CI этого SHA не проверены. Следующий шаг: `identity.blocked-return`; BE-01 WIP.
 
 - BE-01 code commit: `213c0ff045520905e6a940fde58e149eda584eb6`. Runner добавил `checkout.issue-before`: замечание before создаётся из hold, отменяет hold, переводит машину в unavailable/needs_review и запрещает новую выдачу; поездка не создаётся. Теперь 31/44 сценарий PASS. `go test ./internal/datamock -run '^TestContractScenarioSubsetAgainstHTTPMock/checkout.issue-before$' -count=3 -v`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Это mock, не реальные MAX/Python; Docker/CI этого SHA не проверены. Следующий шаг: готовые vehicle/inspection cases; BE-01 WIP.
 
