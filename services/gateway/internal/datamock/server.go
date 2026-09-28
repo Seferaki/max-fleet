@@ -268,7 +268,8 @@ func (s *Server) listVehicles(w http.ResponseWriter, r *http.Request, requestID 
 	}
 	filtered := make([]dataapi.Vehicle, 0, len(s.vehicles))
 	for _, v := range s.vehicles {
-		if available == "true" && v.Status != "available" || available == "false" && v.Status == "available" {
+		eligible := eligibleForCheckout(v)
+		if available == "true" && !eligible || available == "false" && eligible {
 			continue
 		}
 		filtered = append(filtered, v)
@@ -294,6 +295,10 @@ func (s *Server) listVehicles(w http.ResponseWriter, r *http.Request, requestID 
 		next = &encoded
 	}
 	s.success(w, requestID, dataapi.Page[dataapi.Vehicle]{Items: filtered[offset:end], NextCursor: next})
+}
+
+func eligibleForCheckout(v dataapi.Vehicle) bool {
+	return v.Status == "available" && !v.ManualBlocked && !v.NeedsReview && v.CurrentParking != nil && strings.TrimSpace(v.KeyInstructions) != ""
 }
 
 func (s *Server) vehicle(w http.ResponseWriter, r *http.Request, requestID string) {

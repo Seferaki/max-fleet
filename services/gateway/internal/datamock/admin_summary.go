@@ -18,7 +18,7 @@ func (s *Server) adminSummary(w http.ResponseWriter, r *http.Request, requestID 
 	}
 	var summary dataapi.AdminSummary
 	for _, vehicle := range s.vehicles {
-		if vehicle.Status == "available" {
+		if eligibleForCheckout(vehicle) {
 			summary.Available++
 		}
 		if vehicle.NeedsReview {

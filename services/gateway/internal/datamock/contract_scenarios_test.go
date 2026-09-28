@@ -200,6 +200,50 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 			return err
 		},
+		"vehicles.incomplete": func(s scenarioContext) error {
+			s.mock.vehicles[0].CurrentParking = nil
+			s.mock.vehicles[1].KeyInstructions = ""
+			available := true
+			page, err := s.client.Vehicles(s.ctx, driverID, dataapi.VehicleFilter{Available: &available, Limit: 50})
+			if err != nil {
+				return err
+			}
+			for _, vehicle := range page.Items {
+				if vehicle.ID == s.mock.vehicles[0].ID || vehicle.ID == s.mock.vehicles[1].ID {
+					s.t.Fatal("incomplete vehicle offered as available")
+				}
+			}
+			if len(page.Items) != 8 {
+				s.t.Fatalf("expected 8 eligible vehicles, got %d", len(page.Items))
+			}
+			summary, err := s.client.AdminSummary(s.ctx, "8000000000000000003")
+			if err != nil || summary.Available != 8 {
+				s.t.Fatalf("admin available count differs from list: %+v %v", summary, err)
+			}
+			_, err = s.client.CheckoutCreate(s.ctx, driverID, firstVehicleID, 1, "scenario-incomplete-hold", nil)
+			var apiErr *dataapi.APIError
+			if !errors.As(err, &apiErr) || apiErr.Code != "VEHICLE_UNAVAILABLE" {
+				s.t.Fatalf("incomplete vehicle could be held: %v", err)
+			}
+			return nil
+		},
+		"vehicles.known-issue": func(s scenarioContext) error {
+			s.mock.vehicles[0].KnownNonblockingIssues = []string{"Синтетический скол краски"}
+			vehicle, err := s.client.Vehicle(s.ctx, driverID, firstVehicleID)
+			if err != nil || len(vehicle.KnownNonblockingIssues) != 1 {
+				s.t.Fatalf("known issue hidden: %+v %v", vehicle, err)
+			}
+			available := true
+			page, err := s.client.Vehicles(s.ctx, driverID, dataapi.VehicleFilter{Available: &available, Limit: 50})
+			if err != nil || len(page.Items) != 10 {
+				s.t.Fatalf("known issue blocked availability: %d %v", len(page.Items), err)
+			}
+			hold := s.hold("scenario-known-issue-hold")
+			if hold.VehicleID != firstVehicleID || s.mock.vehicles[0].Status != "holding" {
+				s.t.Fatal("known issue blocked checkout")
+			}
+			return nil
+		},
 		"checkout.busy": func(s scenarioContext) error {
 			s.hold("scenario-busy-one")
 			_, err := s.client.CheckoutCreate(s.ctx, "8000000000000000002", firstVehicleID, 1, "scenario-busy-two", nil)
@@ -606,7 +650,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 		})
 	}
-	if len(runs) != 31 {
+	if len(runs) != 33 {
 		t.Fatal("scenario runner count changed")
 	}
 	for id := range runs {

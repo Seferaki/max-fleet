@@ -153,7 +153,7 @@ func (s *Server) createCheckout(w http.ResponseWriter, requestID, actor string, 
 		if vehicle.ID != command.TargetID {
 			continue
 		}
-		if vehicle.Status != "available" || vehicle.ManualBlocked || vehicle.NeedsReview || vehicle.CurrentParking == nil || vehicle.KeyInstructions == "" {
+		if !eligibleForCheckout(*vehicle) {
 			s.fail(w, requestID, http.StatusConflict, "VEHICLE_UNAVAILABLE")
 			return dataapi.CommandResult{}, false
 		}
