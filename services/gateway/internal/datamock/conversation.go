@@ -3,6 +3,7 @@ package datamock
 import (
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 )
@@ -13,7 +14,7 @@ func validConversationContext(context dataapi.ConversationContext) bool {
 			return false
 		}
 	}
-	if context.VehicleVersion != nil && *context.VehicleVersion < 1 || context.SelectedSlot != nil && (*context.SelectedSlot < 1 || *context.SelectedSlot > 8) || context.DraftText != nil && len(*context.DraftText) > 1000 || context.Cursor != nil && len(*context.Cursor) > 2048 || len(context.AssetIDs) > 3 {
+	if context.VehicleVersion != nil && *context.VehicleVersion < 1 || context.SelectedSlot != nil && (*context.SelectedSlot < 1 || *context.SelectedSlot > 8) || context.DraftText != nil && utf8.RuneCountInString(*context.DraftText) > 1000 || context.Cursor != nil && len(*context.Cursor) > 2048 || len(context.AssetIDs) > 3 {
 		return false
 	}
 	if context.IssueCategory != nil && !validIssueCategory(*context.IssueCategory) {
