@@ -208,6 +208,9 @@ func (emptyCatalogReader) Vehicles(context.Context, string, dataapi.VehicleFilte
 func (emptyCatalogReader) Vehicle(context.Context, string, string) (dataapi.Vehicle, error) {
 	return dataapi.Vehicle{}, errors.New("unexpected vehicle read")
 }
+func (emptyCatalogReader) PreviousInspection(context.Context, string, string) (dataapi.Inspection, error) {
+	return dataapi.Inspection{}, errors.New("unexpected previous inspection read")
+}
 
 func TestCatalogEmptyListMessage(t *testing.T) {
 	sender := &maxsdk.RecordingTransport{}
@@ -326,7 +329,7 @@ func TestCatalogCallbacksUseClickerAndRefreshStaleCard(t *testing.T) {
 		t.Fatal(err)
 	}
 	card := sender.Messages()[2]
-	if !strings.Contains(card.Text, "Данные автомобиля изменились") || !strings.Contains(card.Text, "Статус:") || len(card.Buttons) != 1 || card.Buttons[0][0].Payload != "cars:1" {
+	if !strings.Contains(card.Text, "Данные автомобиля изменились") || !strings.Contains(card.Text, "Статус:") || len(card.Buttons) != 2 || card.Buttons[0][0].Payload != "prev:"+vehicle.ID || card.Buttons[1][0].Payload != "cars:1" {
 		t.Fatalf("stale card = %+v", card)
 	}
 	unknown := callbackItem("8000000000000000009", "other-clicker", stalePayload, now)
@@ -341,6 +344,67 @@ func TestCatalogCallbacksUseClickerAndRefreshStaleCard(t *testing.T) {
 		t.Fatalf("callback answers = %v", got)
 	}
 }
+
+type previousReader struct {
+	emptyCatalogReader
+	inspection dataapi.Inspection
+	actor      string
+}
+
+func (r *previousReader) PreviousInspection(_ context.Context, actor, _ string) (dataapi.Inspection, error) {
+	r.actor = actor
+	return r.inspection, nil
+}
+
+func TestPreviousInspectionShowsOnlyProjectionAndRechecksActor(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	actor, _, closeServer := mockClients(t, now)
+	defer closeServer()
+	const driver = "8000000000000000001"
+	available := true
+	page, err := actor.Vehicles(context.Background(), driver, dataapi.VehicleFilter{Available: &available, Limit: 5})
+	if err != nil || len(page.Items) == 0 {
+		t.Fatal(err)
+	}
+	vehicleID := page.Items[0].ID
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: actor, MAX: sender}
+	if err := processor.Handle(context.Background(), callbackItem(driver, "prev-none", "prev:"+vehicleID, now)); err != nil {
+		t.Fatal(err)
+	}
+	if got := sender.Messages()[0].Text; !strings.Contains(got, "пока нет") {
+		t.Fatalf("no previous inspection = %q", got)
+	}
+	if err := processor.Handle(context.Background(), callbackItem("8000000000000000009", "prev-unknown", "prev:"+vehicleID, now)); err != nil {
+		t.Fatal(err)
+	}
+	if got := sender.Messages()[1].Text; !strings.Contains(got, "8000000000000000009") || strings.Contains(got, "осмотра") {
+		t.Fatalf("unknown actor response = %q", got)
+	}
+	if got := sender.AnsweredCallbacks(); len(got) != 2 {
+		t.Fatalf("previous callback answers = %v", got)
+	}
+	reader := &previousReader{inspection: dataapi.Inspection{ID: "30000000-0000-4000-8000-000000000002", Phase: "after", Status: "finalized", UpdatedAt: now, FuelLevel: intPointer(65), OdometerKM: int64Pointer(12000), OccupiedSlots: []int{1, 2, 3, 4, 5, 6, 7, 8}}}
+	privateSender := &maxsdk.RecordingTransport{}
+	if err := (Bootstrap{Data: reader, MAX: privateSender, Location: time.FixedZone("MSK", 3*3600)}).Handle(context.Background(), callbackItem(driver, "prev-finalized", "prev:"+vehicleID, now)); err != nil {
+		t.Fatal(err)
+	}
+	view := privateSender.Messages()[0].Text
+	for _, want := range []string{"Предыдущий завершённый осмотр", "65%", "12000 км", "8 из 8", "MSK"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("projection misses %q: %q", want, view)
+		}
+	}
+	if strings.Contains(view, driver) || strings.Contains(view, reader.inspection.ID) {
+		t.Fatalf("projection exposed actor or ID: %q", view)
+	}
+	if reader.actor != driver {
+		t.Fatalf("projection read for %q", reader.actor)
+	}
+}
+
+func intPointer(value int) *int       { return &value }
+func int64Pointer(value int64) *int64 { return &value }
 
 type failedAnswerTransport struct{ maxsdk.RecordingTransport }
 

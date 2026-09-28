@@ -19,6 +19,7 @@ type Reader interface {
 	State(context.Context, string) (dataapi.CurrentState, error)
 	Vehicles(context.Context, string, dataapi.VehicleFilter) (dataapi.Page[dataapi.Vehicle], error)
 	Vehicle(context.Context, string, string) (dataapi.Vehicle, error)
+	PreviousInspection(context.Context, string, string) (dataapi.Inspection, error)
 }
 
 // Bootstrap handles only entry/menu events. Every other accepted event remains
@@ -34,7 +35,8 @@ var vehicleIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-
 func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) error {
 	pageNumber, catalog := catalogPage(item.Event)
 	vehicleID, expectedVersion, card := cardTarget(item.Event)
-	if !catalog && !card && !isMenuEvent(item.Event) {
+	previousVehicleID, previous := previousTarget(item.Event)
+	if !catalog && !card && !previous && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -71,6 +73,7 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	}
 	if card {
 		message := "Некорректная ссылка на автомобиль. Откройте /cars."
+		rows := [][]maxsdk.Button{{{Text: "К списку", Payload: "cars:1"}}}
 		if vehicleIDPattern.MatchString(vehicleID) {
 			vehicle, readErr := p.Data.Vehicle(ctx, actor, vehicleID)
 			if readErr != nil {
@@ -81,14 +84,60 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 				message = "Автомобиль больше не доступен по этой ссылке. Обновите /cars."
 			} else {
 				message = cardText(vehicle, p.Location)
+				rows = append([][]maxsdk.Button{{{Text: "Предыдущий осмотр", Payload: "prev:" + vehicle.ID}}}, rows...)
 				if expectedVersion > 0 && vehicle.Version != expectedVersion {
 					message = "Данные автомобиля изменились. Ниже актуальная карточка.\n" + message
 				}
 			}
 		}
+		return p.sendView(ctx, maxID, message, rows)
+	}
+	if previous {
+		message := "Некорректная ссылка на предыдущий осмотр. Откройте /cars."
+		if vehicleIDPattern.MatchString(previousVehicleID) {
+			inspection, readErr := p.Data.PreviousInspection(ctx, actor, previousVehicleID)
+			if readErr != nil {
+				var apiErr *dataapi.APIError
+				if !errors.As(readErr, &apiErr) || apiErr.Status != 404 {
+					return readErr
+				}
+				message = "Подтверждённого предыдущего осмотра пока нет."
+			} else {
+				message = previousInspectionText(inspection, p.Location)
+			}
+		}
 		return p.sendView(ctx, maxID, message, [][]maxsdk.Button{{{Text: "К списку", Payload: "cars:1"}}})
 	}
 	return p.sendView(ctx, maxID, menuText(*me.Employee, state), menuRows(*me.Employee, state))
+}
+
+func previousTarget(event dataapi.NormalizedEvent) (string, bool) {
+	if event.EventType == "message_callback" && event.Payload.Kind == "callback" && event.Payload.CallbackData != nil {
+		payload := *event.Payload.CallbackData
+		if strings.HasPrefix(payload, "prev:") {
+			return strings.TrimPrefix(payload, "prev:"), true
+		}
+	}
+	return "", false
+}
+
+func previousInspectionText(inspection dataapi.Inspection, location *time.Location) string {
+	if inspection.Phase != "after" || inspection.Status != "finalized" {
+		return "Подтверждённого предыдущего осмотра пока нет."
+	}
+	lines := []string{"Предыдущий завершённый осмотр", "Состояние на " + formatMoment(inspection.UpdatedAt, location)}
+	if inspection.FuelLevel == nil {
+		lines = append(lines, "Топливо: Не указано")
+	} else {
+		lines = append(lines, fmt.Sprintf("Топливо: %d%%", *inspection.FuelLevel))
+	}
+	if inspection.OdometerKM == nil {
+		lines = append(lines, "Пробег: Не указано")
+	} else {
+		lines = append(lines, fmt.Sprintf("Пробег: %d км", *inspection.OdometerKM))
+	}
+	lines = append(lines, fmt.Sprintf("Фото: %d из 8", len(inspection.OccupiedSlots)))
+	return strings.Join(lines, "\n")
 }
 
 func (p Bootstrap) sendView(ctx context.Context, maxID int64, text string, rows [][]maxsdk.Button) error {
