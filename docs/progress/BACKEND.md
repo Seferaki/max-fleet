@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "598236e0-6118-4815-9686-f1cda6630793"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T14:36:02Z"
+heartbeat_utc: "2026-09-28T14:40:16Z"
 current_task: BE-03
-current_substep: "BE-03/BE-04: намерение оформления, actor/version и hold через DataAPI"
-last_verified_code_commit: "9ec9dc076c73c9394cc98a1067591d9e1a2f915d"
+current_substep: "BE-03: намерение/hold проверены; далее карта парковки в карточке и закрытие критериев BE-03"
+last_verified_code_commit: "744980e591d1d87a0672b5431560bf797dc28624"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-03/BE-04: добавить отдельное подтверждение намерения оформления и команду checkout.create с inbox lease/idempotency, повторной проверкой actor/version и 15-минутным hold; UI-01 карта остаётся P0"
+next_step: "BE-03: добавить ссылку на подтверждённую парковку в карточке и проверить текст/кнопки; затем BE-04: math/cancel/recovery на hold. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -30,8 +30,8 @@ human_required: [H-01]
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
-| BE-03 | IN_PROGRESS | `9ec9dc076c73c9394cc98a1067591d9e1a2f915d` — ошибочный callback каталога не блокирует actor inbox | Кнопка намерения, UI-01 карта, версии |
-| BE-04 | TODO | — | См. план |
+| BE-03 | IN_PROGRESS | `744980e591d1d87a0672b5431560bf797dc28624` — отдельное подтверждение и кнопка; ссылка на парковку WIP | Карта парковки в карточке, финальная проверка BE-03 |
+| BE-04 | IN_PROGRESS | `744980e591d1d87a0672b5431560bf797dc28624` — 15-минутный hold через DataAPI после подтверждения | Math, cancel, recovery; BE-03 ещё закрывается |
 | BE-05 | TODO | — | См. план |
 | BE-06 | TODO | — | См. план |
 | BE-07 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-03/BE-04 code commit: `744980e591d1d87a0672b5431560bf797dc28624`. В карточке готовой машины есть callback намерения; он повторно читает actor/state/vehicle и показывает отдельное подтверждение без доменного действия. Только callback подтверждения из durable inbox с lease и стабильным `inboxworker.CommandKey` вызывает `checkout.create` DataAPI; Python/mock владеет транзакцией и TTL. Повторная проверка версии, состояния машины, права пользователя, отсутствие ключей/парковки предотвращают действие; 409 race даёт обновление. Mock worker тест проверил отсутствие hold после intent, создание hold ровно на 15 минут без начала trip после confirmation, отсутствие второй попытки на duplicate event, отказ stale/unknown и запрет команды без lease. `go test ./internal/dialog -count=1 -v` → 16 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA/реальный MAX не проверены. Math/cancel ещё нет, BE-03/BE-04 WIP; текст `/menu` пока не продолжает hold до следующего подшага.
 
 - HANDOFF от ноутбука B, session `c52b6904-b47a-47b3-9bcf-ec03a54cc4da`. Последний код `9ec9dc076c73c9394cc98a1067591d9e1a2f915d`, статус до передачи `8a7a36381ab56b92e51817346998bdb073f03c36`; все изменения опубликованы обычным push, worktree чист до status-коммита. Следующий исполнитель: fetch, сверить remote/status, claim-коммит ACTIVE и push до кода. Затем отдельное подтверждение намерения и `checkout.create` через DataAPI с inbox lease/idempotency и повторной проверкой actor/version; Python остаётся владельцем 15-минутного hold. BE-03/BE-04 WIP, UI-01 React карта остаётся обязательной P0. Для проверок: `cd services/gateway`, `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` (на этом Windows Go: `.local/go-dist/go/bin/go.exe`). Реальный MAX и CI последних SHA не проверены. `MAX_BOT_TOKEN_FILE` отсутствует по `scripts/enter-max-token.ps1 -Check`; значение не требуется в чате. Активных контейнеров проекта по `docker ps --filter label=com.docker.compose.project=max-fleet-backend` нет; dev consumer не запущен. Для нового запуска достаточно синтетического seed mock, приватный backup не нужен. Имена локальных секретов при будущем запуске: `MAX_BOT_TOKEN_FILE`, `MAX_FLEET_DATA_API_TOKEN_FILE`, `MAX_FLEET_WORKER_API_TOKEN_FILE`, `MAX_FLEET_MAX_WEBHOOK_SECRET_FILE`; локальные копии/volume не передаются Git.
 
