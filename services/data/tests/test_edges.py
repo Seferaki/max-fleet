@@ -156,3 +156,19 @@ def test_admin_vehicle_edits(api: Api) -> None:
     held = api.cmd(ADMIN, "vehicle.correct_snapshot", V1, busy["version"],
                    {"reason": "x", "fuel_level": 100, "confirmation": True})
     assert held.status_code == 409  # только свободная машина
+
+
+def test_five_mib_photo_accepted(api: Api) -> None:
+    import io
+    import os
+
+    from PIL import Image
+
+    side = int((5 * 1024 * 1024 / 3) ** 0.5)
+    buf = io.BytesIO()
+    Image.frombytes("RGB", (side, side), os.urandom(side * side * 3)).save(buf, format="PNG", compress_level=0)
+    assert buf.tell() > 5 * 1024 * 1024 - 100_000
+    checkout = take_until_inspection(api, DRIVER, V1)
+    insp = checkout["inspection"]
+    r = api.upload(DRIVER, insp["id"], 1, insp["version"], buf.getvalue())
+    assert r.status_code == 200, r.text
