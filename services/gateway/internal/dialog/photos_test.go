@@ -1,18 +1,221 @@
 package dialog
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
+	"github.com/Seferaki/max-fleet/services/gateway/internal/inboxworker"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxsdk"
 )
 
 type photoReader struct {
 	emptyCatalogReader
 	state dataapi.CurrentState
+}
+
+type syntheticPhotoFetcher struct {
+	image []byte
+	err   error
+}
+
+type failOnePhotoReply struct {
+	maxsdk.RecordingTransport
+	fail bool
+}
+
+func (s *failOnePhotoReply) SendText(ctx context.Context, userID int64, message string) (string, error) {
+	if s.fail {
+		s.fail = false
+		return "", errors.New("synthetic send interruption")
+	}
+	return s.RecordingTransport.SendText(ctx, userID, message)
+}
+
+func (f *syntheticPhotoFetcher) Download(context.Context, string) (maxsdk.DownloadedPhoto, error) {
+	if f.err != nil {
+		return maxsdk.DownloadedPhoto{}, f.err
+	}
+	return maxsdk.DownloadedPhoto{ContentType: "image/png", Bytes: f.image}, nil
+}
+
+func samplePhoto(t *testing.T, tone uint8) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	img.Set(0, 0, color.RGBA{R: tone, A: 255})
+	var output bytes.Buffer
+	if err := png.Encode(&output, img); err != nil {
+		t.Fatal(err)
+	}
+	return output.Bytes()
+}
+
+func setupPhotoCheckout(t *testing.T, actor *dataapi.Client, driver string) dataapi.Checkout {
+	t.Helper()
+	ctx := context.Background()
+	available := true
+	page, err := actor.Vehicles(ctx, driver, dataapi.VehicleFilter{Available: &available, Limit: 5})
+	if err != nil || len(page.Items) == 0 {
+		t.Fatalf("vehicles: %v", err)
+	}
+	vehicle := page.Items[0]
+	created, err := actor.CheckoutCreate(ctx, driver, vehicle.ID, vehicle.Version, "photo-setup-checkout", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkout, err := dataapi.DecodeAggregate[dataapi.Checkout](created)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdChallenge, err := actor.ChallengeCreateTake(ctx, driver, checkout.ID, checkout.Version, vehicle.ID, vehicle.Version, "photo-setup-math", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	challenge, err := dataapi.DecodeAggregate[dataapi.Challenge](createdChallenge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a, b int
+	if _, err := fmt.Sscanf(challenge.Question, "%d + %d = ?", &a, &b); err != nil {
+		t.Fatal(err)
+	}
+	correct := -1
+	for i, answer := range challenge.Options {
+		if answer == a+b {
+			correct = i
+		}
+	}
+	if correct < 0 {
+		t.Fatal("math has no correct option")
+	}
+	if _, err := actor.ChallengeAnswer(ctx, driver, challenge.ID, challenge.Version, correct, "photo-setup-answer", nil); err != nil {
+		t.Fatal(err)
+	}
+	state, err := actor.State(ctx, driver)
+	if err != nil || state.Checkout == nil {
+		t.Fatalf("checkout state: %v", err)
+	}
+	rules, err := actor.CurrentRules(ctx, driver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := actor.CheckoutAcceptRules(ctx, driver, state.Checkout.ID, state.Checkout.Version, rules.ID, "photo-setup-rules", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkout, err = dataapi.DecodeAggregate[dataapi.Checkout](accepted)
+	if err != nil || checkout.Step != "inspection" {
+		t.Fatalf("inspection setup: %+v %v", checkout, err)
+	}
+	return checkout
+}
+
+func photoItem(actor, key string, now time.Time) dataapi.InboxClaimItem {
+	source := "https://cdn.max.ru/synthetic-photo"
+	return dataapi.InboxClaimItem{Event: dataapi.NormalizedEvent{
+		IntegrationKey: "demo-bot", EventKey: "message:" + key + ":message_created", EventType: "message_created",
+		ActorMaxUserID: actor, ChatID: actor, MessageID: &key, OccurredAt: now,
+		Payload: dataapi.NormalizedPayload{Kind: "photo", PhotoSourceKey: &source, AttachmentCount: 1},
+	}}
+}
+
+func TestPhotoUploadCountsOnlyStoredImageAndStopsAtEight(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	actor, store, closeServer := mockClients(t, now)
+	defer closeServer()
+	const driver = "8000000000000000001"
+	checkout := setupPhotoCheckout(t, actor, driver)
+	fetcher := &syntheticPhotoFetcher{image: samplePhoto(t, 1)}
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: actor, PhotoStore: actor, Photos: fetcher, MAX: sender}
+	worker := inboxworker.Worker{ID: "photo-worker", Store: store, Processor: processor, Now: func() time.Time { return now }}
+	deliver := func(maxID, key string) string {
+		t.Helper()
+		event := photoItem(maxID, key, now).Event
+		if _, err := store.StoreInbox(context.Background(), event, maxsdk.InboxIdempotencyKey(event)); err != nil {
+			t.Fatal(err)
+		}
+		result, err := worker.RunOnce(context.Background(), 1)
+		if err != nil || result.Acked != 1 {
+			t.Fatalf("photo event %s: %+v %v", key, result, err)
+		}
+		messages := sender.Messages()
+		return messages[len(messages)-1].Text
+	}
+	fetcher.err = maxsdk.ErrPhotoUnavailable
+	if got := deliver(driver, "photo-failed-download"); !strings.Contains(got, "Не удалось") {
+		t.Fatalf("download error: %q", got)
+	}
+	state, err := actor.State(context.Background(), driver)
+	if err != nil || len(state.Checkout.Inspection.OccupiedSlots) != 0 {
+		t.Fatalf("failed download counted: %+v %v", state, err)
+	}
+	fetcher.err = nil
+	if got := deliver("8000000000000000002", "photo-other-actor"); !strings.Contains(got, "нет активного") {
+		t.Fatalf("other actor: %q", got)
+	}
+	if err := processor.Handle(context.Background(), photoItem(driver, "photo-without-lease", now)); err == nil || !strings.Contains(err.Error(), "durable inbox lease") {
+		t.Fatalf("missing lease: %v", err)
+	}
+	for slot := 1; slot <= 8; slot++ {
+		fetcher.image = samplePhoto(t, uint8(slot))
+		if got := deliver(driver, fmt.Sprintf("photo-slot-%d", slot)); !strings.Contains(got, fmt.Sprintf("%d/8", slot)) {
+			t.Fatalf("slot %d: %q", slot, got)
+		}
+		if slot == 1 {
+			if got := deliver(driver, "photo-duplicate-hash"); !strings.Contains(got, "уже есть") {
+				t.Fatalf("duplicate hash: %q", got)
+			}
+		}
+	}
+	if got := deliver(driver, "photo-ninth"); !strings.Contains(got, "Девятое фото не добавлено") {
+		t.Fatalf("ninth image: %q", got)
+	}
+	state, err = actor.State(context.Background(), driver)
+	if err != nil || state.Checkout == nil || state.Checkout.Inspection.ID != checkout.Inspection.ID || len(state.Checkout.Inspection.OccupiedSlots) != 8 {
+		t.Fatalf("photo set: %+v %v", state, err)
+	}
+}
+
+func TestPhotoUploadReplyInterruptionDoesNotCountSameEventTwice(t *testing.T) {
+	current := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	actor, store, closeServer := mockClientsClock(t, func() time.Time { return current })
+	defer closeServer()
+	const driver = "8000000000000000001"
+	setupPhotoCheckout(t, actor, driver)
+	sender := &failOnePhotoReply{fail: true}
+	processor := Bootstrap{Data: actor, PhotoStore: actor, Photos: &syntheticPhotoFetcher{image: samplePhoto(t, 91)}, MAX: sender}
+	worker := inboxworker.Worker{ID: "photo-retry-worker", Store: store, Processor: processor, Now: func() time.Time { return current }}
+	event := photoItem(driver, "photo-interrupted-reply", current).Event
+	if _, err := store.StoreInbox(context.Background(), event, maxsdk.InboxIdempotencyKey(event)); err != nil {
+		t.Fatal(err)
+	}
+	first, err := worker.RunOnce(context.Background(), 1)
+	if err != nil || first.Retried != 1 {
+		t.Fatalf("first interrupted event: %+v %v", first, err)
+	}
+	state, err := actor.State(context.Background(), driver)
+	if err != nil || len(state.Checkout.Inspection.OccupiedSlots) != 1 {
+		t.Fatalf("upload before reply: %+v %v", state, err)
+	}
+	firstVersion := state.Checkout.Inspection.Version
+	current = current.Add(6 * time.Second)
+	second, err := worker.RunOnce(context.Background(), 1)
+	if err != nil || second.Acked != 1 || len(sender.Messages()) != 1 || !strings.Contains(sender.Messages()[0].Text, "уже обрабатывалось") {
+		t.Fatalf("retried event: %+v %v messages=%+v", second, err, sender.Messages())
+	}
+	state, err = actor.State(context.Background(), driver)
+	if err != nil || len(state.Checkout.Inspection.OccupiedSlots) != 1 || state.Checkout.Inspection.Version != firstVersion {
+		t.Fatalf("event counted twice: %+v %v", state, err)
+	}
 }
 
 func (r photoReader) State(context.Context, string) (dataapi.CurrentState, error) {

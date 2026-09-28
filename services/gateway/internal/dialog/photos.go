@@ -2,9 +2,12 @@ package dialog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
+	"github.com/Seferaki/max-fleet/services/gateway/internal/inboxworker"
+	"github.com/Seferaki/max-fleet/services/gateway/internal/maxsdk"
 )
 
 var photoAngles = [8]string{
@@ -63,4 +66,77 @@ func (p Bootstrap) checkoutPhotos(ctx context.Context, maxID int64, state dataap
 		return p.sendView(ctx, maxID, "Фото 8/8 уже сохранены. Девятое фото не добавится; далее можно подтвердить комплект или выбрать ракурс для замены.", nil)
 	}
 	return p.sendView(ctx, maxID, fmt.Sprintf("Сохранено %d/8. Фото %d/8 — %s. Отправьте одно изображение для этого ракурса.", count, slot, photoAngles[slot-1]), nil)
+}
+
+func (p Bootstrap) checkoutPhotoUpload(ctx context.Context, item dataapi.InboxClaimItem, actor string, maxID int64, state dataapi.CurrentState) error {
+	checkout := state.Checkout
+	if checkout == nil || checkout.Status != "holding" || checkout.Step != "inspection" {
+		return p.sendView(ctx, maxID, "Сейчас нет активного шага загрузки фото. Обновите /menu.", nil)
+	}
+	slot, count, ok := photoSlot(checkout.Inspection)
+	if !ok {
+		return p.sendView(ctx, maxID, "Состояние осмотра недоступно. Обновите /menu.", nil)
+	}
+	if slot == 0 {
+		return p.sendView(ctx, maxID, "Комплект 8/8 уже сохранён. Девятое фото не добавлено; выберите замену ракурса после открытия /menu.", nil)
+	}
+	if p.Photos == nil || p.PhotoStore == nil {
+		return inboxworker.ErrDeferred
+	}
+	if item.LeaseToken == "" || item.ID == "" || item.Event.EventKey == "" {
+		return errors.New("photo upload requires a durable inbox lease and event key")
+	}
+	photo, err := p.Photos.Download(ctx, *item.Event.Payload.PhotoSourceKey)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		message := "Не удалось получить фотографию. Отправьте одно изображение для текущего ракурса ещё раз."
+		if errors.Is(err, maxsdk.ErrPhotoTooLarge) {
+			message = "Фото больше 10 МБ. Отправьте изображение меньшего размера."
+		} else if errors.Is(err, maxsdk.ErrPhotoFormat) {
+			message = "Поддерживаются изображения JPEG, PNG или WebP. Отправьте другое фото."
+		}
+		return p.sendView(ctx, maxID, message, nil)
+	}
+	key, err := inboxworker.CommandKey(item, "inspection.photo")
+	if err != nil {
+		return err
+	}
+	result, err := p.PhotoStore.UploadInspectionPhoto(ctx, actor, dataapi.InspectionPhotoInput{
+		InspectionID: checkout.Inspection.ID, Slot: slot, Version: checkout.Inspection.Version,
+		SourceEventKey: item.Event.EventKey, IdempotencyKey: key,
+		ContentType: photo.ContentType, Image: photo.Bytes,
+	})
+	if err != nil {
+		var apiErr *dataapi.APIError
+		if errors.As(err, &apiErr) {
+			switch {
+			case apiErr.Status == 422 && apiErr.Code == "DUPLICATE_PHOTO":
+				return p.sendView(ctx, maxID, "Это изображение уже есть в осмотре. Отправьте другое фото для текущего ракурса.", nil)
+			case apiErr.Status == 409 && apiErr.Code == "IDEMPOTENCY_CONFLICT":
+				return p.sendView(ctx, maxID, "Это событие фото уже обрабатывалось. Проверьте текущий комплект через /menu; повторно оно не засчитано.", nil)
+			case apiErr.Status == 409 || apiErr.Status == 404:
+				return p.sendView(ctx, maxID, "Шаг осмотра изменился или hold истёк. Обновите /menu.", nil)
+			}
+		}
+		return err
+	}
+	if result.Inspection.ID != checkout.Inspection.ID || result.Inspection.Version != checkout.Inspection.Version+1 {
+		return errors.New("photo upload returned an unexpected inspection version")
+	}
+	_, saved, valid := photoSlot(result.Inspection)
+	if !valid || saved != count+1 || !containsPhotoSlot(result.Inspection.OccupiedSlots, slot) {
+		return errors.New("photo upload did not confirm the selected slot")
+	}
+	return p.sendView(ctx, maxID, photoProgress(result.Inspection), nil)
+}
+
+func containsPhotoSlot(slots []int, selected int) bool {
+	for _, slot := range slots {
+		if slot == selected {
+			return true
+		}
+	}
+	return false
 }

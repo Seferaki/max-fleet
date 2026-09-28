@@ -163,7 +163,7 @@ func TestMenuKeepsExistingTripOrCheckoutAheadOfNewVehicle(t *testing.T) {
 	}
 }
 
-func TestBootstrapWorkerAcksMenuButKeepsFollowingPhoto(t *testing.T) {
+func TestBootstrapWorkerAcksMenuAndRejectsPhotoWithoutInspection(t *testing.T) {
 	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
 	actor, store, closeServer := mockClients(t, now)
 	defer closeServer()
@@ -185,7 +185,7 @@ func TestBootstrapWorkerAcksMenuButKeepsFollowingPhoto(t *testing.T) {
 		t.Fatalf("menu cycle = %+v, %v", first, err)
 	}
 	second, err := worker.RunOnce(context.Background(), 10)
-	if err != nil || second.Deferred != 1 || second.Acked != 0 || len(sender.Messages()) != 1 {
+	if err != nil || second.Acked != 1 || second.Deferred != 0 || len(sender.Messages()) != 2 || !strings.Contains(sender.Messages()[1].Text, "нет активного шага загрузки фото") {
 		t.Fatalf("photo cycle = %+v, %v", second, err)
 	}
 }

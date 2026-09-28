@@ -32,13 +32,23 @@ type CheckoutCommander interface {
 	CheckoutAcceptRules(context.Context, string, string, int64, string, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 }
 
+type PhotoFetcher interface {
+	Download(context.Context, string) (maxsdk.DownloadedPhoto, error)
+}
+
+type PhotoStore interface {
+	UploadInspectionPhoto(context.Context, string, dataapi.InspectionPhotoInput) (dataapi.PhotoUploadResult, error)
+}
+
 // Bootstrap handles implemented menu, catalog and checkout entry events. Other
 // accepted events remain durable and unacknowledged until their flow exists.
 type Bootstrap struct {
-	Data     Reader
-	Commands CheckoutCommander
-	MAX      maxsdk.Transport
-	Location *time.Location
+	Data       Reader
+	Commands   CheckoutCommander
+	MAX        maxsdk.Transport
+	Photos     PhotoFetcher
+	PhotoStore PhotoStore
+	Location   *time.Location
 }
 
 var vehicleIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -56,7 +66,8 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	rulesID, rulesVersion, rules := vehicleActionTarget(item.Event, "rules:")
 	acceptCheckoutID, acceptVersion, acceptedRulesID, acceptRules := acceptRulesTarget(item.Event)
 	photoCheckoutID, photoVersion, photos := vehicleActionTarget(item.Event, "photos:")
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !isMenuEvent(item.Event) {
+	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !photoMessage && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -113,6 +124,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	}
 	if photos {
 		return p.checkoutPhotos(ctx, maxID, state, photoCheckoutID, photoVersion)
+	}
+	if photoMessage {
+		return p.checkoutPhotoUpload(ctx, item, actor, maxID, state)
 	}
 	if catalog {
 		if pageNumber == 0 {

@@ -229,7 +229,18 @@ func inboxWorkerSetup() (inboxworker.Worker, bool, error) {
 	if err != nil {
 		return inboxworker.Worker{}, false, errors.New("gateway: COMPANY_TIMEZONE is invalid")
 	}
-	return inboxworker.Worker{ID: "gateway-inbox-worker", Store: store, Processor: dialog.Bootstrap{Data: actor, Commands: actor, MAX: sender, Location: location}, Now: time.Now}, true, nil
+	var photoDownloader dialog.PhotoFetcher
+	if configured := os.Getenv("MAX_PHOTO_HOSTS"); configured != "" {
+		hosts := strings.Split(configured, ",")
+		for i := range hosts {
+			hosts[i] = strings.TrimSpace(hosts[i])
+		}
+		photoDownloader, err = maxsdk.NewPhotoDownloader(hosts)
+		if err != nil {
+			return inboxworker.Worker{}, false, errors.New("gateway: MAX_PHOTO_HOSTS is invalid")
+		}
+	}
+	return inboxworker.Worker{ID: "gateway-inbox-worker", Store: store, Processor: dialog.Bootstrap{Data: actor, Commands: actor, MAX: sender, Photos: photoDownloader, PhotoStore: actor, Location: location}, Now: time.Now}, true, nil
 }
 
 func observeInbox(result inboxworker.Result, err error) {
