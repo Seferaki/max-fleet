@@ -9,9 +9,12 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
+	"github.com/Seferaki/max-fleet/services/gateway/internal/dialog"
+	"github.com/Seferaki/max-fleet/services/gateway/internal/inboxworker"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxpoll"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxsdk"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxwebhook"
@@ -19,7 +22,7 @@ import (
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	addr := os.Getenv("GATEWAY_LISTEN_ADDR")
@@ -52,8 +55,28 @@ func main() {
 	default:
 		log.Fatal("gateway: MAX_UPDATE_MODE must be disabled, webhook or polling")
 	}
-	if err := skeleton.Serve(ctx, addr, "gateway", handler); err != nil {
+	inbox, enabled, err := inboxWorkerSetup()
+	if err != nil {
 		log.Fatal(err)
+	}
+	workerCtx, stopWorker := context.WithCancel(ctx)
+	var workerDone chan struct{}
+	if enabled {
+		workerDone = make(chan struct{})
+		go func() {
+			defer close(workerDone)
+			if err := inbox.Run(workerCtx, 5*time.Second, 10, observeInbox); err != nil {
+				log.Print("gateway: inbox worker stopped with configuration error")
+			}
+		}()
+	}
+	serveErr := skeleton.Serve(ctx, addr, "gateway", handler)
+	stopWorker()
+	if workerDone != nil {
+		<-workerDone
+	}
+	if serveErr != nil {
+		log.Fatal(serveErr)
 	}
 }
 
@@ -163,6 +186,50 @@ func integrationKey() (string, error) {
 	return key, nil
 }
 
+func inboxWorkerSetup() (inboxworker.Worker, bool, error) {
+	if os.Getenv("MAX_BOT_TOKEN_FILE") == "" {
+		if strings.EqualFold(os.Getenv("APP_ENV"), "production") {
+			return inboxworker.Worker{}, false, errors.New("gateway: MAX_BOT_TOKEN_FILE required in production")
+		}
+		return inboxworker.Worker{}, false, nil
+	}
+	token, err := readSecretFile("MAX_BOT_TOKEN_FILE")
+	if err != nil {
+		return inboxworker.Worker{}, false, err
+	}
+	actorToken, err := readSecretFile("DATA_API_TOKEN_FILE")
+	if err != nil {
+		return inboxworker.Worker{}, false, err
+	}
+	actor, err := dataapi.New(dataapi.Config{BaseURL: os.Getenv("DATA_API_BASE_URL"), Token: actorToken})
+	if err != nil {
+		return inboxworker.Worker{}, false, errors.New("gateway: invalid actor DataAPI configuration")
+	}
+	store, err := workerClient()
+	if err != nil {
+		return inboxworker.Worker{}, false, err
+	}
+	api, err := maxsdk.New(token)
+	if err != nil {
+		return inboxworker.Worker{}, false, errors.New("gateway: invalid MAX SDK configuration")
+	}
+	sender, err := maxsdk.NewTransport(api)
+	if err != nil {
+		return inboxworker.Worker{}, false, err
+	}
+	return inboxworker.Worker{ID: "gateway-inbox-worker", Store: store, Processor: dialog.Bootstrap{Data: actor, MAX: sender}, Now: time.Now}, true, nil
+}
+
+func observeInbox(result inboxworker.Result, err error) {
+	if err != nil {
+		log.Print("gateway: inbox worker cycle failed; retrying")
+		return
+	}
+	if result.Claimed > 0 {
+		log.Printf("gateway: inbox claimed=%d acked=%d deferred=%d retried=%d dead=%d", result.Claimed, result.Acked, result.Deferred, result.Retried, result.Dead)
+	}
+}
+
 func workerClient() (*dataapi.WorkerClient, error) {
 	token, err := readSecretFile("WORKER_API_TOKEN_FILE")
 	if err != nil {
@@ -184,7 +251,7 @@ func diagnosticsHandler() *http.ServeMux {
 	mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte(`{"status":"partial","reason":"inbox worker not started"}`))
+		_, _ = w.Write([]byte(`{"status":"partial","reason":"dialog flows incomplete"}`))
 	})
 	return mux
 }

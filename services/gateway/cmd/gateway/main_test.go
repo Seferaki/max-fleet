@@ -98,3 +98,39 @@ func TestPollingModeIsSeparateAndDevelopmentOnly(t *testing.T) {
 		t.Fatal("polling started in production")
 	}
 }
+
+func TestInboxWorkerSetupUsesPrivateFilesAndKeepsPartialMode(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("MAX_BOT_TOKEN_FILE", "")
+	if _, enabled, err := inboxWorkerSetup(); err != nil || enabled {
+		t.Fatalf("missing dev bot token started worker: enabled=%v err=%v", enabled, err)
+	}
+	t.Setenv("APP_ENV", "production")
+	if _, enabled, err := inboxWorkerSetup(); err == nil || enabled {
+		t.Fatalf("production started without bot token: enabled=%v err=%v", enabled, err)
+	}
+	t.Setenv("APP_ENV", "development")
+	mock, err := datamock.NewWithSnapshotAndWorkerToken("synthetic-service-token", "synthetic-worker-token", filepath.Join(t.TempDir(), "snapshot.json"), time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(mock.Handler())
+	defer server.Close()
+	t.Setenv("DATA_API_BASE_URL", server.URL+"/internal/v1")
+	t.Setenv("MAX_BOT_TOKEN_FILE", secretFile(t, "bot", "synthetic-bot-token"))
+	t.Setenv("DATA_API_TOKEN_FILE", secretFile(t, "actor", "synthetic-service-token"))
+	t.Setenv("WORKER_API_TOKEN_FILE", secretFile(t, "worker", "synthetic-worker-token"))
+	worker, enabled, err := inboxWorkerSetup()
+	if err != nil || !enabled || worker.Processor == nil || worker.Store == nil {
+		t.Fatalf("worker setup = enabled=%v, err=%v", enabled, err)
+	}
+	result, err := worker.RunOnce(context.Background(), 1)
+	if err != nil || result.Claimed != 0 {
+		t.Fatalf("empty durable inbox cycle = %+v, %v", result, err)
+	}
+	ready := httptest.NewRecorder()
+	diagnosticsHandler().ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
+	if ready.Code != http.StatusServiceUnavailable || !strings.Contains(ready.Body.String(), "dialog flows incomplete") {
+		t.Fatalf("partial readiness = %d: %s", ready.Code, ready.Body.String())
+	}
+}
