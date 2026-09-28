@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "7426ea1e-c20b-4d5b-9fb3-690bfac56398"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T16:02:26Z"
+heartbeat_utc: "2026-09-28T16:09:07Z"
 current_task: BE-05
-current_substep: "Просмотр фото поездки в MAX-диалоге на mock проверен; далее unsupported media и recovery"
-last_verified_code_commit: "849accd4edb691d5116c66a22221c3f09bb371e5"
+current_substep: "Отказы video/document/multi-image и повтор после сбоя проверены; ожидается CI checkpoint"
+last_verified_code_commit: "856785401024a28f7b0ba4a92c65219a6774ad27"
 checkpoint_state: WIP
 contract_commit: "1aaea964e253dce7338283ca4c012a14c8c93f6d"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-05: обработать unsupported video/document/multi-image и восстановление при ошибках фото; затем BE-06. UI-01 React карта остаётся P0"
+next_step: "Проверить CI для BE-05 checkpoint и закрыть BE-05 при success; затем BE-06. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -32,7 +32,7 @@ human_required: [H-01]
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
 | BE-03 | DONE | `b7bd1ad5d4a67a6506251a8022919ebb60861562` — golden меню/каталога/карточки и negative доступности; `go test ./...`, vet/build exit 0 | Реальный MAX отдельно INT-04, ручная React карта — UI-01 |
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
-| BE-05 | IN_PROGRESS | `ed6c6f0` — ракурс; `5225d0c` — загрузчик; `ec796e8` — upload; `2405e85` — подтверждение; `0b056e6` — замена; `d590c2624563d9ad78f0fe9c27babef32e06e83e` — MAX image send; `1aaea964e253dce7338283ca4c012a14c8c93f6d` — контракт v1.1; `f7399d3771bc07a6c897a4928dc2d88a7fa46c48` — mock/client; `849accd4edb691d5116c66a22221c3f09bb371e5` — диалог просмотра | Unsupported media и recovery |
+| BE-05 | IN_PROGRESS | `ed6c6f0` — ракурс; `5225d0c` — загрузчик; `ec796e8` — upload; `2405e85` — подтверждение; `0b056e6` — замена; `d590c2624563d9ad78f0fe9c27babef32e06e83e` — MAX image send; `1aaea964e253dce7338283ca4c012a14c8c93f6d` — контракт v1.1; `f7399d3771bc07a6c897a4928dc2d88a7fa46c48` — mock/client; `849accd4edb691d5116c66a22221c3f09bb371e5` — диалог просмотра; `856785401024a28f7b0ba4a92c65219a6774ad27` — media/recovery | Проверить CI, затем BE-06 |
 | BE-06 | TODO | — | См. план |
 | BE-07 | TODO | — | См. план |
 | UI-01 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-05 code commit: `856785401024a28f7b0ba4a92c65219a6774ad27`. Неподдерживаемые video/document и несколько вложений получают безопасный ответ без URL/token/body: dev polling продвигает marker только после успешной отправки, webhook отвечает 200 только после отправки и 503 для повтора при сбое MAX. Дополнен счётчик `rejected`. Проверены file/video/multi-image, неверный webhook secret, отказ MAX и восстановление ответа; прямое чтение фото после временного 503 повторно доставляет байты без ложной отправки при ошибке. README обновлён до фактического BE-05/контракта v1.1. `go test ./internal/maxsdk ./internal/maxpoll ./internal/maxwebhook ./cmd/gateway -count=1` после исправления формата счётчика → PASS; `go test ./internal/dialog -run '^TestTripPhotoDialogOwnerAdminPhaseAndVersion$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Первый прогон целевых тестов выявил старое ожидание JSON счётчика в gateway; обновлено, повтор пройден. CI нового SHA и реальный MAX/Python ещё не проверены; BE-05 пока IN_PROGRESS. Следующий шаг: CI checkpoint, затем BE-06 при success.
 
 - BE-05 code commit: `849accd4edb691d5116c66a22221c3f09bb371e5`. В MAX-диалоге `/trips` и кнопка меню показывают поездки сотрудника, `/admintrips` — административный список, `/trip UUID` — доступную карточку. Кнопки «Фото до/после» дают выбор занятого ракурса 1…8, затем `TripInspectionPhoto` и `SendImage`. На каждом шаге перечитывается trip, проверяется версия кнопки; DataAPI повторно проверяет owner/admin и finalized фазы. У активной поездки after скрыто; `closed_by_admin` использует правильный статус для finalized after. Синтетический диалоговый тест проверил owner/admin, чужого сотрудника, ранний after и устаревшую кнопку; mock тест проверил finalized after после admin close. `go test ./internal/dialog ./internal/datamock -count=1` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. MAX SDK в реальном аккаунте, Python и полная 8+8 поездка здесь не проверены; BE-05 WIP. Следующий шаг: явный ответ на video/document/multi-image, сохранение прогресса фото при сбоях и проверка восстановления.
 
