@@ -41,6 +41,24 @@ def _int(env_name: str, default: int) -> int:
         raise ConfigError(f"{env_name} должен быть целым") from exc
 
 
+def database_url_from_env(url_file_env: str, user_env: str, password_file_env: str) -> str:
+    """DSN из секрет-файла целиком либо из DB_HOST/DB_PORT/DB_NAME + пользователь + файл пароля."""
+    if os.environ.get(url_file_env):
+        url = _read_secret(url_file_env)
+        assert url is not None
+        return url
+    from urllib.parse import quote
+
+    host = os.environ.get("DB_HOST", "postgres")
+    port = os.environ.get("DB_PORT", "5432")
+    name = os.environ.get("DB_NAME", "maxfleet")
+    user = os.environ.get(user_env)
+    password = _read_secret(password_file_env)
+    if not user or password is None:
+        raise ConfigError(f"Задайте {url_file_env} либо {user_env} и {password_file_env}")
+    return f"postgresql+psycopg://{quote(user)}:{quote(password, safe='')}@{host}:{port}/{name}"
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str
@@ -73,8 +91,7 @@ class Settings:
         assert data_token is not None and worker_token is not None
         if data_token == worker_token:
             raise ConfigError("DATA_API_TOKEN и WORKER_API_TOKEN должны различаться")
-        database_url = _read_secret("DATABASE_URL_FILE")
-        assert database_url is not None
+        database_url = database_url_from_env("DATABASE_URL_FILE", "DB_USER", "DB_PASSWORD_FILE")
         return cls(
             database_url=database_url,
             data_api_token=data_token,

@@ -19,9 +19,11 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "jsonschema>=4.26.0",
     "moto[s3]>=5",
     "mypy>=2.3.1",
     "pytest>=9.1.1",
+    "pyyaml>=6.0.3",
     "ruff>=0.16.9",
 ]
 
@@ -36,7 +38,16 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "S", "A", "BLE"]
-ignore = ["S101", "S311", "B008"]
+ignore = ["S101", "S311", "B008", "UP047", "N806", "N818"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S105", "S106"]
+"migrations/versions/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "conftest", "test_admin_queues", "test_contract"]

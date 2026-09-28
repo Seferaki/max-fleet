@@ -22,8 +22,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from app import models as m
 from app.config import Settings
 from app.domain import dto
-from app.domain.commands import InspectionContext, ensure_hold_alive, ensure_inspection_editable, \
-    load_inspection_context
+from app.domain.commands import (
+    InspectionContext,
+    ensure_hold_alive,
+    ensure_inspection_editable,
+    load_inspection_context,
+)
 from app.domain.core import Actor, audit, check_version, db_now, touch
 from app.domain.executor import claim_idempotency, complete_idempotency, guarded, load_actor, sweep
 from app.errors import DomainError

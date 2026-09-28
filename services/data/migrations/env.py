@@ -8,6 +8,7 @@ from pathlib import Path
 from alembic import context
 from sqlalchemy import create_engine, pool, text
 
+from app.config import database_url_from_env
 from app.models import Base
 
 MIGRATION_LOCK_ID = 7_331_001
@@ -17,10 +18,12 @@ target_metadata = Base.metadata
 
 
 def migration_url() -> str:
-    path = os.environ.get("MIGRATION_DATABASE_URL_FILE") or os.environ.get("DATABASE_URL_FILE")
-    if not path:
-        raise RuntimeError("MIGRATION_DATABASE_URL_FILE не задан")
-    url = Path(path).read_text(encoding="utf-8").strip()
+    path = os.environ.get("MIGRATION_DATABASE_URL_FILE")
+    if path:
+        url = Path(path).read_text(encoding="utf-8").strip()
+    else:
+        url = database_url_from_env("MIGRATION_DATABASE_URL_FILE", "MIGRATION_DB_USER",
+                                    "MIGRATION_DB_PASSWORD_FILE")
     if url.startswith("postgresql://"):
         url = "postgresql+psycopg://" + url[len("postgresql://"):]
     return url
