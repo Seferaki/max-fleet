@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
+	"github.com/Seferaki/max-fleet/services/gateway/internal/maxpoll"
+	"github.com/Seferaki/max-fleet/services/gateway/internal/maxsdk"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxwebhook"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/skeleton"
 )
@@ -30,12 +32,24 @@ func main() {
 		}
 		return
 	}
-	if mode != "webhook" {
-		log.Fatal("gateway: MAX_UPDATE_MODE must be disabled or webhook")
-	}
-	handler, err := webhookHandler(ctx)
-	if err != nil {
-		log.Fatal(err)
+	var handler http.Handler
+	switch mode {
+	case "webhook":
+		var err error
+		handler, err = webhookHandler(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+	case "polling":
+		var err error
+		var runner maxpoll.Runner
+		handler, runner, err = pollingSetup()
+		if err != nil {
+			log.Fatal(err)
+		}
+		go pollingLoop(ctx, runner)
+	default:
+		log.Fatal("gateway: MAX_UPDATE_MODE must be disabled, webhook or polling")
 	}
 	if err := skeleton.Serve(ctx, addr, "gateway", handler); err != nil {
 		log.Fatal(err)
@@ -43,32 +57,24 @@ func main() {
 }
 
 func webhookHandler(ctx context.Context) (http.Handler, error) {
-	integrationKey := os.Getenv("MAX_INTEGRATION_KEY")
-	if integrationKey == "" {
-		if strings.EqualFold(os.Getenv("APP_ENV"), "production") {
-			return nil, errors.New("gateway: MAX_INTEGRATION_KEY required in production")
-		}
-		integrationKey = "demo-bot"
+	integrationKey, err := integrationKey()
+	if err != nil {
+		return nil, err
 	}
 	secret, err := readSecretFile("MAX_WEBHOOK_SECRET_FILE")
 	if err != nil {
 		return nil, err
 	}
-	workerToken, err := readSecretFile("WORKER_API_TOKEN_FILE")
+	worker, err := workerClient()
 	if err != nil {
 		return nil, err
-	}
-	baseURL := os.Getenv("DATA_API_BASE_URL")
-	worker, err := dataapi.NewWorker(dataapi.WorkerConfig{BaseURL: baseURL, Token: workerToken})
-	if err != nil {
-		return nil, errors.New("gateway: invalid worker DataAPI configuration")
 	}
 	if strings.EqualFold(os.Getenv("APP_ENV"), "production") {
 		actorToken, err := readSecretFile("DATA_API_TOKEN_FILE")
 		if err != nil {
 			return nil, err
 		}
-		client, err := dataapi.New(dataapi.Config{BaseURL: baseURL, Token: actorToken})
+		client, err := dataapi.New(dataapi.Config{BaseURL: os.Getenv("DATA_API_BASE_URL"), Token: actorToken})
 		if err != nil {
 			return nil, errors.New("gateway: invalid DataAPI configuration")
 		}
@@ -83,8 +89,81 @@ func webhookHandler(ctx context.Context) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	mux := http.NewServeMux()
+	mux := diagnosticsHandler()
 	mux.Handle("POST /max/webhook", webhook)
+	return mux, nil
+}
+
+func pollingSetup() (http.Handler, maxpoll.Runner, error) {
+	if strings.EqualFold(os.Getenv("APP_ENV"), "production") {
+		return nil, maxpoll.Runner{}, errors.New("gateway: polling is development-only")
+	}
+	key, err := integrationKey()
+	if err != nil {
+		return nil, maxpoll.Runner{}, err
+	}
+	worker, err := workerClient()
+	if err != nil {
+		return nil, maxpoll.Runner{}, err
+	}
+	token, err := readSecretFile("MAX_BOT_TOKEN_FILE")
+	if err != nil {
+		return nil, maxpoll.Runner{}, err
+	}
+	api, err := maxsdk.New(token)
+	if err != nil {
+		return nil, maxpoll.Runner{}, errors.New("gateway: invalid MAX SDK configuration")
+	}
+	source, err := maxsdk.NewUpdateSource(api)
+	if err != nil {
+		return nil, maxpoll.Runner{}, err
+	}
+	return diagnosticsHandler(), maxpoll.Runner{IntegrationKey: key, WorkerID: "gateway-dev-poller", Source: source, Store: worker}, nil
+}
+
+func pollingLoop(ctx context.Context, runner maxpoll.Runner) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		result, err := runner.RunOnce(ctx)
+		if err != nil && ctx.Err() == nil {
+			log.Print("gateway: polling cycle failed; retrying")
+		} else if err == nil && result.Ignored > 0 {
+			log.Printf("gateway: polling ignored %d unsupported events", result.Ignored)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func integrationKey() (string, error) {
+	key := os.Getenv("MAX_INTEGRATION_KEY")
+	if key == "" {
+		if strings.EqualFold(os.Getenv("APP_ENV"), "production") {
+			return "", errors.New("gateway: MAX_INTEGRATION_KEY required in production")
+		}
+		return "demo-bot", nil
+	}
+	return key, nil
+}
+
+func workerClient() (*dataapi.WorkerClient, error) {
+	token, err := readSecretFile("WORKER_API_TOKEN_FILE")
+	if err != nil {
+		return nil, err
+	}
+	worker, err := dataapi.NewWorker(dataapi.WorkerConfig{BaseURL: os.Getenv("DATA_API_BASE_URL"), Token: token})
+	if err != nil {
+		return nil, errors.New("gateway: invalid worker DataAPI configuration")
+	}
+	return worker, nil
+}
+
+func diagnosticsHandler() *http.ServeMux {
+	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -94,7 +173,7 @@ func webhookHandler(ctx context.Context) (http.Handler, error) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`{"status":"partial","reason":"inbox worker not started"}`))
 	})
-	return mux, nil
+	return mux
 }
 
 func readSecretFile(name string) (string, error) {

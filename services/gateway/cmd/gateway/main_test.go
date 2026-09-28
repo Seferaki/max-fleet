@@ -67,3 +67,29 @@ func TestGatewayRequiresPrivateWebhookSecretFile(t *testing.T) {
 		t.Fatal("webhook started without secret file")
 	}
 }
+
+func TestPollingModeIsSeparateAndDevelopmentOnly(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("DATA_API_BASE_URL", "http://127.0.0.1:8000/internal/v1")
+	t.Setenv("MAX_INTEGRATION_KEY", "demo-bot")
+	t.Setenv("WORKER_API_TOKEN_FILE", secretFile(t, "worker", "synthetic-worker-token"))
+	t.Setenv("MAX_BOT_TOKEN_FILE", secretFile(t, "bot", "synthetic-bot-token"))
+	handler, runner, err := pollingSetup()
+	if err != nil || runner.Source == nil || runner.Store == nil {
+		t.Fatalf("polling setup = %+v, %v", runner, err)
+	}
+	webhook := httptest.NewRecorder()
+	handler.ServeHTTP(webhook, httptest.NewRequest(http.MethodPost, "/max/webhook", nil))
+	if webhook.Code != http.StatusNotFound {
+		t.Fatalf("polling mode exposed webhook: %d", webhook.Code)
+	}
+	ready := httptest.NewRecorder()
+	handler.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
+	if ready.Code != http.StatusServiceUnavailable {
+		t.Fatalf("polling mode claimed ready: %d", ready.Code)
+	}
+	t.Setenv("APP_ENV", "production")
+	if _, _, err := pollingSetup(); err == nil {
+		t.Fatal("polling started in production")
+	}
+}
