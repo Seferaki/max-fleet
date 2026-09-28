@@ -305,7 +305,7 @@ func TestCardShowsMissingFieldsAsUnknown(t *testing.T) {
 func TestCardAvailabilityRequiresAccessParkingAndKeys(t *testing.T) {
 	vehicle := dataapi.Vehicle{Status: "available", KeyInstructions: "У диспетчера", CurrentParking: &dataapi.ParkingLocation{ConfirmedAt: time.Now()}}
 	employee := dataapi.Employee{CanStartTrip: true}
-	if got := checkoutAvailabilityText(vehicle, employee, dataapi.CurrentState{}); !strings.Contains(got, "машина доступна") {
+	if got := checkoutAvailabilityText(vehicle, employee, dataapi.CurrentState{}); !strings.Contains(got, "доступно подтверждение") {
 		t.Fatalf("ready vehicle = %q", got)
 	}
 	withoutParking := vehicle
@@ -498,5 +498,106 @@ func TestMalformedCatalogCallbackIsAnsweredAndAcked(t *testing.T) {
 	}
 	if got := sender.AnsweredCallbacks(); len(got) != 1 || got[0] != "bad-catalog-page" {
 		t.Fatalf("malformed callback answer = %v", got)
+	}
+}
+
+func TestCheckoutIntentCreatesHoldOnlyAfterConfirmedInboxEvent(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	actor, store, closeServer := mockClients(t, now)
+	defer closeServer()
+	const driver = "8000000000000000001"
+	available := true
+	page, err := actor.Vehicles(context.Background(), driver, dataapi.VehicleFilter{Available: &available, Limit: 5})
+	if err != nil || len(page.Items) == 0 {
+		t.Fatal(err)
+	}
+	vehicle := page.Items[0]
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: actor, Commands: actor, MAX: sender, Location: time.UTC}
+	card := callbackItem(driver, "take-card", "car:"+vehicle.ID+":"+strconv.FormatInt(vehicle.Version, 10), now)
+	if err := processor.Handle(context.Background(), card); err != nil {
+		t.Fatal(err)
+	}
+	buttons := sender.Messages()[0].Buttons
+	if len(buttons) != 3 || !strings.HasPrefix(buttons[0][0].Payload, "intent:") {
+		t.Fatalf("ready card buttons = %+v", buttons)
+	}
+	intent := callbackItem(driver, "take-intent", buttons[0][0].Payload, now)
+	if err := processor.Handle(context.Background(), intent); err != nil {
+		t.Fatal(err)
+	}
+	confirmation := sender.Messages()[1]
+	if !strings.Contains(confirmation.Text, "15 минут") || len(confirmation.Buttons) != 2 || !strings.HasPrefix(confirmation.Buttons[0][0].Payload, "take:") {
+		t.Fatalf("confirmation view = %+v", confirmation)
+	}
+	before, err := actor.State(context.Background(), driver)
+	if err != nil || before.Checkout != nil || before.Trip != nil {
+		t.Fatalf("intent changed domain state: %+v %v", before, err)
+	}
+	event := callbackItem(driver, "take-confirm", confirmation.Buttons[0][0].Payload, now).Event
+	if err := processor.Handle(context.Background(), callbackItem(driver, "take-without-lease", confirmation.Buttons[0][0].Payload, now)); err == nil {
+		t.Fatal("confirmed hold without durable inbox lease")
+	}
+	before, err = actor.State(context.Background(), driver)
+	if err != nil || before.Checkout != nil {
+		t.Fatalf("unleased confirmation changed domain state: %+v %v", before, err)
+	}
+	stored, err := store.StoreInbox(context.Background(), event, maxsdk.InboxIdempotencyKey(event))
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := inboxworker.Worker{ID: "checkout-worker", Store: store, Processor: processor, Now: func() time.Time { return now }}
+	result, err := worker.RunOnce(context.Background(), 1)
+	if err != nil || result.Acked != 1 || result.Retried != 0 {
+		t.Fatalf("confirmed hold = %+v %v", result, err)
+	}
+	state, err := actor.State(context.Background(), driver)
+	if err != nil || state.Checkout == nil || state.Trip != nil {
+		t.Fatalf("hold state = %+v %v", state, err)
+	}
+	if got := state.Checkout.ExpiresAt; !got.Equal(now.Add(15 * time.Minute)) {
+		t.Fatalf("hold expiry = %s", got)
+	}
+	if !strings.Contains(sender.Messages()[2].Text, "зарезервирована до") {
+		t.Fatalf("hold message = %+v", sender.Messages()[2])
+	}
+	duplicate, err := store.StoreInbox(context.Background(), event, maxsdk.InboxIdempotencyKey(event))
+	if err != nil || !duplicate.Duplicate || duplicate.ID != stored.ID {
+		t.Fatalf("duplicate inbox event = %+v %v", duplicate, err)
+	}
+	second, err := worker.RunOnce(context.Background(), 1)
+	if err != nil || second.Claimed != 0 || len(sender.Messages()) != 3 {
+		t.Fatalf("duplicate replay = %+v %v", second, err)
+	}
+}
+
+func TestCheckoutRejectsStaleAndUnknownActorBeforeCommand(t *testing.T) {
+	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
+	actor, _, closeServer := mockClients(t, now)
+	defer closeServer()
+	const driver = "8000000000000000001"
+	available := true
+	page, err := actor.Vehicles(context.Background(), driver, dataapi.VehicleFilter{Available: &available, Limit: 5})
+	if err != nil || len(page.Items) == 0 {
+		t.Fatal(err)
+	}
+	vehicle := page.Items[0]
+	payload := "take:" + vehicle.ID + ":" + strconv.FormatInt(vehicle.Version, 10)
+	if _, err := actor.CheckoutCreate(context.Background(), "8000000000000000002", vehicle.ID, vehicle.Version, "other-driver-hold", nil); err != nil {
+		t.Fatal(err)
+	}
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: actor, Commands: actor, MAX: sender}
+	stale := callbackItem(driver, "stale-take", payload, now)
+	if err := processor.Handle(context.Background(), stale); err != nil || !strings.Contains(sender.Messages()[0].Text, "изменились") {
+		t.Fatalf("stale take = %v, %+v", err, sender.Messages())
+	}
+	unknown := callbackItem("8000000000000000009", "unknown-take", payload, now)
+	if err := processor.Handle(context.Background(), unknown); err != nil || strings.Contains(sender.Messages()[1].Text, vehicle.Plate) {
+		t.Fatalf("unknown take = %v, %+v", err, sender.Messages())
+	}
+	state, err := actor.State(context.Background(), driver)
+	if err != nil || state.Checkout != nil {
+		t.Fatalf("stale/unknown actor created hold: %+v %v", state, err)
 	}
 }

@@ -22,10 +22,15 @@ type Reader interface {
 	PreviousInspection(context.Context, string, string) (dataapi.Inspection, error)
 }
 
-// Bootstrap handles only entry/menu events. Every other accepted event remains
-// durable and unacknowledged until its dialog flow is implemented.
+type CheckoutCommander interface {
+	CheckoutCreate(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+}
+
+// Bootstrap handles implemented menu, catalog and checkout entry events. Other
+// accepted events remain durable and unacknowledged until their flow exists.
 type Bootstrap struct {
 	Data     Reader
+	Commands CheckoutCommander
 	MAX      maxsdk.Transport
 	Location *time.Location
 }
@@ -36,7 +41,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	pageNumber, catalog := catalogPage(item.Event)
 	vehicleID, expectedVersion, card := cardTarget(item.Event)
 	previousVehicleID, previous := previousTarget(item.Event)
-	if !catalog && !card && !previous && !isMenuEvent(item.Event) {
+	actionVehicleID, actionVersion, intent := vehicleActionTarget(item.Event, "intent:")
+	confirmVehicleID, confirmVersion, confirm := vehicleActionTarget(item.Event, "take:")
+	if !catalog && !card && !previous && !intent && !confirm && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -64,6 +71,13 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	if err != nil {
 		return err
 	}
+	if intent || confirm {
+		vehicleID, version := actionVehicleID, actionVersion
+		if confirm {
+			vehicleID, version = confirmVehicleID, confirmVersion
+		}
+		return p.checkoutIntent(ctx, item, actor, maxID, *me.Employee, state, vehicleID, version, confirm)
+	}
 	if catalog {
 		if pageNumber == 0 {
 			return p.sendView(ctx, maxID, "Кнопка списка устарела или повреждена. Обновите список.", [][]maxsdk.Button{{{Text: "Обновить", Payload: "cars:1"}}})
@@ -89,6 +103,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 				message = cardText(vehicle, p.Location)
 				message += "\n" + checkoutAvailabilityText(vehicle, *me.Employee, state)
 				rows = append([][]maxsdk.Button{{{Text: "Предыдущий осмотр", Payload: "prev:" + vehicle.ID}}}, rows...)
+				if canOfferCheckout(vehicle, *me.Employee, state) {
+					rows = append([][]maxsdk.Button{{{Text: "Начать оформление", Payload: fmt.Sprintf("intent:%s:%d", vehicle.ID, vehicle.Version)}}}, rows...)
+				}
 				if expectedVersion > 0 && vehicle.Version != expectedVersion {
 					message = "Данные автомобиля изменились. Ниже актуальная карточка.\n" + message
 				}
@@ -115,6 +132,81 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	return p.sendView(ctx, maxID, menuText(*me.Employee, state), menuRows(*me.Employee, state))
 }
 
+func vehicleActionTarget(event dataapi.NormalizedEvent, prefix string) (string, int64, bool) {
+	if event.EventType != "message_callback" || event.Payload.Kind != "callback" || event.Payload.CallbackData == nil {
+		return "", 0, false
+	}
+	payload := *event.Payload.CallbackData
+	if !strings.HasPrefix(payload, prefix) {
+		return "", 0, false
+	}
+	parts := strings.Split(strings.TrimPrefix(payload, prefix), ":")
+	if len(parts) != 2 {
+		return "", 0, true
+	}
+	version, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || version < 1 {
+		return "", 0, true
+	}
+	return parts[0], version, true
+}
+
+func (p Bootstrap) checkoutIntent(ctx context.Context, item dataapi.InboxClaimItem, actor string, maxID int64, employee dataapi.Employee, state dataapi.CurrentState, vehicleID string, version int64, confirm bool) error {
+	refresh := [][]maxsdk.Button{{{Text: "Обновить список", Payload: "cars:1"}}}
+	if !vehicleIDPattern.MatchString(vehicleID) || version < 1 {
+		return p.sendView(ctx, maxID, "Кнопка оформления повреждена. Обновите список.", refresh)
+	}
+	if state.Checkout != nil {
+		if state.Checkout.VehicleID == vehicleID {
+			return p.sendView(ctx, maxID, "Оформление уже начато. Hold до "+formatMoment(state.Checkout.ExpiresAt, p.Location)+". Откройте /menu для продолжения.", nil)
+		}
+		return p.sendView(ctx, maxID, "Сначала завершите текущее оформление. Откройте /menu.", nil)
+	}
+	if state.Trip != nil || !employee.CanStartTrip {
+		return p.sendView(ctx, maxID, "Сейчас нельзя начать оформление автомобиля. Откройте /menu.", nil)
+	}
+	vehicle, err := p.Data.Vehicle(ctx, actor, vehicleID)
+	if err != nil {
+		var apiErr *dataapi.APIError
+		if errors.As(err, &apiErr) && apiErr.Status == 404 {
+			return p.sendView(ctx, maxID, "Автомобиль больше не доступен. Обновите список.", refresh)
+		}
+		return err
+	}
+	if vehicle.Version != version || !canOfferCheckout(vehicle, employee, state) {
+		return p.sendView(ctx, maxID, "Данные автомобиля изменились или выдача недоступна. Обновите список.", refresh)
+	}
+	if !confirm {
+		text := fmt.Sprintf("Подтвердите оформление %s. После подтверждения машина резервируется на 15 минут; поездка ещё не начнётся.", oneLine(vehicle.Plate))
+		rows := [][]maxsdk.Button{{{Text: "Подтвердить", Payload: fmt.Sprintf("take:%s:%d", vehicle.ID, vehicle.Version)}}, {{Text: "Назад к карточке", Payload: fmt.Sprintf("car:%s:%d", vehicle.ID, vehicle.Version)}}}
+		return p.sendView(ctx, maxID, text, rows)
+	}
+	if p.Commands == nil || item.LeaseToken == "" {
+		return errors.New("checkout command requires a durable inbox lease")
+	}
+	key, err := inboxworker.CommandKey(item, "checkout.create")
+	if err != nil {
+		return err
+	}
+	result, err := p.Commands.CheckoutCreate(ctx, actor, vehicle.ID, version, key, &dataapi.InboxLease{EventID: item.ID, Token: item.LeaseToken})
+	if err != nil {
+		var apiErr *dataapi.APIError
+		if errors.As(err, &apiErr) && apiErr.Status == 409 && (apiErr.Code == "STALE_VERSION" || apiErr.Code == "VEHICLE_UNAVAILABLE" || apiErr.Code == "USER_BUSY") {
+			return p.sendView(ctx, maxID, "Машина уже недоступна или оформление изменилось. Обновите /menu и список.", refresh)
+		}
+		return err
+	}
+	checkout, err := dataapi.DecodeAggregate[dataapi.Checkout](result)
+	if err != nil || checkout.ID == "" || checkout.VehicleID != vehicle.ID || checkout.ExpiresAt.IsZero() {
+		return errors.New("checkout command returned invalid aggregate")
+	}
+	return p.sendView(ctx, maxID, "Машина зарезервирована до "+formatMoment(checkout.ExpiresAt, p.Location)+". Поездка ещё не началась. Откройте /menu для продолжения оформления.", nil)
+}
+
+func canOfferCheckout(vehicle dataapi.Vehicle, employee dataapi.Employee, state dataapi.CurrentState) bool {
+	return employee.CanStartTrip && state.Trip == nil && state.Checkout == nil && vehicle.Status == "available" && !vehicle.ManualBlocked && !vehicle.NeedsReview && vehicle.CurrentParking != nil && !vehicle.CurrentParking.ConfirmedAt.IsZero() && strings.TrimSpace(vehicle.KeyInstructions) != ""
+}
+
 func checkoutAvailabilityText(vehicle dataapi.Vehicle, employee dataapi.Employee, state dataapi.CurrentState) string {
 	if !employee.CanStartTrip || state.Trip != nil || state.Checkout != nil {
 		return "Выдача: недоступна для текущего пользователя или пока не завершён текущий сценарий."
@@ -122,10 +214,10 @@ func checkoutAvailabilityText(vehicle dataapi.Vehicle, employee dataapi.Employee
 	if vehicle.Status != "available" || vehicle.ManualBlocked || vehicle.NeedsReview {
 		return "Выдача: автомобиль сейчас недоступен. Обновите список."
 	}
-	if vehicle.CurrentParking == nil || vehicle.CurrentParking.ConfirmedAt.IsZero() || strings.TrimSpace(vehicle.KeyInstructions) == "" {
+	if !canOfferCheckout(vehicle, employee, state) {
 		return "Выдача: требуется подтверждённая парковка и инструкция по ключам."
 	}
-	return "Выдача: машина доступна; оформление будет доступно после запуска сценария приёмки."
+	return "Выдача: доступно подтверждение оформления; поездка начнётся только после приёмки."
 }
 
 func previousTarget(event dataapi.NormalizedEvent) (string, bool) {

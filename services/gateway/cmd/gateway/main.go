@@ -229,7 +229,7 @@ func inboxWorkerSetup() (inboxworker.Worker, bool, error) {
 	if err != nil {
 		return inboxworker.Worker{}, false, errors.New("gateway: COMPANY_TIMEZONE is invalid")
 	}
-	return inboxworker.Worker{ID: "gateway-inbox-worker", Store: store, Processor: dialog.Bootstrap{Data: actor, MAX: sender, Location: location}, Now: time.Now}, true, nil
+	return inboxworker.Worker{ID: "gateway-inbox-worker", Store: store, Processor: dialog.Bootstrap{Data: actor, Commands: actor, MAX: sender, Location: location}, Now: time.Now}, true, nil
 }
 
 func observeInbox(result inboxworker.Result, err error) {
