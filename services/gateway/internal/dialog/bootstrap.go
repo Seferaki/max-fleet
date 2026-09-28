@@ -32,6 +32,7 @@ type CheckoutCommander interface {
 	CheckoutAcceptRules(context.Context, string, string, int64, string, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	InspectionConfirmPhotos(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	InspectionUpdate(context.Context, string, string, int64, dataapi.InspectionUpdateInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	CheckoutSetNoNewIssues(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 }
 
 type PhotoFetcher interface {
@@ -72,12 +73,14 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	setFuelID, setFuelVersion, fuelLevel, setFuel := fuelChoiceTarget(item.Event)
 	odometerInspectionID, odometerVersion, odometerPrompt := vehicleActionTarget(item.Event, "odometer:")
 	odometerText, odometerCommand := odometerInput(item.Event)
+	issueQuestionID, issueQuestionVersion, issueQuestion := vehicleActionTarget(item.Event, "new-issues:")
+	issueChoiceID, issueChoiceVersion, issueChoice, issueAnswer := issueAnswerTarget(item.Event)
 	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
 	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -147,6 +150,13 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	}
 	if odometerPrompt || odometerCommand {
 		return p.checkoutOdometer(ctx, item, actor, maxID, state, odometerInspectionID, odometerVersion, odometerText, odometerCommand)
+	}
+	if issueQuestion || issueAnswer {
+		inspectionID, version := issueQuestionID, issueQuestionVersion
+		if issueAnswer {
+			inspectionID, version = issueChoiceID, issueChoiceVersion
+		}
+		return p.checkoutIssueAnswer(ctx, item, actor, maxID, state, inspectionID, version, issueChoice, issueAnswer)
 	}
 	if confirmPhotos {
 		return p.confirmCheckoutPhotos(ctx, item, actor, maxID, state, confirmInspectionID, confirmInspectionVersion)
@@ -774,6 +784,9 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 			}
 			rows = append(rows, []maxsdk.Button{{Text: "Указать топливо", Payload: fmt.Sprintf("fuel:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)}})
 			rows = append(rows, []maxsdk.Button{{Text: "Указать пробег", Payload: fmt.Sprintf("odometer:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)}})
+			if inspectionReadyForIssueQuestion(state.Checkout.Inspection) && (state.Checkout.NoNewIssues == nil || !*state.Checkout.NoNewIssues) {
+				rows = append(rows, []maxsdk.Button{{Text: "Новые замечания", Payload: fmt.Sprintf("new-issues:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)}})
+			}
 		}
 		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 	}
