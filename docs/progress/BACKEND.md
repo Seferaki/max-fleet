@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "c52b6904-b47a-47b3-9bcf-ec03a54cc4da"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T14:08:37Z"
+heartbeat_utc: "2026-09-28T14:12:09Z"
 current_task: BE-03
-current_substep: "BE-02 проверен и закрыт; начало доступа, меню и карточек BE-03"
-last_verified_code_commit: "9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3"
+current_substep: "BE-03: текстовый каталог по 5 проверен; далее MAX кнопки и карточка"
+last_verified_code_commit: "4c6fa0b415df7e0751f83269a4b0506cfd028f1c"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-03: проверить базовое меню на восстановленном checkout/trip и реализовать список доступных машин по 5 с ACL/пагинацией"
+next_step: "BE-03: добавить MAX кнопки/короткие callback для каталога и карточку с повторной проверкой версии/доступности; устранить лимит 20 страниц"
 human_required: [H-01]
 ```
 
@@ -30,7 +30,7 @@ human_required: [H-01]
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
 | BE-02 | DONE | `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3` — dev webhook Compose smoke и [CI 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) success с race gate; Go tests/restart/ошибки ниже | Реальный MAX smoke — INT-04 после H-01; полный dialog — BE-03+ |
-| BE-03 | IN_PROGRESS | `98dd5d38b435116b2370a04d3f311511f86bb226` — ограниченный `/start`/`/menu` processor; всё остальное WIP | Список по 5, карточка, кнопки, ACL/версии |
+| BE-03 | IN_PROGRESS | `4c6fa0b415df7e0751f83269a4b0506cfd028f1c` — текстовый список по 5 через DataAPI и ACL; кнопки/карточка WIP | MAX кнопки, карточка, previous inspection, версии |
 | BE-04 | TODO | — | См. план |
 | BE-05 | TODO | — | См. план |
 | BE-06 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-03 code commit: `4c6fa0b415df7e0751f83269a4b0506cfd028f1c`. `/cars`/«Доступные автомобили» получают текущие `/me`, `/state`, `GET /vehicles?available=true&limit=5`; страницы `/cars N` восстанавливают курсор повторными DataAPI запросами без локальной памяти. Список содержит только 5 названий без ключей и деталей; есть обновление, назад/далее в тексте и сообщение для пустого или устаревшего списка. Неизвестный actor не получает список, blocked driver и сотрудник с активным checkout не могут начать другой сценарий. Тесты на persistent mock: 10 машин → 5+5, новый processor открывает вторую страницу, третья устарела, blocked/unknown отказаны, после `checkout.create` список закрыт; отдельный пустой список. `go test ./internal/dialog -count=1 -v` → 6 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. CI этого SHA и реальный MAX не проверены. Ограничения WIP: команды пока текстовые, не кнопки MAX; максимум 20 страниц (до 100 машин), карточки нет, BE-03 IN_PROGRESS.
 
 - BE-02 code/config commit: `9aa24fdd4e95dc50f9d3ae5e2cd308f853f7d5c3`. Dev webhook Compose overlay описан в OPERATIONS. `docker compose -f deploy/compose.backend.yaml -f deploy/compose.backend.webhook.yaml config --quiet` → exit 0; Docker images собраны. Первый `up --wait` не прошёл: Docker Desktop не прочитал исходный LocalAppData token file с пользовательским ACL; контейнер ошибочно продолжил монтировать старый путь. `scripts/prepare-compose-token.ps1 -Name data_api_token/-Name worker_api_token` подготовили игнорируемые копии, `up -d --force-recreate --wait` → data-mock и gateway healthy. Синтетический webhook: неверный secret → 401, событие → 200, duplicate → 200, `/health/ready` → 503; snapshot присутствует. После `docker restart max-fleet-data-mock max-fleet-gateway` тот же webhook → 200, ready → 503, snapshot на месте. Контейнеры остановлены без удаления volume. [CI gateway commit 95bd145](https://github.com/Seferaki/max-fleet/actions/runs/36432955951) → пять jobs success, включая `go test -race ./...`; CI самого overlay SHA не проверен. BE-02 DONE как изолированный MAX ingress/worker на mock: все поддержанные события сохраняются перед ACK и переживают restart, неподдержанные диалоги остаются deferred для BE-03+. Реальный MAX/Python не проверен, backend не готов к INT; dev polling после успешного ответа о multi-photo, но перед marker checkpoint может повторить только поясняющее сообщение, без доменного перехода.
 
