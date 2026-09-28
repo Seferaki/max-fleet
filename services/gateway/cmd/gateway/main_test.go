@@ -48,6 +48,11 @@ func TestGatewayWebhookWiringAndMockProductionBan(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("gateway webhook = %d: %s", response.Code, response.Body.String())
 	}
+	stats := httptest.NewRecorder()
+	handler.ServeHTTP(stats, httptest.NewRequest(http.MethodGet, "/health/max-events", nil))
+	if stats.Code != http.StatusOK || strings.TrimSpace(stats.Body.String()) != `{"accepted":1,"ignored":0,"unavailable":0}` {
+		t.Fatalf("gateway event counters = %d: %s", stats.Code, stats.Body.String())
+	}
 	ready := httptest.NewRecorder()
 	handler.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
 	if ready.Code != http.StatusServiceUnavailable {

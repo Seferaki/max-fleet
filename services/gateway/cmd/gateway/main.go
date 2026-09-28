@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -91,6 +92,11 @@ func webhookHandler(ctx context.Context) (http.Handler, error) {
 	}
 	mux := diagnosticsHandler()
 	mux.Handle("POST /max/webhook", webhook)
+	mux.HandleFunc("GET /health/max-events", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(webhook.Stats())
+	})
 	return mux, nil
 }
 

@@ -9,6 +9,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxsdk"
@@ -25,6 +26,19 @@ type Handler struct {
 	secret         [32]byte
 	integrationKey string
 	store          InboxStore
+	accepted       atomic.Uint64
+	ignored        atomic.Uint64
+	unavailable    atomic.Uint64
+}
+
+type Stats struct {
+	Accepted    uint64 `json:"accepted"`
+	Ignored     uint64 `json:"ignored"`
+	Unavailable uint64 `json:"unavailable"`
+}
+
+func (h *Handler) Stats() Stats {
+	return Stats{Accepted: h.accepted.Load(), Ignored: h.ignored.Load(), Unavailable: h.unavailable.Load()}
 }
 
 func New(secret, integrationKey string, store InboxStore) (*Handler, error) {
@@ -67,6 +81,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	event, err := maxsdk.Normalize(h.integrationKey, update)
 	if errors.Is(err, maxsdk.ErrUnsupportedUpdate) || errors.Is(err, maxsdk.ErrGroupEvent) {
+		h.ignored.Add(1)
 		respond(w, http.StatusOK, "IGNORED")
 		return
 	}
@@ -76,9 +91,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	key := maxsdk.InboxIdempotencyKey(event)
 	if _, err := h.store.StoreInbox(r.Context(), event, key); err != nil {
+		h.unavailable.Add(1)
 		respond(w, http.StatusServiceUnavailable, "DATA_UNAVAILABLE")
 		return
 	}
+	h.accepted.Add(1)
 	respond(w, http.StatusOK, "STORED")
 }
 

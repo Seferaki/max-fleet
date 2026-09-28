@@ -145,3 +145,28 @@ func TestWebhookStoreFailureReturns503WithoutSuccess(t *testing.T) {
 		t.Fatalf("store failure = %d, %s; calls=%d", response.Code, response.Body.String(), store.calls)
 	}
 }
+
+func TestWebhookStatsCountOutcomesWithoutMessageData(t *testing.T) {
+	store := &recordingStore{}
+	handler, err := New(testSecret, "demo-bot", store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := strings.Replace(photoJSON, `"chat_type":"dialog"`, `"chat_type":"chat"`, 1)
+	for _, body := range []string{group, `{"update_type":"future_event","timestamp":1790586000000}`} {
+		if response := postWebhook(handler, testSecret, body); response.Code != http.StatusOK {
+			t.Fatalf("ignored event response = %d", response.Code)
+		}
+	}
+	store.err = errors.New("synthetic unavailable")
+	if response := postWebhook(handler, testSecret, photoJSON); response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unavailable response = %d", response.Code)
+	}
+	store.err = nil
+	if response := postWebhook(handler, testSecret, photoJSON); response.Code != http.StatusOK {
+		t.Fatalf("accepted response = %d", response.Code)
+	}
+	if stats := handler.Stats(); stats.Accepted != 1 || stats.Ignored != 2 || stats.Unavailable != 1 {
+		t.Fatalf("wrong webhook counters: %+v", stats)
+	}
+}
