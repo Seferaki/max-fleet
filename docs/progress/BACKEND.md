@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "0b57d4b9-be94-4558-b500-eff5594ee587"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T09:37:19Z"
+heartbeat_utc: "2026-09-28T09:39:24Z"
 current_task: BE-02
-current_substep: "Polling lease/store/checkpoint цикл готов; далее подключение dev poller"
-last_verified_code_commit: "095e43977714e67358586a8b7df6398e1036c78b"
+current_substep: "Dev polling подключён отдельным режимом; далее inbox worker"
+last_verified_code_commit: "467aa9cc1a475850006ccdc6acb30e0b21aed92b"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-02: подключить opt-in dev poller к gateway, исключить webhook+polling одновременно; затем inbox worker. Poison multi-photo пока удерживает marker и требует отдельной обработки"
+next_step: "BE-02: реализовать inbox worker с actor ordering, ack/retry/backoff/dead и безопасной обработкой неподдерживаемых событий; poison multi-photo polling отдельно"
 human_required: [H-01]
 ```
 
@@ -29,7 +29,7 @@ human_required: [H-01]
 | S-02 | DONE | `aa56f0e05b3c2458eee1fe88550d183ece9075af`; OpenAPI/fixtures/linters | Общий contract commit для data/QA до разделения веток |
 | S-03 | DONE | `efe28b30ee513cdbd3d9c16e799d3808d5f6ca52`; чистый clone и GitHub CI success | BE-01 |
 | BE-01 | DONE | `bb8063c3800602f921b7390469c374d55f672a06`; Go test/vet/build и [CI #75](https://github.com/Seferaki/max-fleet/actions/runs/36402668082) success, включая Docker | Оставшиеся 10 runner-сценариев покрываются будущими задачами; не заявлены как PASS |
-| BE-02 | IN_PROGRESS | `095e43977714e67358586a8b7df6398e1036c78b` — polling lease/store/checkpoint, webhook и transport | Подключить dev poller; H-01 не блокирует mock |
+| BE-02 | IN_PROGRESS | `467aa9cc1a475850006ccdc6acb30e0b21aed92b` — exclusive dev polling, webhook и transport | Inbox worker; H-01 не блокирует mock |
 | BE-03 | TODO | — | См. план |
 | BE-04 | TODO | — | См. план |
 | BE-05 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-02 code commit: `467aa9cc1a475850006ccdc6acb30e0b21aed92b`. Gateway запускает dev polling только при `MAX_UPDATE_MODE=polling`, читает MAX token из приватного файла, использует pinned SDK и `maxpoll.Runner`; режимы polling/webhook взаимоисключающие, polling запрещён в production. Логи ошибок не содержат update/секреты, readiness остаётся 503 до обработки inbox. `go test ./cmd/gateway -count=1 -v` → 3 PASS: webhook route не открыт в polling, production запрещён; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Реальный MAX не запускался без H-01; CI SHA не проверена, inbox worker WIP.
 
 - BE-02 code commit: `095e43977714e67358586a8b7df6398e1036c78b`. `maxpoll.Runner.RunOnce` получает integration version/lease через WorkerClient, читает SDK updates с сохранённого marker, записывает все поддерживаемые события в durable inbox и лишь затем CAS checkpoint marker. Idempotency key одинаков для webhook и polling. Тесты на persistent mock прошли restart marker/inbox, запрет второго poller с активной арендой, 503 записи с повтором той же пачки и отказ продвигать marker при двух фото. `go test ./internal/maxpoll -count=1 -v` → 3 PASS; `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock` → exit 0. Цикл пока не запущен из gateway; malformed multi-photo в polling удерживает marker и требует отдельной политики ответа пользователю/dead letter. Реальный MAX/CI SHA не проверены, BE-02 WIP.
 
