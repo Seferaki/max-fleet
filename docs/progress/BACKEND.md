@@ -5,19 +5,19 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: HANDOFF
+lock_state: ACTIVE
 owner: B
-session_id: "0b57d4b9-be94-4558-b500-eff5594ee587"
+session_id: "c52b6904-b47a-47b3-9bcf-ec03a54cc4da"
 branch: codex/backend
-heartbeat_utc: "2026-09-28T13:48:33Z"
+heartbeat_utc: "2026-09-28T13:50:04Z"
 current_task: BE-02
-current_substep: "Webhook counters и worker lifecycle опубликованы; безопасный runtime processor ещё не подключён"
+current_substep: "Claim HANDOFF; BE-02: безопасный processor/wiring и photo poison policy"
 last_verified_code_commit: "0cc89a0c261a8b68e6ab7cc378190cfd089e23d2"
 checkpoint_state: WIP
 contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "Claim отдельным коммитом/push; BE-02: безопасный processor/wiring и политика poison multi-photo polling без потери событий"
+next_step: "BE-02: безопасный processor/wiring и политика poison multi-photo polling без потери событий"
 human_required: [H-01]
 ```
 
@@ -286,6 +286,7 @@ human_required: [H-01]
 
 | UTC | От → кому | Задача / SHA | Результат |
 |---|---|---|---|
+| 2026-09-28 13:50 | HANDOFF → B | BE-02 / `e96d59a` | Новый session ID; отдельный claim-коммит до изменения кода |
 | 2026-09-28 13:48 | B → HANDOFF | BE-02 / `0cc89a0` | Webhook counters и worker lifecycle проверены, CI success; код обработчика диалогов и политика multi-photo polling WIP, локальные MAX Fleet контейнеры остановлены |
 | 2026-09-27 12:19 | FREE → A | S-01 / `3d53d5a` | Claim опубликован в `codex/backend` |
 | 2026-09-27 13:53 | A → B | BE-01 / `f3e6f49` | Пользователь подтвердил остановку A; takeover через отдельный claim-коммит |
