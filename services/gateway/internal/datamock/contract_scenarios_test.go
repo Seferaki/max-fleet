@@ -1,10 +1,13 @@
 package datamock
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -373,6 +376,67 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 			return err
 		},
+		"delivery.timeout-after-commit": func(s scenarioContext) error {
+			hold := s.photoSet(8)
+			ready := s.mock.checkouts[hold.ID]
+			stamp, yes := *s.clock, true
+			rulesID := s.mock.rules.ID
+			fuel, odometer := 75, int64(12010)
+			ready.IntentConfirmedAt = &stamp
+			ready.RulesAcceptedAt = &stamp
+			ready.RulesVersionID = &rulesID
+			ready.NoNewIssues = &yes
+			ready.Inspection.FuelLevel = &fuel
+			ready.Inspection.OdometerKM = &odometer
+			ready.Inspection.PhotosConfirmedAt = &stamp
+			ready.Inspection.MissingSlots = []int{}
+			s.mock.checkouts[hold.ID] = ready
+			var attempts int
+			var firstRequestID, firstBody string
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					s.t.Errorf("proxy read: %v", err)
+					return
+				}
+				r.Body = io.NopCloser(bytes.NewReader(body))
+				attempts++
+				if attempts == 1 {
+					firstRequestID, firstBody = r.Header.Get("X-Request-ID"), string(body)
+					response := httptest.NewRecorder()
+					s.mock.Handler().ServeHTTP(response, r)
+					if response.Code != http.StatusOK || len(s.mock.trips) != 1 {
+						s.t.Errorf("first command was not committed: %d", response.Code)
+						return
+					}
+					connection, _, err := w.(http.Hijacker).Hijack()
+					if err != nil {
+						s.t.Errorf("cannot drop committed response: %v", err)
+						return
+					}
+					_ = connection.Close()
+					return
+				}
+				if attempts == 2 && (r.Header.Get("X-Request-ID") != firstRequestID || string(body) != firstBody || r.Header.Get("Idempotency-Key") != "scenario-start-lost-response") {
+					s.t.Error("retry changed command identity or body")
+				}
+				s.mock.Handler().ServeHTTP(w, r)
+			}))
+			s.t.Cleanup(proxy.Close)
+			client, err := dataapi.New(dataapi.Config{BaseURL: proxy.URL + "/internal/v1", Token: "test-service-token"})
+			if err != nil {
+				s.t.Fatal(err)
+			}
+			result, err := client.CheckoutStart(s.ctx, driverID, hold.ID, ready.Version, "scenario-start-lost-response", nil)
+			if err != nil {
+				return err
+			}
+			trip, err := dataapi.DecodeAggregate[dataapi.Trip](result)
+			if err != nil || attempts != 2 || len(s.mock.trips) != 1 || s.mock.trips[trip.ID].Status != "active" || len(s.mock.notifications) != 1 {
+				s.t.Fatalf("retry duplicated trip or notification: %+v %v, attempts=%d", trip, err, attempts)
+			}
+			return nil
+		},
 	}
 	seen := map[string]bool{}
 	for _, item := range spec.Cases {
@@ -415,7 +479,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 		})
 	}
-	if len(runs) != 23 {
+	if len(runs) != 24 {
 		t.Fatal("scenario runner count changed")
 	}
 	for id := range runs {
