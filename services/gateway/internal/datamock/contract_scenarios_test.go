@@ -167,6 +167,29 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			_, err := s.client.Vehicles(s.ctx, "9000000000000000001", dataapi.VehicleFilter{})
 			return err
 		},
+		"identity.blocked-return": func(s scenarioContext) error {
+			actor := "8000000000000000004"
+			employee := s.mock.employees[actor]
+			tripID := "20000000-0000-4000-8000-000000000004"
+			employee.ActiveTripID = &tripID
+			s.mock.employees[actor] = employee
+			s.mock.vehicles[0].Status = "in_trip"
+			s.mock.trips[tripID] = dataapi.Trip{ID: tripID, VehicleID: firstVehicleID, EmployeeID: employee.ID, Status: "active", Version: 1, UpdatedAt: s.now, Issues: []dataapi.Issue{}, MissingData: []string{}}
+			_, newErr := s.client.CheckoutCreate(s.ctx, actor, s.mock.vehicles[1].ID, 1, "scenario-blocked-new-hold", nil)
+			var apiErr *dataapi.APIError
+			if !errors.As(newErr, &apiErr) || apiErr.Code != "CANNOT_START_TRIP" {
+				s.t.Fatalf("blocked actor could start another trip: %v", newErr)
+			}
+			result, err := s.client.TripBeginReturn(s.ctx, actor, tripID, 1, "scenario-blocked-return", nil)
+			if err != nil {
+				return err
+			}
+			draft, err := dataapi.DecodeAggregate[dataapi.Return](result)
+			if err != nil || draft.Status != "draft" || s.mock.trips[tripID].Status != "returning" || draft.TripID != tripID {
+				s.t.Fatalf("blocked actor could not return own trip: %+v %v", draft, err)
+			}
+			return nil
+		},
 		"identity.wrong-owner": func(s scenarioContext) error {
 			_, draft := s.readyReturn(false, true)
 			_, err := s.client.Return(s.ctx, "8000000000000000002", draft.ID)
@@ -650,7 +673,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 		})
 	}
-	if len(runs) != 33 {
+	if len(runs) != 34 {
 		t.Fatal("scenario runner count changed")
 	}
 	for id := range runs {
