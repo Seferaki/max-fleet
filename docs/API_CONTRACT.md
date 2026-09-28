@@ -1,13 +1,13 @@
 # Контракт Go ↔ mock ↔ Python
 
-Контракт v1.0, 27.09.2026. Машинная схема и JSON fixtures: [contracts/data-api.openapi.yaml](../contracts/data-api.openapi.yaml), [внешний API карты](../contracts/map-api.openapi.yaml), [CHANGELOG](../contracts/CHANGELOG.md). Сервисы ещё не реализованы; проверка схем не означает проверку mock/Python/MAX. Поведение определяется [PRODUCT_SPEC](../PRODUCT_SPEC.md), модель — [DATABASE](DATABASE.md).
+Контракт v1.1, 28.09.2026. Машинная схема и JSON fixtures: [contracts/data-api.openapi.yaml](../contracts/data-api.openapi.yaml), [внешний API карты](../contracts/map-api.openapi.yaml), [CHANGELOG](../contracts/CHANGELOG.md). Go mock реализуется отдельно от Python; проверка схем и mock не означает проверку Python/MAX. Поведение определяется [PRODUCT_SPEC](../PRODUCT_SPEC.md), модель — [DATABASE](DATABASE.md).
 
 ## 1. Транспорт и доверие
 
 - Внутренняя база URL: `http://data-api:8000/internal/v1`; mock: `http://data-mock:8000/internal/v1`. Go использует один HTTP-клиент; переключается только URL.
 - Authorization: Bearer DATA_API_TOKEN подтверждает сервис Go. Python не публикуется наружу. Между разными хостами нужен TLS; plaintext допустим только в изолированной Docker-сети одного хоста.
 - X-Actor-Max-ID — десятичная строка проверенного MAX ID. Go формирует её после валидации источника; не копирует клиентский заголовок. Python проверяет роль и владение по БД.
-- X-Request-ID — UUID трассировки. X-Contract-Version: 1.0 — версия контракта. Несовместимую версию явно отклонять.
+- X-Request-ID — UUID трассировки. X-Contract-Version: 1.1 — версия контракта. Несовместимую версию явно отклонять.
 - Worker-маршруты требуют отдельный WORKER_API_TOKEN, не пользовательскую авторизацию.
 - Каждая мутация принимает Idempotency-Key; существующий агрегат — expected_version. Тот же логический запрос после timeout получает тот же ключ; изменённый body — новый ключ.
 - Команды из inbox дополнительно передают X-Inbox-Event-ID и X-Inbox-Lease. Python под блокировкой actor проверяет актуальный fencing token до изменения домена; просроченный worker не выполняет новую команду. Запрос карты проходит собственную авторизацию и version check, не притворяется inbox worker.
@@ -51,6 +51,7 @@ UUID, MAX user ID и chat ID в JSON — строки. Время — RFC3339 UT
 | /trips/{id} | Владелец/admin: осмотры, issues, место, missing_data, отметки закрытия |
 | /inspections/{id} | Разрешённый контекст, ответы, занятые/недостающие слоты |
 | /assets/{id}/content | Авторизованный поток файла, не публичный URL |
+| /trips/{id}/inspection-photos/{phase}/{slot} | Владелец поездки/admin, приватный поток для ракурса 1…8. `before` — finalized; `after` — только после завершения/закрытия поездки с finalized after. Чужой trip, пустой slot и недоступная фаза → одинаковый 404 |
 | /vehicles/{id}/previous-inspection/photos/{slot} | Обезличенное фото; это право не открывает чужой trip/произвольный asset |
 | /admin/summary | Количества доступных, trip, hold, ожидающих проверки; пересечения показателей явно определены |
 | /admin/trips?state=&employee_id=&vehicle_id= | История всех поездок и P0-фильтры |

@@ -1,0 +1,13 @@
+{
+  "trip_id": "40000000-0000-4000-8000-000000000001",
+  "actor_max_user_id": "8000000000000000001",
+  "phase": "before",
+  "slot": 3,
+  "request_path": "/internal/v1/trips/40000000-0000-4000-8000-000000000001/inspection-photos/before/3",
+  "contract_version": "1.1",
+  "response": {
+    "status": 200,
+    "content_type": "image/png",
+    "cache_control": "private, no-store"
+  }
+}

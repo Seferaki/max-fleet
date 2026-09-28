@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.0",
+  "contract_version": "1.1",
   "fake_clock_utc": "2026-09-27T09:00:00Z",
   "seed": "../examples/synthetic-seed.json",
   "cases": [
@@ -31,6 +31,10 @@
     {"id":"inspection.extra","area":"inspection","given":"8 слотов заняты","when":"девятое фото без выбранного slot","expect":{"http":400,"error":"INVALID_REQUEST","facts":["не распределять автоматически"]}},
     {"id":"inspection.multi-image","area":"inspection","given":"MAX message с двумя image attachments","when":"нормализация события","expect":{"http":400,"error":"INVALID_REQUEST","facts":["слот не занят","попросить одно фото"]}},
     {"id":"inspection.storage-error","area":"inspection","given":"S3 запись завершается ошибкой","when":"POST photos/{slot}","expect":{"http":503,"error":"STORAGE_UNAVAILABLE","facts":["слот не занят","остальные фото сохранены"]}},
+    {"id":"inspection.trip-photo-before-owner","area":"inspection","given":"владелец active trip с finalized before и фото slot 3","when":"GET /trips/{id}/inspection-photos/before/3","expect":{"http":200,"error":null,"facts":["приватный image поток","asset ID не раскрыт"]}},
+    {"id":"inspection.trip-photo-after-hidden","area":"inspection","given":"active или returning trip с after draft","when":"GET /trips/{id}/inspection-photos/after/3","expect":{"http":404,"error":"NOT_FOUND","facts":["черновик after не раскрыт"]}},
+    {"id":"inspection.trip-photo-after-admin","area":"inspection","given":"admin и completed trip с finalized after slot 3","when":"GET /trips/{id}/inspection-photos/after/3","expect":{"http":200,"error":null,"facts":["разрешённый image поток","без публичного URL"]}},
+    {"id":"inspection.trip-photo-wrong-owner","area":"inspection","given":"другой сотрудник без admin role","when":"GET /trips/{id}/inspection-photos/before/3","expect":{"http":404,"error":"NOT_FOUND","facts":["чужой trip и фото не раскрыты"]}},
 
     {"id":"return.success","area":"return","given":"math, after 8 фото, данные, ключи и точка подтверждены","when":"return.complete","expect":{"http":200,"error":null,"facts":["trip.completed","snapshot обновлён атомарно","assignment освобождён"]}},
     {"id":"return.damage","area":"return","given":"new_damage=true и issue сохранён","when":"return.complete","expect":{"http":200,"error":null,"facts":["trip.completed","машина недоступна до разбора"]}},
