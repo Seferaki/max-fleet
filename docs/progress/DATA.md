@@ -1,6 +1,6 @@
 # Прогресс data engineer
 
-История исходной ветки `codex/data` сохранена на `9eb2211b29e48fce8a6afc410bc986fa98a4988e`. Ниже зафиксирован отдельный аудит интегратора в `codex/integration`: Python-код v1.13 синхронизирован и живой DE-контур проверен; исходная ветка data не переписывалась. [Задание](../DATA_ENGINEER.md), [модель БД](../DATABASE.md), [план](../IMPLEMENTATION_PLAN.md).
+История исходной ветки `codex/data` сохранена на `9eb2211b29e48fce8a6afc410bc986fa98a4988e`. Ниже зафиксирован аудит интегратора в `codex/integration`: Python-код v1.13 и `issue.resolve` синхронизированы с OpenAPI; живой DE-контур и регрессии проверены. Исходная ветка data не переписывалась. [Задание](../DATA_ENGINEER.md), [модель БД](../DATABASE.md), [план](../IMPLEMENTATION_PLAN.md).
 
 ```yaml
 status_schema: 1
@@ -8,13 +8,13 @@ track: data-integration-audit
 owner: A
 branch: codex/integration
 current_task: INT-02
-current_substep: "В integration перенесён Python API v1.13 и миграция 0002; live PostgreSQL/SeaweedFS lifecycle smoke прошёл"
-last_verified_code_commit: "36c18f2b7e143e12c036e280a10c21fd8415cbda"
+current_substep: "09a11b3689740bd5fce26a10d4f417587db6472e исправляет IssueResolve v1.13: in_progress принимает только status; все 43 Python теста прошли"
+last_verified_code_commit: "09a11b3689740bd5fce26a10d4f417587db6472e"
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 migration_head: "0002"
 data_ready_for_integration: true
 checkpoint_state: VERIFIED
-next_step: "Go Data API smoke против full Compose прошёл; INT-02 продолжает полный Go dialog путь через Python, включая фото, историю и admin. QA пропущена и не PASS"
+next_step: "Сквозной Go inbox/dialog + map handler на Python/PostgreSQL/S3 пройден; артефакт теста будет опубликован в следующем checkpoint. Далее INT-03: сбои, рестарт, параллельность. QA пропущена и не PASS"
 human_required: []
 ```
 
@@ -28,7 +28,7 @@ human_required: []
 | DE-06 | DONE | Возврат, отмена→новый ID, UNSAFE_RETURN, повреждение→needs_review, admin close с missing_data, block/unblock с math proof, employee.grant/access, issue.resolve, vehicle.edit/correct_snapshot (только свободная машина)/annotate; двойной complete → один 200 | — |
 | DE-07 | DONE | Inbox: дубликаты, порядок по actor, claim/ack/retry, fencing команд по lease; истёкший lease старого worker не ack-ает и не выполняет команду после перехвата; integration lease/checkpoint CAS; outbox + получатели в доменной транзакции; claim/ack/retry/dead уведомлений | — |
 | DE-08 | DONE | `scripts/load.py`: 50 users, 20 rps, 600 с — 12 000 запросов, p50 14.9 мс, p95 34.4 мс, p99 45.4 мс, 5xx 0%; 10×5 MiB параллельно — 10/10 200, max 2.9 с; EXPLAIN — все выборки < 1 мс по индексам; `scripts/backup-restore.sh` — 21 таблица / 3258 строк совпали, 27 объектов SHA-256 совпали, 0 битых ссылок | — |
-| DE-09 | READY FOR INT (audit в integration) | Code `5ea435ecaa11f3364a112f476b9cb3f88b223be9`, smoke version fix `36c18f2b7e143e12c036e280a10c21fd8415cbda`; `uv sync --frozen`, Ruff, mypy, PostgreSQL 17.6 pytest: 43 passed; Data Compose healthy; live PostgreSQL + SeaweedFS smoke: 8 before + 8 after, `manual_map`, return complete и previous-inspection read. Исходный `codex/data` оставлен без переписывания | Go Data API smoke в Compose прошёл на INT-01; Linux secrets/QA не проверялись, полный Go dialog остаётся в INT-02 |
+| DE-09 | READY FOR INT (audit в integration) | Code `5ea435ecaa11f3364a112f476b9cb3f88b223be9`, smoke version fix `36c18f2b7e143e12c036e280a10c21fd8415cbda`, integration contract-sync fix `09a11b3689740bd5fce26a10d4f417587db6472e`; `ruff`, mypy, PostgreSQL 17.6 pytest: 43 passed; Data Compose healthy; live Go→Python→PostgreSQL/S3 8+8/manual_map/history/admin scenario passed on INT-02. Исходный `codex/data` оставлен без переписывания | DE/API integration WIP until Go test artifact is committed/pushed; Linux host-secret permissions/QA not checked |
 
 ## Последний checkpoint
 
@@ -38,6 +38,7 @@ human_required: []
 - `uv run ruff check app tests migrations` и `uv run mypy app` — без ошибок;
 - `docker compose -f deploy/compose.data.yaml up -d --build` с `SEED_SYNTHETIC=1` — migrate exit 0, data-api healthy;
 - `uv run ruff check scripts/smoke.py` — PASS; `scripts/smoke.py` против живого контура (реальные PostgreSQL + SeaweedFS S3): взятие → 8 фото → поездка → возврат → 8 фото → `manual_map` → завершение и чтение прошлого осмотра — PASS;
+- Integration code `09a11b3689740bd5fce26a10d4f417587db6472e`: Python `IssueResolve` теперь принимает только `status` для `in_progress`; терминальные решения по-прежнему требуют непустой комментарий и подтверждение. `ruff check app/api/schemas.py tests/test_admin_queues.py`, `mypy app`, полный `pytest -q` на отдельном PostgreSQL 17.6 — PASS, 43 теста; регрессия проверяет отказ старого payload, 403 сотруднику и сохранение `assigned_to`/`resolved_by`.
 - runtime-роль БД не может менять схему; анонимный запрос к S3 → 403.
 
 Контрактные вопросы сопоставлены с OpenAPI v1.13, Go client/mock и Python. Data API готов для интеграции по проверкам выше; Go client smoke в Compose прошёл, но полный Go dialog, MAX, Linux host-secret permissions и QA ещё не приняты этим выводом.
@@ -48,7 +49,7 @@ human_required: []
 
 ## Контрактные вопросы — решения интегратора в `codex/integration`
 
-Устаревшие вопросы из исходного handoff закрыты сверкой текущего v1.13 и фактических реализаций. Версию контракта повышать не потребовалось:
+Устаревшие вопросы из исходного handoff закрыты сверкой текущего v1.13 и фактических реализаций. Версию контракта повышать не потребовалось. Integration-регрессия подтвердила, что переход issue в `in_progress` принимает только `status`, а терминальный `resolved` требует комментарий и подтверждение; старый Python payload отклоняется:
 
 1. **`return.complete`.** OpenAPI использует общий `CommandResult` с `aggregate`; mock и Python возвращают агрегат Return. Go декодирует конкретный DTO по операции.
 2. **Версии фото и осмотра.** Текущий OpenAPI v1.13 явно говорит, что фото повышает Inspection и родительский checkout/return; `inspection.update` и `inspection.confirm_photos` также повышают версии. Go mock и Python совпадают.

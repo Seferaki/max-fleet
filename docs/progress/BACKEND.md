@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. BE-12 и обязательный UI-01 закрыты только в Go/mock; backend gate true, full stack false. По прямому распоряжению пользователя начат INT-01. Python синхронизирован с OpenAPI v1.13 и прошёл локальные тесты и живой PostgreSQL/S3 smoke; QA пропускается по решению пользователя и не считается PASS. Исходная `codex/data` сохранена на SHA `9eb2211b29e48fce8a6afc410bc986fa98a4988e`; импорт и совместимые исправления выполняются в `codex/integration`.
+Единственный текущий статус backend. BE-12 и обязательный UI-01 закрыты только в Go/mock; backend gate true, full stack false. По прямому распоряжению пользователя выполняется INT. В интеграционном аудите найдено и исправлено расхождение Python `issue.resolve` с OpenAPI v1.13: переход в `in_progress` принимает только `status`; полный Python-набор после исправления — 43 теста PASS. QA пропускается по решению пользователя и не считается PASS. Исходная `codex/data` сохранена на SHA `9eb2211b29e48fce8a6afc410bc986fa98a4988e`; интеграционные исправления делаются в `codex/integration`.
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-29T23:01:16Z"
+heartbeat_utc: "2026-09-29T23:26:11Z"
 current_task: INT-02
-current_substep: "Full Compose added at fe43bebeaaa80f79b2bfa626114cf77a6fc4437b; build/up --wait healthy. Live Go dataapi client against Python in Compose network passed Meta v1.13, actor/admin ACL, rules/state, hold create/idempotent replay/cancel. Python live smoke completed full 8+8/manual_map return. Gateway /health/ready still reports partial dialog flows."
-last_verified_code_commit: "fe43bebeaaa80f79b2bfa626114cf77a6fc4437b"
-checkpoint_state: WIP
+current_substep: "Python issue.resolve v1.13 payload mismatch fixed in 09a11b3689740bd5fce26a10d4f417587db6472e. Ruff, mypy and all 43 PostgreSQL tests pass. Full Go dialog→Python scenario is being committed next."
+last_verified_code_commit: "09a11b3689740bd5fce26a10d4f417587db6472e"
+checkpoint_state: VERIFIED
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "INT-02: провести полный диалог Go→Python→PostgreSQL/S3 на синтетических данных, включая 8+8 фото, manual_map, историю и admin; затем исправить найденные расхождения. Gateway /health/ready остаётся 503 partial. QA пропущена и не PASS; реальный MAX требует H-01."
+next_step: "Зафиксировать live Go dialog test: 8+8, Go map handler/manual_map с безопасным retry, историю/S3 photo recovery, issue ACL и admin take/resolve через inbox. Затем повторить тест и закрыть INT-02 после публикации. Gateway /health/ready остаётся 503 partial; QA не запускалась; реальный MAX требует H-01."
 human_required: [H-01]
 ```
 
@@ -42,7 +42,7 @@ human_required: [H-01]
 | BE-11 | DONE (mock) | Code `1612d4e9ff99ae35ea31b13a29f3fcfe20e87e78`; fixes `8734ab0e1fe283cbf1388c95763f3681be83c821`, `18cc884cfdf09d8b49cdaae862c89f576efecec8`, `e57517a91937562ec4b06c8cb60193e44d51a6fe`. Actions [#290](https://github.com/Seferaki/max-fleet/actions/runs/36633923376) all jobs green: Linux bootstrap permissions, contract, Go test/race/vet/build, web, Compose cold start/health/restart/non-root/read-only. | Только mock; Python/MAX не проверены. BE-12 synthetic gate. |
 | BE-12 | DONE (Go/mock gate) | Code 1d175d7120c6c7021e68800b22e824d4871b8a9b, contract caa134ddffcc0edd501851ae82f12020c992e75a, published checkpoint 085768d39f3c22d64a06e2e763c1ba4686f0d884; local Go/contract checks and Actions #292 successful, all five jobs. | backend_ready_for_integration=true; INT-01 начата после takeover, QA пропущена по решению владельца и не PASS. |
 | INT-01 | DONE (synthetic configuration) | Compose `fe43bebeaaa80f79b2bfa626114cf77a6fc4437b`; `docker compose -f deploy/compose.full.yaml -p max-fleet-int-full config --quiet` PASS; `up -d --build --wait --wait-timeout 360` PASS. PostgreSQL, S3, Python API, Go live, web healthy; migration job exit 0, worker running. Data `/health/ready`, web ready/live и internal gateway→data-api health — 200. Go live test in Compose network/UID 10001 checked Python `Meta=real v1.13`, employee/admin ACL, rules/state, checkout create/replay/cancel. Gateway `/health/ready` returns 503 `dialog flows incomplete`; MAX/UI product readiness is not claimed. Go image receives no DB/S3 credentials. | INT-02; QA and real MAX are separate gates. |
-| INT-02 | IN_PROGRESS (WIP) | Full Python HTTP smoke through Compose: hold → 8 before photos → start → 8 after photos → manual_map → completed trip/history/previous inspection PASS. Go `TestLivePythonDataAPI` against Python in the same Compose network tests strict DTO decoding, 403 admin ACL, idempotent hold replay and cancel; not yet full Go dialog path. | Route the full Go dialog through Python and include issue/admin history; check failure/restart recovery. QA explicitly skipped and not PASS. |
+| INT-02 | IN_PROGRESS (WIP) | Python contract-sync fix `09a11b3689740bd5fce26a10d4f417587db6472e`: `issue.resolve(in_progress)` теперь status-only по OpenAPI; `ruff`, `mypy`, PostgreSQL pytest 43/43 PASS. Предыдущий Go Data API smoke и Python 8+8/manual_map live smoke PASS. Новый сквозной тест Go inbox/dialog + Go map handler + Python/PostgreSQL/S3 прошёл на рабочей копии; его артефакт и повторная проверка ещё не закоммичены. | Commit/push full live dialog test, потом зафиксировать INT-02; INT-03 отдельно проверит рестарт/ошибки/конкуренцию. QA явно пропущена и не PASS. |
 | INT-03 | TODO | — | См. план |
 | INT-04 | TODO | — | См. план |
 | INT-05 | TODO | — | См. план |
