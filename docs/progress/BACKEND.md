@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T13:47:30Z"
+heartbeat_utc: "2026-09-29T13:49:49Z"
 current_task: BE-09
-current_substep: "BE-08 закрыта только на Go/mock; BE-09: сверяю admin intent_payload с удалённым codex/data и contract v1.4; статус BE-08/BE-09 опубликован на 3ac3ab78274b771dc48a30df6aae78517d410b58"
+current_substep: "BE-09: устранить расхождение DATA Q5 — OpenAPI v1.4 разрешает неполные admin intent_payload; закрепить точные operation-specific схемы как v1.5 с examples/scenarios, затем Go/mock proof"
 last_verified_code_commit: "51c3bbbf4e8750265d922c1138c7c1ccaecc2b11"
 checkpoint_state: WIP
 contract_commit: "bb6f258f8e1fa8f1f028a77df68b36226de1444b"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-09: сверить admin challenge intent_payload для vehicle.block/unblock, employee.grant/access и trip.admin_close с OpenAPI v1.4 и опубликованным docs/progress/DATA.md; выбрать первый незакрытый mock-сценарий, проверить actor/proof/version/idempotency и реализовать его без SQL. Затем audited rollback correction и assigned_to; до INT получить от data engineer contract SHA/совместимость. H-03/H-04 нужны для контактов/retention. Hold 15 минут сохранён по явному требованию; real MAX/Python не приняты."
+next_step: "BE-09: после фиксации точных payload схем — внедрить challenge.create/answer admin intents и one-use challenge_proof_id с SHA-256 intent binding в Go mock для block/unblock/grant/access/admin_close; проверки actor/proof/version/idempotency; затем audited rollback correction и assigned_to. Контракт v1.5 требуется передать в codex/data до INT, не меняя services/data здесь. H-03/H-04 нужны для контактов/retention; hold 15 минут сохранён, real MAX/Python не приняты."
 human_required: [H-01]
 ```
 
