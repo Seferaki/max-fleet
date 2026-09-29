@@ -8,13 +8,13 @@ track: data-integration-audit
 owner: A
 branch: codex/integration
 current_task: INT-02
-current_substep: "09a11b3689740bd5fce26a10d4f417587db6472e исправляет IssueResolve v1.13: in_progress принимает только status; все 43 Python теста прошли"
-last_verified_code_commit: "09a11b3689740bd5fce26a10d4f417587db6472e"
+current_substep: "Python issue.resolve v1.13 исправлен в 09a11b3689740bd5fce26a10d4f417587db6472e; 43 Python теста PASS. Сквозной Go dialog → Python/PostgreSQL/S3 test PASS в code commit 84ad9b51d732787a8e6057577ed7048f209a4015; публикация ожидает подтверждения очереди/секретов"
+last_verified_code_commit: "84ad9b51d732787a8e6057577ed7048f209a4015"
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 migration_head: "0002"
 data_ready_for_integration: true
 checkpoint_state: VERIFIED
-next_step: "Сквозной Go inbox/dialog + map handler на Python/PostgreSQL/S3 пройден; артефакт теста будет опубликован в следующем checkpoint. Далее INT-03: сбои, рестарт, параллельность. QA пропущена и не PASS"
+next_step: "Проверить очередь/секреты, обычным push опубликовать live Go test commit 84ad9b51d732787a8e6057577ed7048f209a4015 и status checkpoint; подтвердить remote SHA, затем продолжить INT-03 сбои/restart/lost response/concurrency. DE-09 готов к интеграции; QA NOT RUN, Linux host-secret permissions не проверены"
 human_required: []
 ```
 
@@ -28,7 +28,7 @@ human_required: []
 | DE-06 | DONE | Возврат, отмена→новый ID, UNSAFE_RETURN, повреждение→needs_review, admin close с missing_data, block/unblock с math proof, employee.grant/access, issue.resolve, vehicle.edit/correct_snapshot (только свободная машина)/annotate; двойной complete → один 200 | — |
 | DE-07 | DONE | Inbox: дубликаты, порядок по actor, claim/ack/retry, fencing команд по lease; истёкший lease старого worker не ack-ает и не выполняет команду после перехвата; integration lease/checkpoint CAS; outbox + получатели в доменной транзакции; claim/ack/retry/dead уведомлений | — |
 | DE-08 | DONE | `scripts/load.py`: 50 users, 20 rps, 600 с — 12 000 запросов, p50 14.9 мс, p95 34.4 мс, p99 45.4 мс, 5xx 0%; 10×5 MiB параллельно — 10/10 200, max 2.9 с; EXPLAIN — все выборки < 1 мс по индексам; `scripts/backup-restore.sh` — 21 таблица / 3258 строк совпали, 27 объектов SHA-256 совпали, 0 битых ссылок | — |
-| DE-09 | READY FOR INT (audit в integration) | Code `5ea435ecaa11f3364a112f476b9cb3f88b223be9`, smoke version fix `36c18f2b7e143e12c036e280a10c21fd8415cbda`, integration contract-sync fix `09a11b3689740bd5fce26a10d4f417587db6472e`; `ruff`, mypy, PostgreSQL 17.6 pytest: 43 passed; Data Compose healthy; live Go→Python→PostgreSQL/S3 8+8/manual_map/history/admin scenario passed on INT-02. Исходный `codex/data` оставлен без переписывания | DE/API integration WIP until Go test artifact is committed/pushed; Linux host-secret permissions/QA not checked |
+| DE-09 | READY FOR INT (audit в integration) | Code `5ea435ecaa11f3364a112f476b9cb3f88b223be9`, smoke version fix `36c18f2b7e143e12c036e280a10c21fd8415cbda`, integration contract-sync fix `09a11b3689740bd5fce26a10d4f417587db6472e`; `ruff`, mypy, PostgreSQL 17.6 pytest: 43 passed; Data Compose healthy; live Go→Python/PostgreSQL/S3 run passed and is captured by `84ad9b51d732787a8e6057577ed7048f209a4015` (локально проверен, публикация ожидается). Исходный `codex/data` оставлен без переписывания | DE-09 functional gate passed; synthetic INT-02 code/status push pending; Linux host-secret permissions/QA not checked |
 
 ## Последний checkpoint
 
