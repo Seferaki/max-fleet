@@ -9,9 +9,9 @@ lock_state: ACTIVE
 owner: A
 session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T18:58:22Z"
+heartbeat_utc: "2026-09-29T18:59:09Z"
 current_task: BE-09
-current_substep: "BE-09/7.4.1 published: code a679941 and status checkpoint 02f84ee verified on origin/codex/backend. Next: connect admin-close MAX flow."
+current_substep: "BE-09/7.4.2: wire admin-close action into trip detail and durable MAX flow, with challenge, idempotency and recovery tests."
 last_verified_code_commit: "a679941c1a9dac104502e41c5ffa10edb67fc7a4"
 checkpoint_state: WIP
 contract_commit: "a679941c1a9dac104502e41c5ffa10edb67fc7a4"
