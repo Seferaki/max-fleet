@@ -189,3 +189,55 @@ func TestAfterIssueConversationRequiresCurrentOwnedReturn(t *testing.T) {
 		expectAPIError(t, err, "INVALID_STATE")
 	}
 }
+
+func TestReturnGeoConversationRequiresConfirmedOwnedLocation(t *testing.T) {
+	now := time.Date(2026, 9, 29, 3, 0, 0, 0, time.UTC)
+	mock, err := NewWithClock("test-service-token", func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	tripID, returnID := newRequestID(), newRequestID()
+	employee := mock.employees[driverID]
+	employee.ActiveTripID = &tripID
+	mock.employees[driverID] = employee
+	mock.vehicles[0].Status = "in_trip"
+	mock.trips[tripID] = dataapi.Trip{ID: tripID, VehicleID: firstVehicleID, EmployeeID: employee.ID, Status: "returning", ReturnID: &returnID, Version: 2}
+	mock.returns[returnID] = dataapi.Return{ID: returnID, TripID: tripID, Status: "draft", Step: "checklist", IntentConfirmedAt: &now, Version: 1}
+	client := commandClient(t, mock)
+	ctx := context.Background()
+	coordinates, kind := "55.750000,37.620000", "none"
+	input := dataapi.ConversationSaveInput{Flow: "return_location", Step: "confirm", PendingInputKind: &kind, Context: dataapi.ConversationContext{TargetID: &returnID, ReturnID: &returnID, TripID: &tripID, VehicleID: &mock.vehicles[0].ID, DraftText: &coordinates}}
+	if _, err := client.ConversationSave(ctx, "8000000000000000002", employee.ID, 1, input, "geo-foreign", nil); err == nil {
+		t.Fatal("foreign actor saved location preview")
+	} else {
+		expectAPIError(t, err, "NOT_FOUND")
+	}
+	bad := input
+	invalidCoordinates := "NaN,37.62"
+	bad.Context.DraftText = &invalidCoordinates
+	if _, err := client.ConversationSave(ctx, driverID, employee.ID, 1, bad, "geo-invalid", nil); err == nil {
+		t.Fatal("invalid geo preview accepted")
+	} else {
+		expectAPIError(t, err, "INVALID_STATE")
+	}
+	if _, err := client.ConversationSave(ctx, driverID, employee.ID, 1, input, "geo-preview", nil); err != nil {
+		t.Fatal(err)
+	}
+	done := input
+	done.Step = "done"
+	if _, err := client.ConversationSave(ctx, driverID, employee.ID, 2, done, "geo-unconfirmed-done", nil); err == nil {
+		t.Fatal("conversation marked done without domain location")
+	} else {
+		expectAPIError(t, err, "INVALID_STATE")
+	}
+	if _, err := client.ReturnSetLocation(ctx, driverID, returnID, 1, "geo-set-confirmed", nil, dataapi.LocationInput{Latitude: 55.75, Longitude: 37.62, Source: "max_geo", Confirmed: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ConversationSave(ctx, driverID, employee.ID, 2, done, "geo-done", nil); err != nil {
+		t.Fatal(err)
+	}
+	state, err := client.State(ctx, driverID)
+	if err != nil || state.Conversation == nil || state.Conversation.Step != "done" || state.Return == nil || state.Return.ParkingLocation == nil || state.Return.ParkingLocation.Source != "max_geo" {
+		t.Fatalf("confirmed location state: %+v %v", state, err)
+	}
+}

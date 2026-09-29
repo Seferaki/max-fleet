@@ -1,7 +1,9 @@
 package datamock
 
 import (
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -58,6 +60,8 @@ func (s *Server) saveConversation(w http.ResponseWriter, requestID, actor string
 		valid = s.validDuringIssueConversation(actor, input)
 	case "issue_after":
 		valid = s.validAfterIssueConversation(actor, input)
+	case "return_location":
+		valid = s.validReturnLocationConversation(actor, input)
 	}
 	if !valid {
 		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
@@ -68,6 +72,39 @@ func (s *Server) saveConversation(w http.ResponseWriter, requestID, actor string
 	conversation := dataapi.Conversation{Flow: input.Flow, Step: input.Step, Context: context, PendingInputKind: input.PendingInputKind, Version: currentVersion + 1, UpdatedAt: s.now().UTC()}
 	s.conversations[actor] = conversation
 	return commandResult("conversation.save", conversation), true
+}
+
+func parseDraftCoordinates(value string) (float64, float64, bool) {
+	parts := strings.Split(value, ",")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	lat, latErr := strconv.ParseFloat(parts[0], 64)
+	lon, lonErr := strconv.ParseFloat(parts[1], 64)
+	return lat, lon, latErr == nil && lonErr == nil && !math.IsNaN(lat) && !math.IsNaN(lon) && !math.IsInf(lat, 0) && !math.IsInf(lon, 0) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180
+}
+
+func (s *Server) validReturnLocationConversation(actor string, input dataapi.ConversationSaveInput) bool {
+	c := input.Context
+	if c.TargetID == nil || c.ReturnID == nil || *c.TargetID != *c.ReturnID || c.TripID == nil || c.VehicleID == nil || c.DraftText == nil || c.IssueID != nil || c.IssueCategory != nil || len(c.AssetIDs) != 0 {
+		return false
+	}
+	lat, lon, valid := parseDraftCoordinates(*c.DraftText)
+	if !valid {
+		return false
+	}
+	draft, found := s.returns[*c.ReturnID]
+	if !found || draft.TripID != *c.TripID {
+		return false
+	}
+	trip, found := s.trips[*c.TripID]
+	if !found || trip.EmployeeID != s.employees[actor].ID || trip.VehicleID != *c.VehicleID || trip.ReturnID == nil || *trip.ReturnID != draft.ID {
+		return false
+	}
+	if input.Step == "done" {
+		return draft.ParkingLocation != nil && draft.ParkingLocation.Source == "max_geo" && draft.ParkingLocation.Latitude == lat && draft.ParkingLocation.Longitude == lon
+	}
+	return input.Step == "confirm" && draft.Status == "draft" && draft.IntentConfirmedAt != nil && trip.Status == "returning"
 }
 
 func (s *Server) validAfterIssueConversation(actor string, input dataapi.ConversationSaveInput) bool {
