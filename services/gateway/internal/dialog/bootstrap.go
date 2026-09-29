@@ -100,12 +100,14 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	returnSetID, returnSetVersion, returnField, returnValue, returnSet := returnCheckAnswerTarget(item.Event)
 	returnPhotosID, returnPhotosVersion, returnPhotos := vehicleActionTarget(item.Event, "return-photos:")
 	returnConfirmPhotosID, returnConfirmPhotosVersion, returnConfirmPhotos := vehicleActionTarget(item.Event, "return-confirm-photos:")
+	returnReplaceID, returnReplaceVersion, returnReplace := vehicleActionTarget(item.Event, "return-replace:")
+	returnReplaceSlotID, returnReplaceSlotVersion, returnReplaceSlotNumber, returnReplaceSlot := returnReplacementSlotTarget(item.Event)
 	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
 	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -162,6 +164,12 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	}
 	if returnConfirmPhotos {
 		return p.confirmReturnPhotos(ctx, item, actor, maxID, *me.Employee, state, returnConfirmPhotosID, returnConfirmPhotosVersion)
+	}
+	if returnReplace {
+		return p.chooseReturnReplacement(ctx, maxID, *me.Employee, state, returnReplaceID, returnReplaceVersion)
+	}
+	if returnReplaceSlot {
+		return p.requestReturnReplacement(ctx, maxID, *me.Employee, state, returnReplaceSlotID, returnReplaceSlotVersion, returnReplaceSlotNumber)
 	}
 	if intent || confirm {
 		vehicleID, version := actionVehicleID, actionVersion
@@ -905,6 +913,9 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 		}
 		if state.Return.Step == "checklist" {
 			rows = append(rows, []maxsdk.Button{{Text: "Фото после поездки", Payload: fmt.Sprintf("return-photos:%s:%d", state.Return.ID, state.Return.Version)}})
+			if len(state.Return.Inspection.OccupiedSlots) > 0 {
+				rows = append(rows, []maxsdk.Button{{Text: "Заменить фото после", Payload: fmt.Sprintf("return-replace:%s:%d", state.Return.ID, state.Return.Version)}})
+			}
 			if slot, _, ok := photoSlotPhase(state.Return.Inspection, "after"); ok && slot == 0 && state.Return.Inspection.PhotosConfirmedAt == nil {
 				rows = append(rows, []maxsdk.Button{{Text: "Подтвердить фото после", Payload: fmt.Sprintf("return-confirm-photos:%s:%d", state.Return.Inspection.ID, state.Return.Inspection.Version)}})
 			}

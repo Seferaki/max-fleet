@@ -122,4 +122,55 @@ func TestReturnAfterPhotosEightConfirmAndErrors(t *testing.T) {
 	if err != nil || state.Return == nil || state.Return.Inspection.PhotosConfirmedAt == nil || len(state.Return.Inspection.OccupiedSlots) != 8 || state.Trip == nil || state.Trip.Status != "returning" {
 		t.Fatalf("confirmed after photos: %+v %v", state, err)
 	}
+	confirmedVersion := state.Return.Inspection.Version
+	if err := processor.Handle(context.Background(), menuItem(driver, "after-replace-menu", now)); err != nil {
+		t.Fatal(err)
+	}
+	var replace string
+	for _, row := range sender.Messages()[len(sender.Messages())-1].Buttons {
+		if strings.HasPrefix(row[0].Payload, "return-replace:") {
+			replace = row[0].Payload
+		}
+	}
+	if replace == "" {
+		t.Fatal("after replacement button missing")
+	}
+	if err := processor.Handle(context.Background(), callbackItem(driver, "after-replace-choose", replace, now)); err != nil {
+		t.Fatal(err)
+	}
+	choices := sender.Messages()[len(sender.Messages())-1]
+	if len(choices.Buttons) != 8 || !strings.HasSuffix(choices.Buttons[2][0].Payload, ":3") {
+		t.Fatalf("after replacement choices: %+v", choices)
+	}
+	selected := choices.Buttons[2][0].Payload
+	if err := processor.Handle(context.Background(), callbackItem(driver, "after-replace-slot", selected, now)); err != nil || !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, "/replace 3") {
+		t.Fatalf("after replacement prompt: %v %+v", err, sender.Messages())
+	}
+	replacement := photoItem(driver, "after-replacement", now).Event
+	caption := "/replace 3"
+	replacement.Payload.Text = &caption
+	fetcher.err = maxsdk.ErrPhotoUnavailable
+	failed := replacement
+	failed.EventKey = "message:after-replacement-failed:message_created"
+	failedMessageID := "after-replacement-failed"
+	failed.MessageID = &failedMessageID
+	if got := deliver(failed); !strings.Contains(got, "Не удалось") {
+		t.Fatalf("failed replacement: %q", got)
+	}
+	state, err = actor.State(context.Background(), driver)
+	if err != nil || state.Return == nil || state.Return.Inspection.PhotosConfirmedAt == nil || state.Return.Inspection.Version != confirmedVersion {
+		t.Fatalf("failed replacement changed set: %+v %v", state, err)
+	}
+	fetcher.err = nil
+	fetcher.image = samplePhoto(t, 99)
+	if got := deliver(replacement); !strings.Contains(got, "заменено") {
+		t.Fatalf("replacement: %q", got)
+	}
+	state, err = actor.State(context.Background(), driver)
+	if err != nil || state.Return == nil || state.Return.Inspection.PhotosConfirmedAt != nil || state.Return.Inspection.Version != confirmedVersion+1 || len(state.Return.Inspection.OccupiedSlots) != 8 {
+		t.Fatalf("replacement set: %+v %v", state, err)
+	}
+	if err := processor.Handle(context.Background(), callbackItem(driver, "after-replace-stale", selected, now)); err != nil || !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, "изменился") {
+		t.Fatalf("stale replacement selection: %v %+v", err, sender.Messages())
+	}
 }

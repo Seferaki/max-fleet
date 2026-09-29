@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
@@ -17,6 +18,45 @@ func returnPhotoDraft(state dataapi.CurrentState, employee dataapi.Employee) (*d
 	}
 	_, _, ok := photoSlotPhase(state.Return.Inspection, "after")
 	return state.Return, ok
+}
+
+func returnReplacementSlotTarget(event dataapi.NormalizedEvent) (string, int64, int, bool) {
+	if event.EventType != "message_callback" || event.Payload.Kind != "callback" || event.Payload.CallbackData == nil || !strings.HasPrefix(*event.Payload.CallbackData, "return-replace-slot:") {
+		return "", 0, 0, false
+	}
+	parts := strings.Split(strings.TrimPrefix(*event.Payload.CallbackData, "return-replace-slot:"), ":")
+	if len(parts) != 3 {
+		return "", 0, 0, true
+	}
+	version, versionErr := strconv.ParseInt(parts[1], 10, 64)
+	slot, slotErr := strconv.Atoi(parts[2])
+	if versionErr != nil || slotErr != nil || version < 1 || slot < 1 || slot > 8 {
+		return "", 0, 0, true
+	}
+	return parts[0], version, slot, true
+}
+
+func (p Bootstrap) chooseReturnReplacement(ctx context.Context, maxID int64, employee dataapi.Employee, state dataapi.CurrentState, returnID string, version int64) error {
+	draft, ok := returnPhotoDraft(state, employee)
+	if !ok || !vehicleIDPattern.MatchString(returnID) || version < 1 || draft.ID != returnID || draft.Version != version {
+		return p.sendView(ctx, maxID, "Выбор замены фото после устарел. Обновите /menu.", nil)
+	}
+	rows := make([][]maxsdk.Button, 0, len(draft.Inspection.OccupiedSlots))
+	for _, slot := range draft.Inspection.OccupiedSlots {
+		rows = append(rows, []maxsdk.Button{{Text: fmt.Sprintf("%d. %s", slot, photoAngles[slot-1]), Payload: fmt.Sprintf("return-replace-slot:%s:%d:%d", returnID, version, slot)}})
+	}
+	if len(rows) == 0 {
+		return p.sendView(ctx, maxID, "Сохранённых фото после для замены пока нет.", nil)
+	}
+	return p.sendView(ctx, maxID, "Выберите ракурс после поездки. Старое фото останется до успешного сохранения нового.", rows)
+}
+
+func (p Bootstrap) requestReturnReplacement(ctx context.Context, maxID int64, employee dataapi.Employee, state dataapi.CurrentState, returnID string, version int64, slot int) error {
+	draft, ok := returnPhotoDraft(state, employee)
+	if !ok || !vehicleIDPattern.MatchString(returnID) || version < 1 || draft.ID != returnID || draft.Version != version || slot < 1 || slot > 8 || !containsPhotoSlot(draft.Inspection.OccupiedSlots, slot) {
+		return p.sendView(ctx, maxID, "Ракурс для замены изменился. Обновите /menu.", nil)
+	}
+	return p.sendView(ctx, maxID, fmt.Sprintf("Заменить фото после %d/8 — %s. Отправьте одно изображение с подписью /replace %d. Старое фото останется до сохранения нового.", slot, photoAngles[slot-1], slot), nil)
 }
 
 func (p Bootstrap) returnPhotos(ctx context.Context, maxID int64, employee dataapi.Employee, state dataapi.CurrentState, returnID string, version int64) error {
@@ -77,10 +117,19 @@ func (p Bootstrap) returnPhotoUpload(ctx context.Context, item dataapi.InboxClai
 		return p.sendView(ctx, maxID, "Сейчас нет активного осмотра после поездки. Обновите /menu.", nil)
 	}
 	slot, count, _ := photoSlotPhase(draft.Inspection, "after")
+	replacing := false
 	if item.Event.Payload.Text != nil && strings.TrimSpace(*item.Event.Payload.Text) != "" {
-		return p.sendView(ctx, maxID, "Подпись к фото сейчас не нужна. Отправьте одно изображение для следующего ракурса.", nil)
+		fields := strings.Fields(*item.Event.Payload.Text)
+		if len(fields) != 2 || fields[0] != "/replace" {
+			return p.sendView(ctx, maxID, "Для замены выберите ракурс через /menu и отправьте фото с подписью /replace N.", nil)
+		}
+		selected, parseErr := strconv.Atoi(fields[1])
+		if parseErr != nil || selected < 1 || selected > 8 || !containsPhotoSlot(draft.Inspection.OccupiedSlots, selected) {
+			return p.sendView(ctx, maxID, "Этот ракурс ещё не сохранён или номер неверен. Выберите сохранённый ракурс через /menu.", nil)
+		}
+		slot, replacing = selected, true
 	}
-	if slot == 0 {
+	if slot == 0 && !replacing {
 		return p.sendView(ctx, maxID, "Фото после поездки 8/8 уже сохранены. Девятое фото не добавлено; подтвердите комплект через /menu.", nil)
 	}
 	if p.Photos == nil || p.PhotoStore == nil {
@@ -122,8 +171,15 @@ func (p Bootstrap) returnPhotoUpload(ctx context.Context, item dataapi.InboxClai
 		return err
 	}
 	_, saved, valid := photoSlotPhase(result.Inspection, "after")
-	if result.Inspection.ID != draft.Inspection.ID || result.Inspection.Version != draft.Inspection.Version+1 || !valid || saved != count+1 || !containsPhotoSlot(result.Inspection.OccupiedSlots, slot) || result.Inspection.PhotosConfirmedAt != nil {
+	expectedCount := count + 1
+	if replacing {
+		expectedCount = count
+	}
+	if result.Inspection.ID != draft.Inspection.ID || result.Inspection.Version != draft.Inspection.Version+1 || !valid || saved != expectedCount || !containsPhotoSlot(result.Inspection.OccupiedSlots, slot) || result.Inspection.PhotosConfirmedAt != nil {
 		return errors.New("after photo upload returned invalid inspection")
+	}
+	if replacing {
+		return p.sendView(ctx, maxID, fmt.Sprintf("Фото после %d/8 — %s заменено. Остальные ракурсы сохранены. %s", slot, photoAngles[slot-1], photoProgressPhase(result.Inspection, "after")), nil)
 	}
 	return p.sendView(ctx, maxID, photoProgressPhase(result.Inspection, "after"), nil)
 }
