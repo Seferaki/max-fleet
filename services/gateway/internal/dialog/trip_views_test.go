@@ -26,9 +26,13 @@ func TestMyTripsShowFivePerPageAndKeepCursorPrivate(t *testing.T) {
 	now := time.Date(2026, 9, 29, 5, 0, 0, 0, time.UTC)
 	actor, _, closeServer := mockClients(t, now)
 	defer closeServer()
+	me, err := actor.Me(context.Background(), "8000000000000000001")
+	if err != nil || me.Employee == nil {
+		t.Fatal(err)
+	}
 	items := make([]dataapi.Trip, 6)
 	for index := range items {
-		items[index] = dataapi.Trip{ID: fmt.Sprintf("40000000-0000-4000-8000-%012d", index+1), Status: "completed"}
+		items[index] = dataapi.Trip{ID: fmt.Sprintf("40000000-0000-4000-8000-%012d", index+1), EmployeeID: me.Employee.ID, Status: "completed"}
 	}
 	next := "opaque-private-cursor"
 	data := &tripViewData{Client: actor, myTripPages: map[string]dataapi.Page[dataapi.Trip]{
@@ -57,6 +61,14 @@ func TestMyTripsShowFivePerPageAndKeepCursorPrivate(t *testing.T) {
 	}
 	if err := processor.Handle(context.Background(), callbackItem(owner, "history-invalid", "trip-list:mine:21", now)); err != nil || len(data.myTripLimits) != 3 || !strings.Contains(sender.Messages()[2].Text, "недоступен") {
 		t.Fatalf("invalid history page: %v %+v", err, sender.Messages()[2])
+	}
+	foreign := items[0]
+	foreign.EmployeeID = "another-employee"
+	data.myTripPages[""] = dataapi.Page[dataapi.Trip]{Items: []dataapi.Trip{foreign}}
+	foreignList := menuItem(owner, "history-foreign-row", now)
+	foreignList.Event.Payload.Text = &command
+	if err := processor.Handle(context.Background(), foreignList); err == nil || !strings.Contains(err.Error(), "invalid owned trip list projection") || len(sender.Messages()) != 3 {
+		t.Fatalf("foreign list row leaked: %v %+v", err, sender.Messages())
 	}
 }
 

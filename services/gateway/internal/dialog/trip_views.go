@@ -189,6 +189,9 @@ func (p Bootstrap) showTripList(ctx context.Context, actor string, maxID int64, 
 		if !vehicleIDPattern.MatchString(trip.ID) {
 			return errors.New("data-api: invalid trip list projection")
 		}
+		if scope == "mine" && trip.EmployeeID != employee.ID {
+			return errors.New("data-api: invalid owned trip list projection")
+		}
 		rows = append(rows, []maxsdk.Button{{Text: fmt.Sprintf("%s · %s", shortLabel(trip.ID[:8]), shortLabel(trip.Status)), Payload: "trip:" + trip.ID}})
 	}
 	controls := []maxsdk.Button{}
