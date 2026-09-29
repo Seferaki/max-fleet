@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "27659325-800e-4ea6-99ac-3d8edec02849"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T03:25:19Z"
+heartbeat_utc: "2026-09-29T03:27:56Z"
 current_task: BE-07
-current_substep: "BE-07 WIP: issue during/after отправляются на Go/mock; парковка и complete впереди"
-last_verified_code_commit: "18a01ebb695ea2a05a45f91c35be43b5dad8cb0f"
+current_substep: "BE-07 WIP: mock валидирует MAX geo preview и подтверждённую точку"
+last_verified_code_commit: "68d55af0025e7cbcff96a1f51dba98b5a21e63e4"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-07: подтверждённая точка парковки MAX и manual map UI-01, безопасный return.complete/recovery, контакт ответственного; реальный MAX/Python только INT"
+next_step: "BE-07: подключить MAX geo preview/confirm к диалогу, затем manual map UI-01 и безопасный complete/recovery"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-07 code `68d55af0025e7cbcff96a1f51dba98b5a21e63e4`: mock conversation flow return_location хранит предложенные MAX координаты и требует доменного return.set_location с source=max_geo перед done; owner/current return и диапазоны координат проверяются. Тест проверил чужого actor, NaN, запрет done до подтверждения и успешный done после записи. `go test ./internal/datamock -run '^TestReturnGeoConversationRequiresConfirmedOwnedLocation$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Диалог MAX geo и React карта ещё впереди; реальный MAX/Python не проверены, BE-07 WIP.
 
 - BE-07 code `18a01ebb695ea2a05a45f91c35be43b5dad8cb0f`: итог issue_after, `issue.create` с CAS/inbox key и conversation done; повтор после domain commit не создаёт второй issue/outbox. Для damage и dirty нужны отдельные категории/замечания, после первого диалог предлагает второе. Тест проверил чужого actor, отсутствие lease, retry, активный return, две issue без наследования фото и два outbox event. `go test ./internal/dialog -run '^TestReturnIssuesRequireSeparateDamageAndDirtyReportsWithRetry$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Парковка/complete и реальный MAX/Python не проверены, BE-07 WIP.
 
