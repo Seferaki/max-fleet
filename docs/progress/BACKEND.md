@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03, BE-01…BE-07 и UI-01 выполнены на Go mock; BE-08 следующий. Контракт v1.2 и Go client/mock для сохранения черновика опубликованы; Python v1.2 не реализован. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03, BE-01…BE-07 и UI-01 выполнены на Go mock; BE-08 в работе. Контракт v1.2 и Go client/mock опубликованы. Python живёт отдельно в `codex/data` (checkpoint `9eb2211b29e48fce8a6afc410bc986fa98a4988e`, DE-09 WIP) и не интегрирован; перед INT остаются контрактные расхождения. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "30274d30-ee62-4c3e-9df9-08a5c0e1e05e"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T08:53:52Z"
+heartbeat_utc: "2026-09-29T08:58:03Z"
 current_task: BE-08
-current_substep: "BE-08: после handoff проектируется отдельное сообщение после завершённого возврата"
-last_verified_code_commit: "81cd668513b3aeada46d915db008893c8099dc26"
+current_substep: "BE-08: чужое фото блокируется до asset read; post-return сообщение требует расширения контракта"
+last_verified_code_commit: "73a5f35e3c0e963cfea5c79aff1aca28756ef031"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-08: спроектировать отдельный post-return issue без изменения завершённого осмотра, обновить контракт с версией и примерами, затем Go/mock и тесты; проверить IDOR asset/курсора"
+next_step: "BE-08: явно расширить контракт для post-return issue с отдельной версией/примерами, реализовать Go/mock без изменения завершённого trip; учесть вопросы DE-09 о текущих расхождениях"
 human_required: [H-01]
 ```
 
@@ -36,7 +36,7 @@ human_required: [H-01]
 | BE-06 | DONE | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ; `da3931879aeb663dd529c8c5af8cdb1e744d9cdd` — контракт v1.2; `d3a54dc7cfa6a0b93253527751671f6cf3c81ebc` — Go conversation; `f73ccbec636c39309202cc68716b087622d96e3c` — описание; `79e98ba3b09f26997d6867a60650c9367b0a27a2` — до 3 фото; `ccb4eedf036efbf3432f440d8f60bec907398132` — issue.create/recovery; `626086e96668660c87430fb1e73a2d355c4c86fc` — summary/start/recovery; `0eb2fc5e8a82a367b4f0377783bbd8a7bf81f90f` — полный mock take/hold expiry и README | Реальный MAX и Python — отдельные INT; BE-07 |
 | BE-07 | DONE (mock) | `4dd7ad33419cf10d8e5b7e4b6eb924d52a458c6f` — begin; `a69c51a182bc0e19655cc4e74a1cfa12f75f70c8` — cancel/fresh draft; `5be149e482bd79c761d68e9f6170e562b72c0dd1` — 8 фото после; `18a01ebb695ea2a05a45f91c35be43b5dad8cb0f` — issue при возврате и уведомление; `fd340988305cfcbb269f505b457bb0d0a2dacd9b` — MAX geo; `033161eced999a40508a07df9af9069ba33bf2d7` — complete/recovery; `d8247983d7be77b6b71c8f7e778990fec3286bb2` — полный mock return; остальные подшаги ниже | Реальная доставка MAX и Python — INT; прямой контакт ответственного требует H-03 |
 | UI-01 | DONE (mock) | `0bc3b2152264d61b89bd5324c9a630077134fda2` — initData; `46e898e326672f07e266a9b59e81a0e6035b9d90` — context; `f07e73314a313b6b774550ab987c9953e815664f` — location; `855ed0cbfe19e9592cb8d80c8951f170c3079f34` — gateway; `dd518f3960c30cba29793d74d6b4971e4acc3b54` — web API client; `12bbdf320bfc8e516f00979507a8d9ddd3f3808a` — React карта; `f92eb6a00e1bdc599d6c04f8fbcafa33fbd03925` — MAX start_param; `f7e2dfd9cc53e978dd10fefbc33f72af11b6eed5` — web proxy; `9908f32c6bdc8849ee3b963d37e223e1849485b0` — MAX кнопка; `bff0469dcf092fdc08565f0bcff0edc47ea33387` — Go HTTP/mock регрессия | Реальный Bridge — INT-04; Docker/Nginx smoke не выполнен из-за недоступного Engine |
-| BE-08 | IN_PROGRESS | `57447711d3781bdc3940679848d3c6ba1c9de4e2` — история по 5, приватный курсор; `e14bc18704afc5f1146f5184f5e55fa697fbaf98` — admin close/замечания; `788fe4e91156f5c369c03fa46987515abd2c103e` — owner/admin в карточке; `ff21858a2ac2265f9b477e2addc11b18ca18f820` — owner в списке; `81cd668513b3aeada46d915db008893c8099dc26` — immutable snapshot | Post-return сообщение, IDOR asset/курсора |
+| BE-08 | IN_PROGRESS | `57447711d3781bdc3940679848d3c6ba1c9de4e2` — история по 5, приватный курсор; `e14bc18704afc5f1146f5184f5e55fa697fbaf98` — admin close/замечания; `788fe4e91156f5c369c03fa46987515abd2c103e` — owner/admin в карточке; `ff21858a2ac2265f9b477e2addc11b18ca18f820` — owner в списке; `81cd668513b3aeada46d915db008893c8099dc26` — immutable snapshot; `73a5f35e3c0e963cfea5c79aff1aca28756ef031` — чужое фото | Post-return сообщение и контракт; полный IDOR |
 | BE-09 | TODO | — | См. план |
 | BE-10 | TODO | — | См. план |
 | BE-11 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-08 code `73a5f35e3c0e963cfea5c79aff1aca28756ef031`: при подменённом Trip чужого владельца Go отказывает до вызова приватного photo reader. `go test ./internal/dialog -run '^TestTripPhotoDialogOwnerAdminPhaseAndVersion$' -count=1 -v` → PASS; `go test ./internal/datamock -run '^Test(MyTripsPaginationAndActorIsolation|TripInspectionPhotoAccessPhaseRestartAndStorage)$' -count=1 -v` → PASS (чужой cursor/asset); `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS. Проверено только Go/mock. Обнаружен независимый Python checkpoint в `codex/data` `9eb2211b29e48fce8a6afc410bc986fa98a4988e`: DE-09 WIP, перечислены расхождения контракта 1–9; файлы Python не менялись.
 
 - HANDOFF 2026-09-29: BE-08 WIP, последний проверенный code commit `81cd668513b3aeada46d915db008893c8099dc26`, status commit должен следовать за этой записью. Текущая ветка `codex/backend`, синтетический mock seed достаточен для продолжения; приватная база/backup не использовались, dev consumer MAX не запущен. Секреты только локальные: `%LOCALAPPDATA%\MAXFleet\secrets` (`max_bot_token`, service/worker tokens); значения в Git не передаются. `npm test -- --run` → 6 PASS, `npm run build` → PASS, `scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS; Docker/Nginx smoke не пройден, Docker Desktop Engine отсутствует и служба требует системных прав. Реальный MAX/Bridge и Python не проверены. Следующий владелец обязан claim-ить HANDOFF отдельным коммитом/push до кода.
 
