@@ -8,13 +8,13 @@ track: data-integration-audit
 owner: A
 branch: codex/integration
 current_task: INT-03
-current_substep: "Response-loss test 94ff2fb74500b14aa4598d019e06a4cd8862363a passed locally: Python committed return.complete, transport dropped its 200, returned 503, Go retried same request/key/body and got saved result. Push pending"
+current_substep: "Response-loss test 94ff2fb74500b14aa4598d019e06a4cd8862363a published in checkpoint 1a51d5ad59ea87357e13345fcaf5d36524bf4658. Next: replay return.complete with same operation idempotency key and assert stable completed state before service restart/down/restore"
 last_verified_code_commit: "94ff2fb74500b14aa4598d019e06a4cd8862363a"
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 migration_head: "0002"
 data_ready_for_integration: true
 checkpoint_state: WIP
-next_step: "Проверить owner/секреты, обычным push опубликовать response-loss code 94ff2fb74500b14aa4598d019e06a4cd8862363a + progress и подтвердить ls-remote. Затем double-complete/service restart/concurrency/restore; QA NOT RUN, Linux host-secret permissions не проверены"
+next_step: "Проверить повтор return.complete с тем же operation idempotency key; затем service restart/down/concurrency/restore. Code `94ff2fb74500b14aa4598d019e06a4cd8862363a` + checkpoint `1a51d5ad59ea87357e13345fcaf5d36524bf4658` опубликованы. QA NOT RUN, Linux host-secret permissions не проверены"
 human_required: []
 ```
 
@@ -41,7 +41,7 @@ human_required: []
 - Integration code `09a11b3689740bd5fce26a10d4f417587db6472e`: Python `IssueResolve` теперь принимает только `status` для `in_progress`; терминальные решения по-прежнему требуют непустой комментарий и подтверждение. `ruff check app/api/schemas.py tests/test_admin_queues.py`, `mypy app`, полный `pytest -q` на отдельном PostgreSQL 17.6 — PASS, 43 теста; регрессия проверяет отказ старого payload, 403 сотруднику и сохранение `assigned_to`/`resolved_by`.
 - runtime-роль БД не может менять схему; анонимный запрос к S3 → 403.
 
-Контрактные вопросы сопоставлены с OpenAPI v1.13, Go client/mock и Python. Data API готов для интеграции: Go v1.13 integration test `84ad9b51d732787a8e6057577ed7048f209a4015` прошёл против PostgreSQL/S3 и опубликован вместе с status checkpoint `1766bccdb9ec4f8ec46c79c95b4b2d668670a57e`. Сотрудник подал замечание через Go post-return dialog и получил 403 на admin action; Go admin dialog назначил `assigned_to` и разрешил его с `resolved_by`. INT-03 recovery code `e6888015088d4e4feff391efaf3af17d3d7e4452` опубликован в checkpoint `6b8f033255fd8229020987883d09e71fd3d70370`: Go worker восстанавливает 4/8 photo progress из Python, replay ссылается на ту же inbox row и не обрабатывается повторно. Response-loss code `94ff2fb74500b14aa4598d019e06a4cd8862363a` локально проверил, что Python зафиксировал return.complete, первая 200 потеряна, а повтор неизменного запроса вернул сохранённый результат; code/progress push pending. Это синтетический actor/MAX transport; реальный MAX, Bridge, Linux host-secret permissions, сервисные отказы, backup/restore и QA не проверялись.
+Контрактные вопросы сопоставлены с OpenAPI v1.13, Go client/mock и Python. Data API готов для интеграции: Go v1.13 integration test `84ad9b51d732787a8e6057577ed7048f209a4015` прошёл против PostgreSQL/S3 и опубликован вместе с status checkpoint `1766bccdb9ec4f8ec46c79c95b4b2d668670a57e`. Сотрудник подал замечание через Go post-return dialog и получил 403 на admin action; Go admin dialog назначил `assigned_to` и разрешил его с `resolved_by`. INT-03 recovery code `e6888015088d4e4feff391efaf3af17d3d7e4452` опубликован в checkpoint `6b8f033255fd8229020987883d09e71fd3d70370`: Go worker восстанавливает 4/8 photo progress из Python, replay ссылается на ту же inbox row и не обрабатывается повторно. Response-loss code `94ff2fb74500b14aa4598d019e06a4cd8862363a` опубликован в checkpoint `1a51d5ad59ea87357e13345fcaf5d36524bf4658`: Python commit дошёл до Go, ответ 200 потерян, повтор неизменного запроса вернул сохранённый результат. Это синтетический actor/MAX transport; реальный MAX, Bridge, Linux host-secret permissions, сервисные отказы, backup/restore и QA не проверялись.
 
 Найдено при нагрузке: в контейнере с read-only ФС Starlette не мог буферизовать multipart > 1 MiB во временный файл (400 на фото 5 MiB) — добавлен tmpfs `/tmp` 128 MiB для data-api.
 
