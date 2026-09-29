@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "27659325-800e-4ea6-99ac-3d8edec02849"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T03:19:39Z"
+heartbeat_utc: "2026-09-29T03:21:40Z"
 current_task: BE-07
-current_substep: "BE-07 WIP: диалог issue_after сохраняет черновик; фото и submit впереди"
-last_verified_code_commit: "d04683e3445945bf07992f2e06dd2e85106aaff6"
+current_substep: "BE-07 WIP: issue_after черновик и до 3 фото; submit впереди"
+last_verified_code_commit: "4cd7d13ab1fa8831b96e1c95e049da55d5c13299"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-07: фото issue_after, submit/recovery для damage/dirty/unsafe, затем парковка и безопасный complete; UI-01 React карта P0"
+next_step: "BE-07: issue_after review/submit/recovery для damage/dirty/unsafe, затем парковка и безопасный complete; UI-01 React карта P0"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-07 code `4cd7d13ab1fa8831b96e1c95e049da55d5c13299`: issue_after stage-фото scope inspection и conversation CAS/lease, максимум 3; after-слоты 8 фото остаются отдельными. Тест проверил failed download, повтор, лимит, stale callback и 0 занятых after-слотов. `go test ./internal/dialog -run '^TestReturnIssuePhotosUseInspectionScopeWithoutAfterSlots$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Submit впереди, реальный MAX/Python не проверены, BE-07 WIP.
 
 - BE-07 code `d04683e3445945bf07992f2e06dd2e85106aaff6`: меню return предлагает issue_after; категория/описание сохраняются как conversation CAS/lease для текущих return/inspection. Текст различает черновик и отправку, предупреждает об отдельном damage/dirty issue и небезопасном самостоятельном complete. Тест проверил owner, stale callback, отсутствие lease, durable save и повтор без роста версии. `go test ./internal/dialog -run '^TestReturnIssueDraftOwnedReturnAndDurableSave$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Фото/submit впереди, реальный MAX/Python не проверены, BE-07 WIP.
 
