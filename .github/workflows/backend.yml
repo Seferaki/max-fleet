@@ -104,7 +104,11 @@ jobs:
           chmod 444 "$secret_dir"/*
           export MAX_FLEET_DATA_API_TOKEN_FILE="$secret_dir/data_api_token"
           export MAX_FLEET_WORKER_API_TOKEN_FILE="$secret_dir/worker_api_token"
-          "${compose[@]}" up --build -d --wait --wait-timeout 180
+          if ! "${compose[@]}" up --build -d --wait --wait-timeout 180; then
+            echo "Compose startup failed; sanitized data-mock startup logs follow:" >&2
+            "${compose[@]}" logs --no-color --tail=80 data-mock >&2 || true
+            exit 1
+          fi
           for service in data-mock gateway web; do
             container_id="$("${compose[@]}" ps -q "$service")"
             runtime_security="$(docker inspect --format '{{.Config.User}}|{{.HostConfig.ReadonlyRootfs}}' "$container_id")"

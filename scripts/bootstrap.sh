@@ -24,7 +24,7 @@ for name in names:
     try:
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
-        if not path.is_file() or path.stat().st_size == 0:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
             raise SystemExit(f"Пустой или неверный secret-файл: {name}")
         path.chmod(file_mode)
         print(f"{name}: уже существует")
