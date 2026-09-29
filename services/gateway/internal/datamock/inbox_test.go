@@ -65,12 +65,12 @@ func TestInboxWorkerAuthIdempotencyAndRestart(t *testing.T) {
 	}
 	fixture := inboxFixture(t)
 	for _, token := range []string{"service-token", "wrong-token"} {
-		status, _ := sendInbox(t, server.Handler(), fixture, token, "inbox-key-001", "1.4")
+		status, _ := sendInbox(t, server.Handler(), fixture, token, "inbox-key-001", "1.5")
 		if status != http.StatusUnauthorized {
 			t.Fatalf("%s accepted: %d", token, status)
 		}
 	}
-	status, _ := sendInbox(t, server.Handler(), fixture, "worker-token", "", "1.4")
+	status, _ := sendInbox(t, server.Handler(), fixture, "worker-token", "", "1.5")
 	if status != http.StatusBadRequest {
 		t.Fatalf("missing idempotency key: %d", status)
 	}
@@ -78,7 +78,7 @@ func TestInboxWorkerAuthIdempotencyAndRestart(t *testing.T) {
 	if status != http.StatusBadRequest {
 		t.Fatalf("wrong version: %d", status)
 	}
-	status, response := sendInbox(t, server.Handler(), fixture, "worker-token", "inbox-key-001", "1.4")
+	status, response := sendInbox(t, server.Handler(), fixture, "worker-token", "inbox-key-001", "1.5")
 	first := storedInbox(t, response)
 	if status != http.StatusOK || first.Duplicate || !first.StoredAt.Equal(clock) {
 		t.Fatalf("first store: status=%d data=%+v", status, first)
@@ -91,7 +91,7 @@ func TestInboxWorkerAuthIdempotencyAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, key := range []string{"inbox-key-001", "inbox-key-002"} {
-		status, response = sendInbox(t, restarted.Handler(), fixture, "worker-token", key, "1.4")
+		status, response = sendInbox(t, restarted.Handler(), fixture, "worker-token", key, "1.5")
 		duplicate := storedInbox(t, response)
 		if status != http.StatusOK || !duplicate.Duplicate || duplicate.ID != first.ID || !duplicate.StoredAt.Equal(first.StoredAt) {
 			t.Fatalf("duplicate after restart: status=%d data=%+v", status, duplicate)
@@ -107,7 +107,7 @@ func TestInboxWorkerAuthIdempotencyAndRestart(t *testing.T) {
 	changed["event_key"] = "message:other:message_created"
 	changed["message_id"] = "other"
 	modified, _ := json.Marshal(changed)
-	status, _ = sendInbox(t, restarted.Handler(), modified, "worker-token", "inbox-key-001", "1.4")
+	status, _ = sendInbox(t, restarted.Handler(), modified, "worker-token", "inbox-key-001", "1.5")
 	if status != http.StatusConflict {
 		t.Fatalf("same key, different event: %d", status)
 	}
@@ -115,7 +115,7 @@ func TestInboxWorkerAuthIdempotencyAndRestart(t *testing.T) {
 	changed["message_id"] = "demo-message-001"
 	changed["payload"].(map[string]any)["photo_source_key"] = "other-photo"
 	modified, _ = json.Marshal(changed)
-	status, _ = sendInbox(t, restarted.Handler(), modified, "worker-token", "inbox-key-003", "1.4")
+	status, _ = sendInbox(t, restarted.Handler(), modified, "worker-token", "inbox-key-003", "1.5")
 	if status != http.StatusConflict || len(restarted.inbox) != 1 {
 		t.Fatalf("same event key, different body: %d", status)
 	}
@@ -129,7 +129,7 @@ func TestInboxFailedSaveDoesNotAcknowledgeOrChangeMemory(t *testing.T) {
 	}
 	save := server.saveSnapshot
 	server.saveSnapshot = func(stateSnapshot) error { return errors.New("disk failed") }
-	status, body := sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "inbox-key-001", "1.4")
+	status, body := sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "inbox-key-001", "1.5")
 	if status != http.StatusServiceUnavailable || len(server.inbox) != 0 || len(server.inboxKeys) != 0 {
 		t.Fatalf("failed save acknowledged or changed memory: %d %s", status, body)
 	}
@@ -137,7 +137,7 @@ func TestInboxFailedSaveDoesNotAcknowledgeOrChangeMemory(t *testing.T) {
 		t.Fatalf("failed save created snapshot: %v", err)
 	}
 	server.saveSnapshot = save
-	status, body = sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "inbox-key-001", "1.4")
+	status, body = sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "inbox-key-001", "1.5")
 	if status != http.StatusOK || storedInbox(t, body).Duplicate {
 		t.Fatalf("retry after disk recovery: %d %s", status, body)
 	}
@@ -145,7 +145,7 @@ func TestInboxFailedSaveDoesNotAcknowledgeOrChangeMemory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	status, _ = sendInbox(t, withoutSnapshot.Handler(), inboxFixture(t), "worker-token", "inbox-key-001", "1.4")
+	status, _ = sendInbox(t, withoutSnapshot.Handler(), inboxFixture(t), "worker-token", "inbox-key-001", "1.5")
 	if status != http.StatusServiceUnavailable || len(withoutSnapshot.inbox) != 0 {
 		t.Fatalf("in-memory mock acknowledged non-durable event: %d", status)
 	}
@@ -168,7 +168,7 @@ func TestInboxLoadsPreviousSnapshotVersion(t *testing.T) {
 	if err != nil || restored.inbox == nil || restored.inboxKeys == nil {
 		t.Fatalf("v7 snapshot not upgraded in memory: %v", err)
 	}
-	status, body := sendInbox(t, restored.Handler(), inboxFixture(t), "worker-token", "inbox-key-001", "1.4")
+	status, body := sendInbox(t, restored.Handler(), inboxFixture(t), "worker-token", "inbox-key-001", "1.5")
 	if status != http.StatusOK || storedInbox(t, body).Duplicate {
 		t.Fatalf("inbox after v7 restart: %d %s", status, body)
 	}
@@ -186,13 +186,13 @@ func TestInboxRejectsMalformedAndMultiplePhotos(t *testing.T) {
 	}
 	event["payload"].(map[string]any)["attachment_count"] = float64(2)
 	body, _ := json.Marshal(event)
-	status, _ := sendInbox(t, server.Handler(), body, "worker-token", "inbox-key-001", "1.4")
+	status, _ := sendInbox(t, server.Handler(), body, "worker-token", "inbox-key-001", "1.5")
 	if status != http.StatusBadRequest {
 		t.Fatalf("two photos accepted: %d", status)
 	}
 	delete(event, "callback_id")
 	body, _ = json.Marshal(event)
-	status, _ = sendInbox(t, server.Handler(), body, "worker-token", "inbox-key-001", "1.4")
+	status, _ = sendInbox(t, server.Handler(), body, "worker-token", "inbox-key-001", "1.5")
 	if status != http.StatusBadRequest || len(server.inbox) != 0 {
 		t.Fatalf("missing nullable field accepted: %d", status)
 	}

@@ -1,0 +1,166 @@
+{
+  "contract_version": "1.5",
+  "examples": [
+    {
+      "purpose": "vehicle_block",
+      "intent_payload": {
+        "operation": "vehicle.block",
+        "target_id": "10000000-0000-4000-8000-000000000001",
+        "expected_version": 7,
+        "reason": "Проверка тормозов"
+      },
+      "create_command": {
+        "operation": "challenge.create",
+        "target_id": "10000000-0000-4000-8000-000000000001",
+        "expected_version": 7,
+        "payload": {
+          "purpose": "vehicle_block",
+          "intent_payload": {
+            "operation": "vehicle.block",
+            "target_id": "10000000-0000-4000-8000-000000000001",
+            "expected_version": 7,
+            "reason": "Проверка тормозов"
+          }
+        }
+      },
+      "challenge_id": "70000000-0000-4000-8000-000000000001",
+      "challenge_proof_id_after_correct_answer": "70000000-0000-4000-8000-000000000001",
+      "admin_command": {
+        "operation": "vehicle.block",
+        "target_id": "10000000-0000-4000-8000-000000000001",
+        "expected_version": 7,
+        "payload": {"reason": "Проверка тормозов", "challenge_id": "70000000-0000-4000-8000-000000000001"}
+      }
+    },
+    {
+      "purpose": "vehicle_unblock",
+      "intent_payload": {
+        "operation": "vehicle.unblock",
+        "target_id": "10000000-0000-4000-8000-000000000002",
+        "expected_version": 8,
+        "reason": "Повторная проверка пройдена",
+        "review_completed": true
+      },
+      "create_command": {
+        "operation": "challenge.create",
+        "target_id": "10000000-0000-4000-8000-000000000002",
+        "expected_version": 8,
+        "payload": {
+          "purpose": "vehicle_unblock",
+          "intent_payload": {
+            "operation": "vehicle.unblock",
+            "target_id": "10000000-0000-4000-8000-000000000002",
+            "expected_version": 8,
+            "reason": "Повторная проверка пройдена",
+            "review_completed": true
+          }
+        }
+      },
+      "challenge_id": "70000000-0000-4000-8000-000000000002",
+      "challenge_proof_id_after_correct_answer": "70000000-0000-4000-8000-000000000002",
+      "admin_command": {
+        "operation": "vehicle.unblock",
+        "target_id": "10000000-0000-4000-8000-000000000002",
+        "expected_version": 8,
+        "payload": {"reason": "Повторная проверка пройдена", "review_completed": true, "challenge_id": "70000000-0000-4000-8000-000000000002"}
+      }
+    },
+    {
+      "purpose": "employee_grant",
+      "intent_payload": {
+        "operation": "employee.grant",
+        "target_id": null,
+        "expected_version": null,
+        "max_user_id": "8000000000000000099",
+        "display_name": "Сотрудник примера"
+      },
+      "create_command": {
+        "operation": "challenge.create",
+        "target_id": null,
+        "expected_version": null,
+        "payload": {
+          "purpose": "employee_grant",
+          "intent_payload": {
+            "operation": "employee.grant",
+            "target_id": null,
+            "expected_version": null,
+            "max_user_id": "8000000000000000099",
+            "display_name": "Сотрудник примера"
+          }
+        }
+      },
+      "challenge_id": "70000000-0000-4000-8000-000000000003",
+      "challenge_proof_id_after_correct_answer": "70000000-0000-4000-8000-000000000003",
+      "admin_command": {
+        "operation": "employee.grant",
+        "target_id": null,
+        "expected_version": null,
+        "payload": {"max_user_id": "8000000000000000099", "display_name": "Сотрудник примера", "challenge_id": "70000000-0000-4000-8000-000000000003"}
+      }
+    },
+    {
+      "purpose": "employee_access",
+      "intent_payload": {
+        "operation": "employee.access",
+        "target_id": "20000000-0000-4000-8000-000000000001",
+        "expected_version": 4,
+        "can_start_trip": false,
+        "reason": "Доступ приостановлен"
+      },
+      "create_command": {
+        "operation": "challenge.create",
+        "target_id": "20000000-0000-4000-8000-000000000001",
+        "expected_version": 4,
+        "payload": {
+          "purpose": "employee_access",
+          "intent_payload": {
+            "operation": "employee.access",
+            "target_id": "20000000-0000-4000-8000-000000000001",
+            "expected_version": 4,
+            "can_start_trip": false,
+            "reason": "Доступ приостановлен"
+          }
+        }
+      },
+      "challenge_id": "70000000-0000-4000-8000-000000000004",
+      "challenge_proof_id_after_correct_answer": "70000000-0000-4000-8000-000000000004",
+      "admin_command": {
+        "operation": "employee.access",
+        "target_id": "20000000-0000-4000-8000-000000000001",
+        "expected_version": 4,
+        "payload": {"can_start_trip": false, "reason": "Доступ приостановлен", "challenge_id": "70000000-0000-4000-8000-000000000004"}
+      }
+    },
+    {
+      "purpose": "admin_close",
+      "intent_payload": {
+        "operation": "trip.admin_close",
+        "target_id": "40000000-0000-4000-8000-000000000001",
+        "expected_version": 9,
+        "reason": "Телефон водителя повреждён"
+      },
+      "create_command": {
+        "operation": "challenge.create",
+        "target_id": "40000000-0000-4000-8000-000000000001",
+        "expected_version": 9,
+        "payload": {
+          "purpose": "admin_close",
+          "intent_payload": {
+            "operation": "trip.admin_close",
+            "target_id": "40000000-0000-4000-8000-000000000001",
+            "expected_version": 9,
+            "reason": "Телефон водителя повреждён"
+          }
+        }
+      },
+      "challenge_id": "70000000-0000-4000-8000-000000000005",
+      "challenge_proof_id_after_correct_answer": "70000000-0000-4000-8000-000000000005",
+      "admin_command": {
+        "operation": "trip.admin_close",
+        "target_id": "40000000-0000-4000-8000-000000000001",
+        "expected_version": 9,
+        "payload": {"reason": "Телефон водителя повреждён", "challenge_id": "70000000-0000-4000-8000-000000000005", "available_data": {"fuel_level": 50}}
+      }
+    }
+  ]
+}

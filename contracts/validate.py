@@ -151,6 +151,54 @@ def main():
         payload = request["payload"]
         if payload["trip_id"] is None or payload["inspection_id"] is not None:
             raise RuntimeError("Новые категории должны быть привязаны к поездке")
+    admin_intents = load_json("examples/admin-challenge-intents.json")
+    if admin_intents["contract_version"] != data["info"]["version"]:
+        raise RuntimeError("Версия admin challenge примера не совпадает с контрактом")
+    create_schema = schema_for(data, "ChallengeCreateCommand")
+    command_mapping = data["components"]["schemas"]["Command"]["discriminator"]["mapping"]
+    expected_admin_operations = {
+        "vehicle_block": "vehicle.block",
+        "vehicle_unblock": "vehicle.unblock",
+        "employee_grant": "employee.grant",
+        "employee_access": "employee.access",
+        "admin_close": "trip.admin_close",
+    }
+    if {entry["purpose"] for entry in admin_intents["examples"]} != set(expected_admin_operations):
+        raise RuntimeError("Не покрыты все admin challenge purposes")
+    for entry in admin_intents["examples"]:
+        intent = entry["intent_payload"]
+        create = entry["create_command"]
+        admin_command = entry["admin_command"]
+        jsonschema.Draft202012Validator(create_schema,
+                                         format_checker=jsonschema.FormatChecker()).validate(create)
+        command_name = command_mapping[intent["operation"]].rsplit("/", 1)[1]
+        jsonschema.Draft202012Validator(schema_for(data, command_name),
+                                         format_checker=jsonschema.FormatChecker()).validate(admin_command)
+        if (create["payload"]["purpose"] != entry["purpose"]
+                or create["payload"]["intent_payload"] != intent
+                or expected_admin_operations[entry["purpose"]] != intent["operation"]
+                or create["target_id"] != intent["target_id"]
+                or create["expected_version"] != intent["expected_version"]
+                or admin_command["target_id"] != intent["target_id"]
+                or admin_command["expected_version"] != intent["expected_version"]
+                or entry["challenge_proof_id_after_correct_answer"] != entry["challenge_id"]
+                or admin_command["payload"]["challenge_id"] != entry["challenge_id"]):
+            raise RuntimeError(f"Несвязанный admin challenge proof: {entry['purpose']}")
+        for field in ("reason", "review_completed", "max_user_id", "display_name", "can_start_trip"):
+            if field in intent and admin_command["payload"].get(field) != intent[field]:
+                raise RuntimeError(f"Admin-команда расходится с proof: {entry['purpose']}/{field}")
+    invalid_admin = copy.deepcopy(admin_intents["examples"][0]["create_command"])
+    del invalid_admin["payload"]["intent_payload"]["reason"]
+    if jsonschema.Draft202012Validator(create_schema).is_valid(invalid_admin):
+        raise RuntimeError("Admin challenge без обязательного intent поля принят")
+    invalid_admin = copy.deepcopy(admin_intents["examples"][0]["create_command"])
+    invalid_admin["payload"]["intent_payload"]["unexpected"] = True
+    if jsonschema.Draft202012Validator(create_schema).is_valid(invalid_admin):
+        raise RuntimeError("Admin challenge с лишним intent полем принят")
+    invalid_admin = copy.deepcopy(admin_intents["examples"][0]["create_command"])
+    invalid_admin["payload"]["purpose"] = "employee_grant"
+    if jsonschema.Draft202012Validator(create_schema).is_valid(invalid_admin):
+        raise RuntimeError("Purpose, не соответствующий operation intent, принят")
     invalid_flow = copy.deepcopy(post_return_conversation)
     invalid_flow["flow"] = "unknown_flow"
     if jsonschema.Draft202012Validator(schema_for(data, "Conversation")).is_valid(invalid_flow):
@@ -162,7 +210,7 @@ def main():
         raise RuntimeError("Неверный пример пути чтения фото")
     if photo_read["response"]["content_type"] not in data["paths"][route]["get"]["responses"]["200"]["content"]:
         raise RuntimeError("Неверный пример media type фото")
-    areas = {"identity", "vehicles", "checkout", "inspection", "return", "delivery", "schema"}
+    areas = {"identity", "vehicles", "checkout", "inspection", "return", "delivery", "admin", "schema"}
     cases = scenarios["cases"]
     if len(cases) < 35 or {case["area"] for case in cases} != areas:
         raise RuntimeError("Неполный сценарный набор")

@@ -205,6 +205,7 @@
 6. Admin close: причина, доступные сведения, missing_data, math; авто needs_review и уведомление водителю.
 7. Невозможность назначить себе admin, старые proof, неверный actor, повтор.
 8. Контакты сотрудника/ответственного добавлять только после определения владельца, доступа и срока хранения; UI не должен показывать отсутствующий контакт.
+9. В challenge для block/unblock/grant/access/admin_close проверять operation-specific payload без лишних ключей; итоговая команда обязана совпасть с intent SHA-256 и поглотить challenge proof один раз. Для grant target_id и expected_version равны null.
 
 Готово: все админские действия/отказы на mock; UI показывает последствия до commit.
 

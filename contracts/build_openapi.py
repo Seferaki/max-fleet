@@ -1,4 +1,4 @@
-"""Build the reviewed MAX Fleet v1.4 internal HTTP contract.
+"""Build the reviewed MAX Fleet v1.5 internal HTTP contract.
 
 Run: py contracts/build_openapi.py
 Requires PyYAML. The generated YAML is committed so consumers do not need Python.
@@ -204,7 +204,7 @@ schemas = {
         "conversation_version": ref("Version"),
     }, ("checkout", "trip", "return", "next_step", "conversation", "conversation_version")),
     "Meta": obj({
-        "contract_version": {"const": "1.4"}, "build_sha": string(64),
+        "contract_version": {"const": "1.5"}, "build_sha": string(64),
         "mode": string(enum=["mock", "real"]), "capabilities": array(string(80)),
     }, ("contract_version", "build_sha", "mode", "capabilities")),
     "AdminSummary": obj({
@@ -245,8 +245,8 @@ for name in ("Vehicle", "Trip", "Issue", "Employee"):
 
 spec = {
     "openapi": "3.1.0",
-    "info": {"title": "MAX Fleet Data API", "version": "1.4",
-             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.4 задаёт отдельный восстанавливаемый issue_post_return conversation для замечания владельца о завершённой поездке и категории parking/car_lock."},
+    "info": {"title": "MAX Fleet Data API", "version": "1.5",
+             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.5 фиксирует operation-specific math intent административных команд и одноразовый proof с SHA-256 полного canonical intent."},
     "servers": [{"url": "http://data-api:8000"}, {"url": "http://data-mock:8000"}],
     "tags": [{"name": name, "description": description} for name, description in (
         ("read", "Чтение доменных данных с проверкой actor и прав"),
@@ -264,7 +264,7 @@ spec = {
         },
         "parameters": {
             "ContractVersion": {"name": "X-Contract-Version", "in": "header", "required": True,
-                                "schema": {"const": "1.4"}},
+                                "schema": {"const": "1.5"}},
             "RequestID": {"name": "X-Request-ID", "in": "header", "required": True,
                           "schema": ref("UUID")},
             "ActorMaxID": {"name": "X-Actor-Max-ID", "in": "header", "required": True,
@@ -396,15 +396,65 @@ schemas["LocationInput"] = obj({
     "landmark": nullable(string(500)), "confirmed": {"const": True},
 }, ("latitude", "longitude", "source", "confirmed"))
 
-schemas["ChallengeIntent"] = obj({
-    "operation": string(enum=["checkout.create", "trip.begin_return", "vehicle.block",
-                              "vehicle.unblock", "employee.grant", "employee.access",
-                              "trip.admin_close"]),
-    "target_id": nullable(ref("UUID")), "expected_version": nullable(ref("Version")),
-    "reason": string(1000), "max_user_id": ref("MaxID"),
-    "display_name": string(200), "can_start_trip": {"type": "boolean"},
-    "review_completed": {"type": "boolean"},
+schemas["CheckoutCreateIntent"] = obj({
+    "operation": {"const": "checkout.create"},
+    "target_id": ref("UUID"), "expected_version": ref("Version"),
 }, ("operation", "target_id", "expected_version"))
+schemas["TripBeginReturnIntent"] = obj({
+    "operation": {"const": "trip.begin_return"},
+    "target_id": ref("UUID"), "expected_version": ref("Version"),
+}, ("operation", "target_id", "expected_version"))
+schemas["VehicleBlockIntent"] = obj({
+    "operation": {"const": "vehicle.block"},
+    "target_id": ref("UUID"), "expected_version": ref("Version"),
+    "reason": string(1000),
+}, ("operation", "target_id", "expected_version", "reason"))
+schemas["VehicleUnblockIntent"] = obj({
+    "operation": {"const": "vehicle.unblock"},
+    "target_id": ref("UUID"), "expected_version": ref("Version"),
+    "reason": string(1000), "review_completed": {"const": True},
+}, ("operation", "target_id", "expected_version", "reason", "review_completed"))
+schemas["EmployeeGrantIntent"] = obj({
+    "operation": {"const": "employee.grant"},
+    "target_id": {"type": "null"}, "expected_version": {"type": "null"},
+    "max_user_id": ref("MaxID"), "display_name": string(200),
+}, ("operation", "target_id", "expected_version", "max_user_id", "display_name"))
+schemas["EmployeeAccessIntent"] = obj({
+    "operation": {"const": "employee.access"},
+    "target_id": ref("UUID"), "expected_version": ref("Version"),
+    "can_start_trip": {"type": "boolean"}, "reason": string(1000),
+}, ("operation", "target_id", "expected_version", "can_start_trip", "reason"))
+schemas["TripAdminCloseIntent"] = obj({
+    "operation": {"const": "trip.admin_close"},
+    "target_id": ref("UUID"), "expected_version": ref("Version"),
+    "reason": string(1000),
+}, ("operation", "target_id", "expected_version", "reason"))
+schemas["ChallengeIntent"] = {
+    "oneOf": [ref(name) for name in (
+        "CheckoutCreateIntent", "TripBeginReturnIntent", "VehicleBlockIntent",
+        "VehicleUnblockIntent", "EmployeeGrantIntent", "EmployeeAccessIntent",
+        "TripAdminCloseIntent")],
+    "description": "Ровно один operation-specific набор полей; его SHA-256 считается от UTF-8 JSON с сортировкой ключей, компактными разделителями ',' и ':' и неэкранированными Unicode (эквивалент json.dumps(sort_keys=True, separators=(',', ':'), ensure_ascii=False)).",
+}
+
+challenge_create_payloads = (
+    ("TakeChallengePayload", "take", "CheckoutCreateIntent"),
+    ("ReturnChallengePayload", "return", "TripBeginReturnIntent"),
+    ("VehicleBlockChallengePayload", "vehicle_block", "VehicleBlockIntent"),
+    ("VehicleUnblockChallengePayload", "vehicle_unblock", "VehicleUnblockIntent"),
+    ("EmployeeGrantChallengePayload", "employee_grant", "EmployeeGrantIntent"),
+    ("EmployeeAccessChallengePayload", "employee_access", "EmployeeAccessIntent"),
+    ("AdminCloseChallengePayload", "admin_close", "TripAdminCloseIntent"),
+)
+for schema_name, purpose, intent_name in challenge_create_payloads:
+    schemas[schema_name] = obj({
+        "purpose": {"const": purpose},
+        "intent_payload": {"allOf": [ref("ChallengeIntent"), ref(intent_name)]},
+    }, ("purpose", "intent_payload"))
+schemas["ChallengeCreatePayload"] = {
+    "oneOf": [ref(schema_name) for schema_name, _, _ in challenge_create_payloads],
+    "description": "Purpose и operation intent обязаны соответствовать друг другу.",
+}
 
 schemas["AdminCloseData"] = obj({
     "fuel_level": ref("FuelLevel"), "odometer_km": integer(),
@@ -425,10 +475,7 @@ def payload(fields, required=(), min_properties=None):
 command_specs = [
     ("checkout.create", "existing", payload({}), "Checkout"),
     ("checkout.cancel", "existing", payload({}), "Checkout"),
-    ("challenge.create", "optional", payload({
-        "purpose": ref("ChallengePurpose"),
-        "intent_payload": ref("ChallengeIntent"),
-    }, ("purpose", "intent_payload")), "Challenge"),
+    ("challenge.create", "optional", ref("ChallengeCreatePayload"), "Challenge"),
     ("challenge.answer", "existing", payload({
         "selected_option": integer(0, 3),
     }, ("selected_option",)), "Challenge"),
@@ -544,7 +591,8 @@ schemas["CommandResult"] = obj({
         "description": "Полное подтверждённое состояние объекта, соответствующего операции."},
     "correct": nullable({"type": "boolean"}),
     "attempts_remaining": nullable(integer(0, 3)),
-    "challenge_proof_id": nullable(ref("UUID")),
+    "challenge_proof_id": {**nullable(ref("UUID")),
+                            "description": "UUID успешно решённого admin challenge; тот же ID команда передаёт как challenge_id. Mock/Python сверяют SHA-256 полного canonical intent и потребляют proof один раз."},
 }, ("operation", "aggregate", "correct", "attempts_remaining", "challenge_proof_id"))
 envelope("Command", ref("CommandResult"))
 

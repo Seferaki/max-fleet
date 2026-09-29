@@ -1,16 +1,15 @@
 openapi: 3.1.0
 info:
   title: MAX Fleet Data API
-  version: '1.4'
+  version: '1.5'
   description: 'Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID
     и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом
-    запросе. Версия 1.4 задаёт отдельный восстанавливаемый issue_post_return conversation для замечания владельца
-    о завершённой поездке и категории parking/car_lock. Версии: vehicle растёт при смене доступности, блокировке,
-    issue и коррекции; checkout при изменении оформления; inspection при ответе, фото и подтверждении; return при
-    месте/отмене/завершении; trip при начале возврата, отмене, завершении и admin close; conversation только при
-    save. Фото повышает inspection и его родительский checkout/return version. Перед start/complete Go читает актуальный
-    агрегат. Hold равен 15 минутам серверного времени. Finalized inspection неизменяем, admin close не подставляет
-    отсутствующие данные.'
+    запросе. Версия 1.5 фиксирует operation-specific math intent административных команд и одноразовый proof с SHA-256
+    полного canonical intent. Версии: vehicle растёт при смене доступности, блокировке, issue и коррекции; checkout
+    при изменении оформления; inspection при ответе, фото и подтверждении; return при месте/отмене/завершении; trip
+    при начале возврата, отмене, завершении и admin close; conversation только при save. Фото повышает inspection
+    и его родительский checkout/return version. Перед start/complete Go читает актуальный агрегат. Hold равен 15
+    минутам серверного времени. Finalized inspection неизменяем, admin close не подставляет отсутствующие данные.'
 servers:
 - url: http://data-api:8000
 - url: http://data-mock:8000
@@ -45,7 +44,7 @@ components:
       in: header
       required: true
       schema:
-        const: '1.4'
+        const: '1.5'
     RequestID:
       name: X-Request-ID
       in: header
@@ -787,7 +786,7 @@ components:
       additionalProperties: false
       properties:
         contract_version:
-          const: '1.4'
+          const: '1.5'
         build_sha:
           type: string
           maxLength: 64
@@ -1242,44 +1241,246 @@ components:
       - longitude
       - source
       - confirmed
-    ChallengeIntent:
+    CheckoutCreateIntent:
       type: object
       additionalProperties: false
       properties:
         operation:
-          type: string
-          enum:
-          - checkout.create
-          - trip.begin_return
-          - vehicle.block
-          - vehicle.unblock
-          - employee.grant
-          - employee.access
-          - trip.admin_close
+          const: checkout.create
         target_id:
-          oneOf:
-          - $ref: '#/components/schemas/UUID'
-          - type: 'null'
+          $ref: '#/components/schemas/UUID'
         expected_version:
-          oneOf:
-          - $ref: '#/components/schemas/Version'
-          - type: 'null'
+          $ref: '#/components/schemas/Version'
+      required:
+      - operation
+      - target_id
+      - expected_version
+    TripBeginReturnIntent:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          const: trip.begin_return
+        target_id:
+          $ref: '#/components/schemas/UUID'
+        expected_version:
+          $ref: '#/components/schemas/Version'
+      required:
+      - operation
+      - target_id
+      - expected_version
+    VehicleBlockIntent:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          const: vehicle.block
+        target_id:
+          $ref: '#/components/schemas/UUID'
+        expected_version:
+          $ref: '#/components/schemas/Version'
         reason:
           type: string
           maxLength: 1000
+      required:
+      - operation
+      - target_id
+      - expected_version
+      - reason
+    VehicleUnblockIntent:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          const: vehicle.unblock
+        target_id:
+          $ref: '#/components/schemas/UUID'
+        expected_version:
+          $ref: '#/components/schemas/Version'
+        reason:
+          type: string
+          maxLength: 1000
+        review_completed:
+          const: true
+      required:
+      - operation
+      - target_id
+      - expected_version
+      - reason
+      - review_completed
+    EmployeeGrantIntent:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          const: employee.grant
+        target_id:
+          type: 'null'
+        expected_version:
+          type: 'null'
         max_user_id:
           $ref: '#/components/schemas/MaxID'
         display_name:
           type: string
           maxLength: 200
-        can_start_trip:
-          type: boolean
-        review_completed:
-          type: boolean
       required:
       - operation
       - target_id
       - expected_version
+      - max_user_id
+      - display_name
+    EmployeeAccessIntent:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          const: employee.access
+        target_id:
+          $ref: '#/components/schemas/UUID'
+        expected_version:
+          $ref: '#/components/schemas/Version'
+        can_start_trip:
+          type: boolean
+        reason:
+          type: string
+          maxLength: 1000
+      required:
+      - operation
+      - target_id
+      - expected_version
+      - can_start_trip
+      - reason
+    TripAdminCloseIntent:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          const: trip.admin_close
+        target_id:
+          $ref: '#/components/schemas/UUID'
+        expected_version:
+          $ref: '#/components/schemas/Version'
+        reason:
+          type: string
+          maxLength: 1000
+      required:
+      - operation
+      - target_id
+      - expected_version
+      - reason
+    ChallengeIntent:
+      oneOf:
+      - $ref: '#/components/schemas/CheckoutCreateIntent'
+      - $ref: '#/components/schemas/TripBeginReturnIntent'
+      - $ref: '#/components/schemas/VehicleBlockIntent'
+      - $ref: '#/components/schemas/VehicleUnblockIntent'
+      - $ref: '#/components/schemas/EmployeeGrantIntent'
+      - $ref: '#/components/schemas/EmployeeAccessIntent'
+      - $ref: '#/components/schemas/TripAdminCloseIntent'
+      description: Ровно один operation-specific набор полей; его SHA-256 считается от UTF-8 JSON с сортировкой
+        ключей, компактными разделителями ',' и ':' и неэкранированными Unicode (эквивалент json.dumps(sort_keys=True,
+        separators=(',', ':'), ensure_ascii=False)).
+    TakeChallengePayload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          const: take
+        intent_payload:
+          allOf:
+          - $ref: '#/components/schemas/ChallengeIntent'
+          - $ref: '#/components/schemas/CheckoutCreateIntent'
+      required:
+      - purpose
+      - intent_payload
+    ReturnChallengePayload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          const: return
+        intent_payload:
+          allOf:
+          - $ref: '#/components/schemas/ChallengeIntent'
+          - $ref: '#/components/schemas/TripBeginReturnIntent'
+      required:
+      - purpose
+      - intent_payload
+    VehicleBlockChallengePayload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          const: vehicle_block
+        intent_payload:
+          allOf:
+          - $ref: '#/components/schemas/ChallengeIntent'
+          - $ref: '#/components/schemas/VehicleBlockIntent'
+      required:
+      - purpose
+      - intent_payload
+    VehicleUnblockChallengePayload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          const: vehicle_unblock
+        intent_payload:
+          allOf:
+          - $ref: '#/components/schemas/ChallengeIntent'
+          - $ref: '#/components/schemas/VehicleUnblockIntent'
+      required:
+      - purpose
+      - intent_payload
+    EmployeeGrantChallengePayload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          const: employee_grant
+        intent_payload:
+          allOf:
+          - $ref: '#/components/schemas/ChallengeIntent'
+          - $ref: '#/components/schemas/EmployeeGrantIntent'
+      required:
+      - purpose
+      - intent_payload
+    EmployeeAccessChallengePayload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          const: employee_access
+        intent_payload:
+          allOf:
+          - $ref: '#/components/schemas/ChallengeIntent'
+          - $ref: '#/components/schemas/EmployeeAccessIntent'
+      required:
+      - purpose
+      - intent_payload
+    AdminCloseChallengePayload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          const: admin_close
+        intent_payload:
+          allOf:
+          - $ref: '#/components/schemas/ChallengeIntent'
+          - $ref: '#/components/schemas/TripAdminCloseIntent'
+      required:
+      - purpose
+      - intent_payload
+    ChallengeCreatePayload:
+      oneOf:
+      - $ref: '#/components/schemas/TakeChallengePayload'
+      - $ref: '#/components/schemas/ReturnChallengePayload'
+      - $ref: '#/components/schemas/VehicleBlockChallengePayload'
+      - $ref: '#/components/schemas/VehicleUnblockChallengePayload'
+      - $ref: '#/components/schemas/EmployeeGrantChallengePayload'
+      - $ref: '#/components/schemas/EmployeeAccessChallengePayload'
+      - $ref: '#/components/schemas/AdminCloseChallengePayload'
+      description: Purpose и operation intent обязаны соответствовать друг другу.
     AdminCloseData:
       type: object
       additionalProperties: false
@@ -1357,16 +1558,7 @@ components:
           - $ref: '#/components/schemas/Version'
           - type: 'null'
         payload:
-          type: object
-          additionalProperties: false
-          properties:
-            purpose:
-              $ref: '#/components/schemas/ChallengePurpose'
-            intent_payload:
-              $ref: '#/components/schemas/ChallengeIntent'
-          required:
-          - purpose
-          - intent_payload
+          $ref: '#/components/schemas/ChallengeCreatePayload'
       required:
       - operation
       - target_id
@@ -2067,6 +2259,8 @@ components:
           oneOf:
           - $ref: '#/components/schemas/UUID'
           - type: 'null'
+          description: UUID успешно решённого admin challenge; тот же ID команда передаёт как challenge_id. Mock/Python
+            сверяют SHA-256 полного canonical intent и потребляют proof один раз.
       required:
       - operation
       - aggregate

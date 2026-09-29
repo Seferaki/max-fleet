@@ -1,5 +1,12 @@
 # Изменения контракта
 
+## 1.5 — BE-09, 29.09.2026
+
+- Причина: в v1.4 `ChallengeIntent` перечислял поля админских операций как необязательные. Python уже требует точный набор ключей, связывает решение с SHA-256 намерения, возвращает `challenge_proof_id=challenge.id` и допускает одно потребление proof; OpenAPI не гарантировал ту же границу.
+- `ChallengeIntent` теперь `oneOf` operation-specific схем: block — `operation,target_id,expected_version,reason`; unblock добавляет только `review_completed=true`; grant требует `target_id=null`, `expected_version=null`, `max_user_id,display_name`; access требует `can_start_trip,reason`; admin close требует `reason`. Purpose и operation должны совпадать, лишние поля запрещены.
+- Зафиксирована canonical JSON сериализация для SHA-256: UTF-8, сортировка ключей, компактные разделители, Unicode не экранируется. Успешный challenge answer возвращает его UUID как `challenge_proof_id`; итоговая административная команда несёт этот UUID в `challenge_id`, а сервер сверяет intent hash и поглощает proof однократно.
+- Обновлены examples, сценарии, contract header/meta и Go client/mock version до 1.5. Это контрактный/mock шаг; Python в отдельной ветке не изменён и требует получить тот же contract SHA до INT.
+
 ## 1.4 — BE-08, 29.09.2026
 
 - Причина: post-return диалог уже реализован на Go/mock, но восстановление после рестарта не было зафиксировано схемой; в выборе категорий отсутствовали случаи парковки и неисправного замка.

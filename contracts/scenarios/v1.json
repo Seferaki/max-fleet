@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.4",
+  "contract_version": "1.5",
   "fake_clock_utc": "2026-09-27T09:00:00Z",
   "seed": "../examples/synthetic-seed.json",
   "cases": [
@@ -65,6 +65,12 @@
     {"id":"schema.null-omitted","area":"schema","given":"обязательное поле пропущено вместо null","when":"POST /commands","expect":{"http":400,"error":"INVALID_REQUEST","facts":["null и omission различаются"]}},
     {"id":"schema.limit","area":"schema","given":"limit=51","when":"GET /vehicles","expect":{"http":400,"error":"INVALID_REQUEST","facts":["максимум 50"]}},
     {"id":"schema.stale","area":"schema","given":"expected_version от старой кнопки","when":"return.complete","expect":{"http":409,"error":"STALE_VERSION","facts":["показать текущую сводку","не завершать"]}},
-    {"id":"schema.same-key-different-body","area":"schema","given":"Idempotency-Key использован для другого payload","when":"POST /commands","expect":{"http":409,"error":"IDEMPOTENCY_CONFLICT","facts":["первый результат не раскрыт другому actor"]}}
+    {"id":"schema.same-key-different-body","area":"schema","given":"Idempotency-Key использован для другого payload","when":"POST /commands","expect":{"http":409,"error":"IDEMPOTENCY_CONFLICT","facts":["первый результат не раскрыт другому actor"]}},
+
+    {"id":"admin.block-intent-proof","area":"admin","given":"admin решил math для vehicle.block","when":"vehicle.block с тем же reason,target_id,expected_version","expect":{"http":200,"error":null,"facts":["challenge_proof_id равен challenge.id","mock/Python проверяет canonical intent SHA-256"]}},
+    {"id":"admin.block-tampered-intent","area":"admin","given":"challenge решён, но reason изменён","when":"vehicle.block с тем же challenge_id","expect":{"http":422,"error":"CHALLENGE_INVALID","facts":["proof не потреблён","vehicle не меняется"]}},
+    {"id":"admin.proof-one-use","area":"admin","given":"admin proof уже потреблён командой","when":"повторная admin-команда с этим challenge_id","expect":{"http":422,"error":"CHALLENGE_INVALID","facts":["proof нельзя применить второй раз","версия агрегата не меняется"]}},
+    {"id":"admin.grant-null-target","area":"admin","given":"employee.grant admin intent имеет target_id=null и expected_version=null","when":"challenge.create(employee_grant)","expect":{"http":200,"error":null,"facts":["intent содержит ровно 5 полей","MAX ID и display_name зафиксированы до math"]}},
+    {"id":"admin.non-admin-challenge","area":"admin","given":"actor не admin","when":"challenge.create(vehicle_block)","expect":{"http":403,"error":"ADMIN_REQUIRED","facts":["challenge не создаётся","vehicle не меняется"]}}
   ]
 }
