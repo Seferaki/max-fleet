@@ -5,19 +5,19 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: ACTIVE
+lock_state: HANDOFF
 owner: B
 session_id: "27659325-800e-4ea6-99ac-3d8edec02849"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T08:42:22Z"
+heartbeat_utc: "2026-09-29T08:43:31Z"
 current_task: BE-08
-current_substep: "BE-08: завершённый снимок не принимает перепись топлива/места на mock; post-return сообщение впереди"
+current_substep: "BE-08: история/доступ/immutable snapshot проверены; post-return сообщение требует явного расширения контракта"
 last_verified_code_commit: "81cd668513b3aeada46d915db008893c8099dc26"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-08: проработать безопасное post-return сообщение без изменения immutable trip; проверить IDOR asset/курсора; Docker/Nginx smoke после доступного Engine"
+next_step: "BE-08: спроектировать отдельный post-return issue без изменения завершённого осмотра, обновить контракт с версией и примерами, затем Go/mock и тесты; проверить IDOR asset/курсора"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- HANDOFF 2026-09-29: BE-08 WIP, последний проверенный code commit `81cd668513b3aeada46d915db008893c8099dc26`, status commit должен следовать за этой записью. Текущая ветка `codex/backend`, синтетический mock seed достаточен для продолжения; приватная база/backup не использовались, dev consumer MAX не запущен. Секреты только локальные: `%LOCALAPPDATA%\MAXFleet\secrets` (`max_bot_token`, service/worker tokens); значения в Git не передаются. `npm test -- --run` → 6 PASS, `npm run build` → PASS, `scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS; Docker/Nginx smoke не пройден, Docker Desktop Engine отсутствует и служба требует системных прав. Реальный MAX/Bridge и Python не проверены. Следующий владелец обязан claim-ить HANDOFF отдельным коммитом/push до кода.
 
 - BE-08 code `81cd668513b3aeada46d915db008893c8099dc26`: после полного возврата mock отвергает повторную запись топлива в finalized after-осмотр и замену подтверждённого места; завершённый trip сохраняет ту же версию, топливо и parking ID. `go test ./internal/dialog -run '^TestFullReturnThroughDialogOnMock$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS. BE-08 WIP; post-return сообщение должно стать отдельным issue без переписи осмотра.
 
