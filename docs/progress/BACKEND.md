@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T13:28:31Z"
+heartbeat_utc: "2026-09-29T13:35:34Z"
 current_task: BE-08
-current_substep: "BE-08: private photo route code 7fffb636db2e0ef1702b780037de842de4e1823b опубликован; remote codex/backend подтверждён на b2ad4a6ef3d8d342b2fb4fce3409cc4f15ca7f93"
-last_verified_code_commit: "7fffb636db2e0ef1702b780037de842de4e1823b"
+current_substep: "BE-08: MAX-диалог просмотра previous-inspection photos реализован в 5d8cd01a3b86987f59ae2645cb5639ede1185706; targeted test и gateway verify прошли; публикация ожидает сверки lock/секретов"
+last_verified_code_commit: "5d8cd01a3b86987f59ae2645cb5639ede1185706"
 checkpoint_state: WIP
 contract_commit: "bb6f258f8e1fa8f1f028a77df68b36226de1444b"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-08: добавить вход в просмотр previous-inspection photos в MAX-диалоге; завершить IDOR/recovery и 8+8 acceptance. До INT передать SHA bb6f258f8e1fa8f1f028a77df68b36226de1444b в codex/data и проверить совместимость Python, не меняя services/data здесь. Затем BE-09: audited rollback correction под hold/return, assigned_to и admin proof; контакты/retention требуют H-03/H-04. Hold 15 минут сохранён по текущему явному требованию."
+next_step: "BE-08: завершить IDOR/recovery и 8+8 acceptance для входных/исходных фото, stale callbacks, storage errors и потери ответа; затем проверить published status. До INT передать SHA bb6f258f8e1fa8f1f028a77df68b36226de1444b в codex/data и проверить совместимость Python, не меняя services/data здесь. Затем BE-09: audited rollback correction под hold/return, assigned_to и admin proof; контакты/retention требуют H-03/H-04. Hold 15 минут сохранён по текущему явному требованию."
 human_required: [H-01]
 ```
 
@@ -36,7 +36,7 @@ human_required: [H-01]
 | BE-06 | DONE | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ; `da3931879aeb663dd529c8c5af8cdb1e744d9cdd` — контракт v1.2; `d3a54dc7cfa6a0b93253527751671f6cf3c81ebc` — Go conversation; `f73ccbec636c39309202cc68716b087622d96e3c` — описание; `79e98ba3b09f26997d6867a60650c9367b0a27a2` — до 3 фото; `ccb4eedf036efbf3432f440d8f60bec907398132` — issue.create/recovery; `626086e96668660c87430fb1e73a2d355c4c86fc` — summary/start/recovery; `0eb2fc5e8a82a367b4f0377783bbd8a7bf81f90f` — полный mock take/hold expiry и README | Реальный MAX и Python — отдельные INT; BE-07 |
 | BE-07 | DONE (mock) | `4dd7ad33419cf10d8e5b7e4b6eb924d52a458c6f` — begin; `a69c51a182bc0e19655cc4e74a1cfa12f75f70c8` — cancel/fresh draft; `5be149e482bd79c761d68e9f6170e562b72c0dd1` — 8 фото после; `18a01ebb695ea2a05a45f91c35be43b5dad8cb0f` — issue при возврате и уведомление; `fd340988305cfcbb269f505b457bb0d0a2dacd9b` — MAX geo; `033161eced999a40508a07df9af9069ba33bf2d7` — complete/recovery; `d8247983d7be77b6b71c8f7e778990fec3286bb2` — полный mock return; остальные подшаги ниже | Реальная доставка MAX и Python — INT; прямой контакт ответственного требует H-03 |
 | UI-01 | DONE (mock) | `0bc3b2152264d61b89bd5324c9a630077134fda2` — initData; `46e898e326672f07e266a9b59e81a0e6035b9d90` — context; `f07e73314a313b6b774550ab987c9953e815664f` — location; `855ed0cbfe19e9592cb8d80c8951f170c3079f34` — gateway; `dd518f3960c30cba29793d74d6b4971e4acc3b54` — web API client; `12bbdf320bfc8e516f00979507a8d9ddd3f3808a` — React карта; `f92eb6a00e1bdc599d6c04f8fbcafa33fbd03925` — MAX start_param; `f7e2dfd9cc53e978dd10fefbc33f72af11b6eed5` — web proxy; `9908f32c6bdc8849ee3b963d37e223e1849485b0` — MAX кнопка; `bff0469dcf092fdc08565f0bcff0edc47ea33387` — Go HTTP/mock регрессия | Реальный Bridge — INT-04; Docker/Nginx smoke не выполнен из-за недоступного Engine |
-| BE-08 | IN_PROGRESS | `57447711d3781bdc3940679848d3c6ba1c9de4e2` — история по 5, приватный курсор; `e14bc18704afc5f1146f5184f5e55fa697fbaf98` — admin close/замечания; `788fe4e91156f5c369c03fa46987515abd2c103e` — owner/admin в карточке; `ff21858a2ac2265f9b477e2addc11b18ca18f820` — owner в списке; `81cd668513b3aeada46d915db008893c8099dc26` — immutable snapshot; `73a5f35e3c0e963cfea5c79aff1aca28756ef031` — чужое фото; `11567c535b3968ee10b27d052f380c017560cbd1` — post-return диалог на mock; `bb6f258f8e1fa8f1f028a77df68b36226de1444b` — contract v1.4; `0057f0be6f672a44cc587ce623fad2993494392c` — composite checklist; `64ea9246d8a25bbb7c611c41ee5bcb40044a5d42` — подтверждение прироста одометра >1000 км; `7fffb636db2e0ef1702b780037de842de4e1823b` — private previous inspection photo client/mock | MAX-диалог фото previous inspection; IDOR/recovery и 8+8 acceptance |
+| BE-08 | IN_PROGRESS | `57447711d3781bdc3940679848d3c6ba1c9de4e2` — история по 5, приватный курсор; `e14bc18704afc5f1146f5184f5e55fa697fbaf98` — admin close/замечания; `788fe4e91156f5c369c03fa46987515abd2c103e` — owner/admin в карточке; `ff21858a2ac2265f9b477e2addc11b18ca18f820` — owner в списке; `81cd668513b3aeada46d915db008893c8099dc26` — immutable snapshot; `73a5f35e3c0e963cfea5c79aff1aca28756ef031` — чужое фото; `11567c535b3968ee10b27d052f380c017560cbd1` — post-return диалог на mock; `bb6f258f8e1fa8f1f028a77df68b36226de1444b` — contract v1.4; `0057f0be6f672a44cc587ce623fad2993494392c` — composite checklist; `64ea9246d8a25bbb7c611c41ee5bcb40044a5d42` — подтверждение прироста одометра >1000 км; `7fffb636db2e0ef1702b780037de842de4e1823b` — private previous inspection photo client/mock; `5d8cd01a3b86987f59ae2645cb5639ede1185706` — MAX-диалог просмотра previous-inspection photos | завершить IDOR/recovery и 8+8 acceptance |
 | BE-09 | TODO | — | См. план |
 | BE-10 | TODO | — | См. план |
 | BE-11 | TODO | — | См. план |
@@ -472,6 +472,10 @@ human_required: [H-01]
 - `git fetch origin` после code commit не удался из-за сети (GitHub: port 443). Перед push повторить fetch, сверить `owner/session_id` и remote SHA.
 - H-01: в [MAX для партнёров](https://business.max.ru) открыть профиль, раздел «Чат-боты», создать бот «MAX Fleet» с описанием «Служебный автопарк: оформление поездок, осмотры автомобиля, возврат и сообщения ответственному» и логотипом 500×500 PNG/JPEG, отправить на модерацию. После одобрения выполнить `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/enter-max-token.ps1 -Enter` на этом устройстве; значение не отправлять в чат. Агент позже проверит файл и `/me` без вывода токена. До этого S-02/Go mock идут независимо.
 - Следующее действие: опубликовать этот checkpoint, затем S-02 OpenAPI и fixtures. Реальной проверки MAX ещё нет.
+
+### Текущий проверенный подшаг BE-08
+
+- Code commit `5d8cd01a3b86987f59ae2645cb5639ede1185706`: добавлены вход из карточки «Предыдущий осмотр», список сохранённых ракурсов и выдача выбранного фото через private previous-inspection API. До меню и после чтения файла Go повторно проверяет сотрудника, актуальный finalized after-осмотр, версию, ID осмотра, время обновления и занятый слот; stale callback отклоняется, ошибки NOT_FOUND/STORAGE_UNAVAILABLE получают безопасное сообщение. Фото не сопровождается trip/driver ID. `& ..\..\.local\go-dist\go\bin\go.exe test ./internal/dialog -run '^TestPreviousInspectionShowsOnlyProjectionAndRechecksActor$' -count=1 -v` (из `services/gateway`) → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS; `git diff --check` и staged secret scan перед code commit → PASS. Проверены Go/mock диалог и gateway, не реальный MAX или Python; 8+8 acceptance и общий IDOR/recovery остаются WIP. Следующий подшаг — проверить полный photo upload/replace/view после начала и после завершения поездки, ошибки хранения, устаревшие права/версии и восстановление после потерянного ответа; затем обновить этот checkpoint по фактам.
 
 ## Журнал передачи
 
