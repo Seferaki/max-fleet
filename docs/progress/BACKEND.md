@@ -9,9 +9,9 @@ lock_state: ACTIVE
 owner: A
 session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T18:38:39Z"
+heartbeat_utc: "2026-09-29T18:43:21Z"
 current_task: BE-09
-current_substep: "BE-09/7.3.3: confirmed /adminodo in_trip flow and permanent Data API error responses on Go/mock; code and status published at ab626f79508b81bcf2c69e2a9e78bdd50caa2db6."
+current_substep: "BE-09/7.4.1: extend Data API v1.12 and Go/mock durable conversation state for admin close before wiring the MAX flow."
 last_verified_code_commit: "5877f459d93d4482559f279d4e2b479437c8b5ed"
 checkpoint_state: WIP
 contract_commit: "61f6f1749445a181c216511faf6eb3c9b5fc3973"
