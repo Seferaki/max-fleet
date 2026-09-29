@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T11:26:22Z"
+heartbeat_utc: "2026-09-29T11:57:24Z"
 current_task: BE-08
-current_substep: "Takeover с B: пользователь подтвердил остановку сессии 30274d30-ee62-4c3e-9df9-08a5c0e1e05e; продолжаю Go-диалог post-return сообщения из карточки"
-last_verified_code_commit: "e87e23bbaf770dc42b677cdfaa65cc707cdfa086"
+current_substep: "BE-08: Go/mock post-return диалог реализован; проверен retry после issue.create; следующий подшаг — описать conversation flow/categories в contract v1.4 и сверить DE-09"
+last_verified_code_commit: "11567c535b3968ee10b27d052f380c017560cbd1"
 checkpoint_state: WIP
 contract_commit: "1aa6ebfab72f403d0dc96294ed88ff6f9945e629"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-08: добавить Go диалог post-return сообщения из собственной завершённой карточки, фото/ошибки/recovery; затем завершить IDOR и mock приёмку. Python ветка ещё v1.2, синхронизация обязательна до INT"
+next_step: "BE-08: contract v1.4 — issue_post_return conversation, категории parking/car_lock, примеры/сценарии и решения по HTTP/error semantics; затем один вопрос keys+lock с раздельным честным сохранением двух полей, подтверждение прироста одометра >1000 км, missing previous-inspection photo mock route и полная IDOR/mock приёмка. До INT синхронизировать один contract SHA с codex/data. BE-09: rollback correction под hold/return с аудитом, assigned_to, admin proof; контакты/retention требуют H-03/H-04. Hold оставлен 15 минут по текущему явному требованию."
 human_required: [H-01]
 ```
 
@@ -36,7 +36,7 @@ human_required: [H-01]
 | BE-06 | DONE | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ; `da3931879aeb663dd529c8c5af8cdb1e744d9cdd` — контракт v1.2; `d3a54dc7cfa6a0b93253527751671f6cf3c81ebc` — Go conversation; `f73ccbec636c39309202cc68716b087622d96e3c` — описание; `79e98ba3b09f26997d6867a60650c9367b0a27a2` — до 3 фото; `ccb4eedf036efbf3432f440d8f60bec907398132` — issue.create/recovery; `626086e96668660c87430fb1e73a2d355c4c86fc` — summary/start/recovery; `0eb2fc5e8a82a367b4f0377783bbd8a7bf81f90f` — полный mock take/hold expiry и README | Реальный MAX и Python — отдельные INT; BE-07 |
 | BE-07 | DONE (mock) | `4dd7ad33419cf10d8e5b7e4b6eb924d52a458c6f` — begin; `a69c51a182bc0e19655cc4e74a1cfa12f75f70c8` — cancel/fresh draft; `5be149e482bd79c761d68e9f6170e562b72c0dd1` — 8 фото после; `18a01ebb695ea2a05a45f91c35be43b5dad8cb0f` — issue при возврате и уведомление; `fd340988305cfcbb269f505b457bb0d0a2dacd9b` — MAX geo; `033161eced999a40508a07df9af9069ba33bf2d7` — complete/recovery; `d8247983d7be77b6b71c8f7e778990fec3286bb2` — полный mock return; остальные подшаги ниже | Реальная доставка MAX и Python — INT; прямой контакт ответственного требует H-03 |
 | UI-01 | DONE (mock) | `0bc3b2152264d61b89bd5324c9a630077134fda2` — initData; `46e898e326672f07e266a9b59e81a0e6035b9d90` — context; `f07e73314a313b6b774550ab987c9953e815664f` — location; `855ed0cbfe19e9592cb8d80c8951f170c3079f34` — gateway; `dd518f3960c30cba29793d74d6b4971e4acc3b54` — web API client; `12bbdf320bfc8e516f00979507a8d9ddd3f3808a` — React карта; `f92eb6a00e1bdc599d6c04f8fbcafa33fbd03925` — MAX start_param; `f7e2dfd9cc53e978dd10fefbc33f72af11b6eed5` — web proxy; `9908f32c6bdc8849ee3b963d37e223e1849485b0` — MAX кнопка; `bff0469dcf092fdc08565f0bcff0edc47ea33387` — Go HTTP/mock регрессия | Реальный Bridge — INT-04; Docker/Nginx smoke не выполнен из-за недоступного Engine |
-| BE-08 | IN_PROGRESS | `57447711d3781bdc3940679848d3c6ba1c9de4e2` — история по 5, приватный курсор; `e14bc18704afc5f1146f5184f5e55fa697fbaf98` — admin close/замечания; `788fe4e91156f5c369c03fa46987515abd2c103e` — owner/admin в карточке; `ff21858a2ac2265f9b477e2addc11b18ca18f820` — owner в списке; `81cd668513b3aeada46d915db008893c8099dc26` — immutable snapshot; `73a5f35e3c0e963cfea5c79aff1aca28756ef031` — чужое фото | Post-return Go/mock и полный IDOR |
+| BE-08 | IN_PROGRESS | `57447711d3781bdc3940679848d3c6ba1c9de4e2` — история по 5, приватный курсор; `e14bc18704afc5f1146f5184f5e55fa697fbaf98` — admin close/замечания; `788fe4e91156f5c369c03fa46987515abd2c103e` — owner/admin в карточке; `ff21858a2ac2265f9b477e2addc11b18ca18f820` — owner в списке; `81cd668513b3aeada46d915db008893c8099dc26` — immutable snapshot; `73a5f35e3c0e963cfea5c79aff1aca28756ef031` — чужое фото; `11567c535b3968ee10b27d052f380c017560cbd1` — post-return диалог на mock | Явный contract v1.4 для flow/categories, composite checklist/одометр, пропущенный mock route и IDOR приёмка |
 | BE-09 | TODO | — | См. план |
 | BE-10 | TODO | — | См. план |
 | BE-11 | TODO | — | См. план |
@@ -59,9 +59,20 @@ human_required: [H-01]
 
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
+## Сверка замечаний data engineer
+
+Сверено с `origin/codex/data` commit `9eb2211b29e48fce8a6afc410bc986fa98a4988e`; Python-файлы здесь не менялись, его CI/41 PostgreSQL тест и backup/restore приняты как отдельные DE доказательства, не как интеграционная проверка.
+
+- В v1.3 уже отражены `return.complete → Return` и повышение checkout/return version при фото по mock/Python. Python ветка пока v1.2; до INT всё равно нужен общий contract SHA.
+- Ответы `RULES_REQUIRED` и `CHALLENGE_EXPIRED`: выровнять mock на контрактные 422 и оставить разбор Go по коду ошибки. Для read `/admin/*` оставить согласованный `ACCESS_DENIED`, для admin command — `ADMIN_REQUIRED`; явно зафиксировать в контракте. Конфликт `employee.grant` на занятый MAX ID: 409 `INVALID_STATE`.
+- Admin challenge/`intent_payload` сверить и реализовать в BE-09: hash включает operation, target, version и критический payload; `challenge_proof_id` передаётся как `challenge_id`; старое доказательство, неверный actor и изменённое намерение отклоняются.
+- `conversation.save` использует target текущего employee, начальную версию 1 и первую сохранённую версию 2; новый `issue_post_return` должен быть описан в OpenAPI с примерами/сценариями и поддержан mock.
+- Python отправляет `trip_admin_closed` водителю и `access_changed` сотруднику дополнительно к admin; в BE-10 сверить mock с PRODUCT_SPEC §13.6. Mock также должен реализовать контрактный `GET /vehicles/{id}/previous-inspection/photos/{slot}`.
+- Прочие замечания: сделать категории `parking`/`car_lock`; один составной вопрос про закрытую машину и ключи при раздельных правдивых полях; подтверждение прироста одометра более 1000 км; безопасный admin odometer correction при hold/возврате; `assigned_to`; employee/responsible contact; P1 `retired_at`; retention фото/геоточек/контактов. BE-08/09/P1 план обновлён. Действующее указание пользователя сохраняет hold 15 минут; менять его без подтверждённой политики компании не буду. H-04 по сроку хранения остаётся неизвестным и нужен до реального пилота.
+
 ## Последний checkpoint
 
-- BE-08 mock code `e87e23bbaf770dc42b677cdfaa65cc707cdfa086`: `issue.create` для собственной completed trip создаёт отдельный `post_return` Issue, не меняя сохранённый Trip/after-inspection и их версии. Машина получает `needs_review`; уже действующий hold другой поездки отклоняется; admin notification сохраняется в одной транзакции mock. GET истории присоединяет Issue как проекцию, включая restart. `go test ./internal/datamock -run '^Test(PostReturnIssueKeepsCompletedTripAndBlocksHeldVehicle|ContractScenarioSubsetAgainstHTTPMock)$' -count=1` → PASS; 36 исполняемых mock-сценариев, включая 2 новых. Тест проверил owner/404, stale version, фото, failed snapshot rollback, idempotent replay, приватное чтение и restart. `contracts/validate.py` → 2 OpenAPI, 37 routes, 24 command examples, 9 other examples, 52 scenarios; `scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS. Только Go/mock; Go диалог и Python ещё WIP.
+- BE-08 Go/mock code `11567c535b3968ee10b27d052f380c017560cbd1`: из карточки собственной `completed` поездки сотрудник выбирает категорию, сохраняет описание в `issue_post_return`, добавляет до 3 отдельных фото, проверяет сводку и отправляет `issue.create` с `trip_id` без `inspection_id`. Чужой/устаревший callback отклоняется; `/menu` восстанавливает черновик. Повтор после commit замечания и сбоя сохранения `conversation.done` сначала ищет собственный результат команды, не меняя trip, finalized after-inspection и их версии; машина получает `needs_review`. `go test ./internal/dialog -run '^TestFullReturnThroughDialogOnMock$' -count=1 -v` → PASS; `go test ./internal/datamock -run '^Test(PostReturnIssueKeepsCompletedTripAndBlocksHeldVehicle|ContractScenarioSubsetAgainstHTTPMock)$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS; `git diff --check` и `py scripts/check-secrets.py --staged` → PASS. Это только Go/mock; новый flow ещё нужно явно описать в contract, Python ветка v1.2, MAX/Python не проверены. WIP; push этой пары checkpoint-коммитов ожидает последнюю сверку очереди.
 
 - BE-08 contract code `1aa6ebfab72f403d0dc96294ed88ff6f9945e629`: Data API v1.3 задаёт отдельный post-return Issue собственной completed trip без изменения trip/after-inspection, блокировку новой выдачи и admin notification. Добавлены OpenAPI enum/описание, JSON-пример и 2 сценария; уточнены `return.complete` → Return и повышение checkout/return version при фото согласно существующему mock/Python. `.local/contract-venv/Scripts/python.exe contracts/validate.py` → OK (2 OpenAPI, 37 data routes, 24 command examples, 9 other examples, 52 scenarios); `scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS. Redocly 2.54.3 сообщил обе схемы valid, но процесс завершился с Node/Windows assertion и exit 1; чистый lint exit 0 не заявлен. Сценарии post-return пока только описаны, не исполнены; mock/Python бизнес-операция не реализована. Python ветка DE-09 всё ещё v1.2, до INT нужно согласовать новый контракт. BE-08 WIP.
 
