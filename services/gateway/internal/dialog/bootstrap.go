@@ -62,9 +62,20 @@ type Bootstrap struct {
 	Photos     PhotoFetcher
 	PhotoStore PhotoStore
 	Location   *time.Location
+	MapBotName string
 }
 
 var vehicleIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var mapBotNamePattern = regexp.MustCompile(`^[A-Za-z0-9_]{3,80}$`)
+
+func ValidMapBotName(name string) bool { return mapBotNamePattern.MatchString(name) }
+
+func mapLaunchURL(botName, returnID string) string {
+	if !ValidMapBotName(botName) || !vehicleIDPattern.MatchString(returnID) {
+		return ""
+	}
+	return "https://max.ru/" + botName + "?startapp=" + returnID
+}
 
 func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) error {
 	pageNumber, catalog := catalogPage(item.Event)
@@ -420,7 +431,7 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 			message += "\nОтправьте геопозицию для подтверждения места парковки."
 		}
 	}
-	return p.sendView(ctx, maxID, message, menuRows(*me.Employee, state))
+	return p.sendView(ctx, maxID, message, menuRows(*me.Employee, state, p.MapBotName))
 }
 
 func answerTarget(event dataapi.NormalizedEvent) (string, int64, int, bool) {
@@ -952,7 +963,7 @@ func isMenuEvent(event dataapi.NormalizedEvent) bool {
 	return command == "/start" || command == "/menu"
 }
 
-func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.Button {
+func menuRows(employee dataapi.Employee, state dataapi.CurrentState, mapBotName ...string) [][]maxsdk.Button {
 	if state.Checkout != nil && state.Checkout.Status == "holding" {
 		rows := [][]maxsdk.Button{}
 		if state.Checkout.Step == "math" {
@@ -1024,7 +1035,14 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 				rows = append(rows, []maxsdk.Button{{Text: "Подтвердить фото после", Payload: fmt.Sprintf("return-confirm-photos:%s:%d", state.Return.Inspection.ID, state.Return.Inspection.Version)}})
 			}
 		}
-		rows = append(rows, []maxsdk.Button{{Text: "Текущая поездка", Payload: "trip:" + state.Trip.ID}})
+		tripRow := []maxsdk.Button{{Text: "Текущая поездка", Payload: "trip:" + state.Trip.ID}}
+		if state.Return.Step == "checklist" && state.Return.Status == "draft" && state.Return.IntentConfirmedAt != nil &&
+			state.Return.TripID == state.Trip.ID && state.Trip.EmployeeID == employee.ID && state.Trip.ReturnID != nil && *state.Trip.ReturnID == state.Return.ID && len(mapBotName) > 0 {
+			if mapURL := mapLaunchURL(mapBotName[0], state.Return.ID); mapURL != "" {
+				tripRow = append(tripRow, maxsdk.Button{Text: "Выбрать на карте", URL: mapURL})
+			}
+		}
+		rows = append(rows, tripRow)
 		rows = append(rows, []maxsdk.Button{{Text: "Вернуться к поездке", Payload: fmt.Sprintf("return-cancel-intent:%s:%d", state.Return.ID, state.Return.Version)}})
 	}
 	if state.Trip != nil && state.Trip.Status == "active" {

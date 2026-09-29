@@ -135,6 +135,16 @@ func TestInboxWorkerSetupUsesPrivateFilesAndKeepsPartialMode(t *testing.T) {
 	if !ok || bootstrap.Location == nil {
 		t.Fatal("gateway dialog timezone was not configured")
 	}
+	t.Setenv("MAX_BOT_NAME", "demo_bot")
+	configured, enabled, err := inboxWorkerSetup()
+	if err != nil || !enabled || configured.Processor.(dialog.Bootstrap).MapBotName != "demo_bot" {
+		t.Fatalf("map launch bot name was not configured: enabled=%v err=%v", enabled, err)
+	}
+	t.Setenv("MAX_BOT_NAME", "bad/name")
+	if _, enabled, err := inboxWorkerSetup(); err == nil || enabled {
+		t.Fatal("invalid MAX_BOT_NAME accepted")
+	}
+	t.Setenv("MAX_BOT_NAME", "")
 	result, err := worker.RunOnce(context.Background(), 1)
 	if err != nil || result.Claimed != 0 {
 		t.Fatalf("empty durable inbox cycle = %+v, %v", result, err)

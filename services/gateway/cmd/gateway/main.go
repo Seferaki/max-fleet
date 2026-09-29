@@ -301,6 +301,10 @@ func inboxWorkerSetup() (inboxworker.Worker, bool, error) {
 	if err != nil {
 		return inboxworker.Worker{}, false, errors.New("gateway: COMPANY_TIMEZONE is invalid")
 	}
+	mapBotName := os.Getenv("MAX_BOT_NAME")
+	if mapBotName != "" && !dialog.ValidMapBotName(mapBotName) || mapBotName == "" && strings.EqualFold(os.Getenv("APP_ENV"), "production") {
+		return inboxworker.Worker{}, false, errors.New("gateway: MAX_BOT_NAME is missing or invalid")
+	}
 	var photoDownloader dialog.PhotoFetcher
 	if configured := os.Getenv("MAX_PHOTO_HOSTS"); configured != "" {
 		hosts := strings.Split(configured, ",")
@@ -312,7 +316,7 @@ func inboxWorkerSetup() (inboxworker.Worker, bool, error) {
 			return inboxworker.Worker{}, false, errors.New("gateway: MAX_PHOTO_HOSTS is invalid")
 		}
 	}
-	return inboxworker.Worker{ID: "gateway-inbox-worker", Store: store, Processor: dialog.Bootstrap{Data: actor, Commands: actor, MAX: sender, Photos: photoDownloader, PhotoStore: actor, Location: location}, Now: time.Now}, true, nil
+	return inboxworker.Worker{ID: "gateway-inbox-worker", Store: store, Processor: dialog.Bootstrap{Data: actor, Commands: actor, MAX: sender, Photos: photoDownloader, PhotoStore: actor, Location: location, MapBotName: mapBotName}, Now: time.Now}, true, nil
 }
 
 func observeInbox(result inboxworker.Result, err error) {

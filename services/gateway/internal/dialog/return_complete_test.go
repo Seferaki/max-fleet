@@ -169,3 +169,36 @@ func TestReturnMenuFitsMAXKeyboardWithAdminIssueDraft(t *testing.T) {
 		t.Fatal("admin trips vanished from compact return menu")
 	}
 }
+
+func TestReturnMapDeepLinkOnlyForCurrentOwnedChecklist(t *testing.T) {
+	now := time.Date(2026, 9, 29, 3, 0, 0, 0, time.UTC)
+	tripID, returnID, employeeID := "10000000-0000-4000-8000-000000000001", "20000000-0000-4000-8000-000000000001", "employee-1"
+	state := dataapi.CurrentState{
+		Trip:   &dataapi.Trip{ID: tripID, EmployeeID: employeeID, Status: "returning", ReturnID: &returnID},
+		Return: &dataapi.Return{ID: returnID, TripID: tripID, Status: "draft", Step: "checklist", IntentConfirmedAt: &now},
+	}
+	findMap := func(rows [][]maxsdk.Button) string {
+		for _, row := range rows {
+			for _, button := range row {
+				if button.Text == "Выбрать на карте" {
+					return button.URL
+				}
+			}
+		}
+		return ""
+	}
+	rows := menuRows(dataapi.Employee{ID: employeeID}, state, "demo_bot")
+	if got := findMap(rows); got != "https://max.ru/demo_bot?startapp="+returnID || len(rows) > 10 {
+		t.Fatalf("owned map link or keyboard: url=%q rows=%d", got, len(rows))
+	}
+	if got := findMap(menuRows(dataapi.Employee{ID: "foreign"}, state, "demo_bot")); got != "" {
+		t.Fatal("foreign employee received map link")
+	}
+	if got := findMap(menuRows(dataapi.Employee{ID: employeeID}, state, "bad/name")); got != "" {
+		t.Fatal("invalid bot name produced a link")
+	}
+	state.Return.Status = "cancelled"
+	if got := findMap(menuRows(dataapi.Employee{ID: employeeID}, state, "demo_bot")); got != "" {
+		t.Fatal("cancelled return produced a link")
+	}
+}
