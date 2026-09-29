@@ -60,6 +60,50 @@ func TestMyTripsShowFivePerPageAndKeepCursorPrivate(t *testing.T) {
 	}
 }
 
+func TestTripHistoryShowsAdminCloseAndOwnedIssuesByVersion(t *testing.T) {
+	now := time.Date(2026, 9, 29, 5, 0, 0, 0, time.UTC)
+	actor, _, closeServer := mockClients(t, now)
+	defer closeServer()
+	const tripID = "40000000-0000-4000-8000-000000000001"
+	issues := make([]dataapi.Issue, 6)
+	for index := range issues {
+		issues[index] = dataapi.Issue{Category: "mechanical", Status: "open", Description: fmt.Sprintf("Замечание %d", index+1)}
+	}
+	data := &tripViewData{Client: actor, trip: dataapi.Trip{ID: tripID, Status: "closed_by_admin", Version: 3, MissingData: []string{"after_photos"}, Issues: issues}}
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: data, MAX: sender}
+	owner := "8000000000000000001"
+	ctx := context.Background()
+	if err := processor.Handle(ctx, callbackItem(owner, "history-detail", "trip:"+tripID, now)); err != nil {
+		t.Fatal(err)
+	}
+	detail := sender.Messages()[0]
+	if !strings.Contains(detail.Text, "Закрыто администратором") || !strings.Contains(detail.Text, "after_photos") || detail.Buttons[0][0].Payload != "trip-issues:"+tripID+":3:1" {
+		t.Fatalf("admin close detail: %+v", detail)
+	}
+	if err := processor.Handle(ctx, callbackItem(owner, "history-issues-1", detail.Buttons[0][0].Payload, now)); err != nil {
+		t.Fatal(err)
+	}
+	first := sender.Messages()[1]
+	if !strings.Contains(first.Text, "Замечание 5") || strings.Contains(first.Text, "Замечание 6") || first.Buttons[0][0].Payload != "trip-issues:"+tripID+":3:2" {
+		t.Fatalf("first issue page: %+v", first)
+	}
+	if err := processor.Handle(ctx, callbackItem(owner, "history-issues-2", first.Buttons[0][0].Payload, now)); err != nil {
+		t.Fatal(err)
+	}
+	second := sender.Messages()[2]
+	if !strings.Contains(second.Text, "Замечание 6") || second.Buttons[0][0].Payload != "trip-issues:"+tripID+":3:1" {
+		t.Fatalf("second issue page: %+v", second)
+	}
+	if err := processor.Handle(ctx, callbackItem("8000000000000000002", "history-foreign-issues", detail.Buttons[0][0].Payload, now)); err != nil || !strings.Contains(sender.Messages()[3].Text, "недоступна") {
+		t.Fatalf("foreign issue read: %v %+v", err, sender.Messages()[3])
+	}
+	data.trip.Version = 4
+	if err := processor.Handle(ctx, callbackItem(owner, "history-stale-issues", detail.Buttons[0][0].Payload, now)); err != nil || !strings.Contains(sender.Messages()[4].Text, "изменились") {
+		t.Fatalf("stale issue read: %v %+v", err, sender.Messages()[4])
+	}
+}
+
 func (d *tripViewData) Trip(_ context.Context, actor, id string) (dataapi.Trip, error) {
 	if id != d.trip.ID || actor != "8000000000000000001" && actor != "8000000000000000003" {
 		return dataapi.Trip{}, &dataapi.APIError{Status: http.StatusNotFound, Code: "NOT_FOUND"}

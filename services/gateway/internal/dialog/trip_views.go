@@ -62,6 +62,14 @@ func parseTripView(event dataapi.NormalizedEvent) tripViewRequest {
 			request.kind, request.id = "detail", parts[1]
 		}
 		return request
+	case "trip-issues":
+		request := tripViewRequest{recognized: true}
+		if len(parts) == 4 {
+			request.kind, request.id = "issues", parts[1]
+			request.version, _ = strconv.ParseInt(parts[2], 10, 64)
+			request.page = parsePositiveInt(parts[3])
+		}
+		return request
 	case "photo-phase", "photo-view":
 		request := tripViewRequest{recognized: true}
 		if len(parts) == 4 || len(parts) == 5 && parts[0] == "photo-view" {
@@ -108,6 +116,9 @@ func (p Bootstrap) showTripView(ctx context.Context, actor string, maxID int64, 
 	}
 	if request.version < 1 || trip.Version != request.version {
 		return p.sendView(ctx, maxID, "Данные поездки изменились. Откройте её снова через /trips.", nil)
+	}
+	if request.kind == "issues" {
+		return p.showTripIssues(ctx, maxID, trip, request.page)
 	}
 	inspection, available := visibleTripInspection(trip, request.phase)
 	if !available {
@@ -205,6 +216,9 @@ func (p Bootstrap) showTripDetail(ctx context.Context, actor string, maxID int64
 	if _, ok := visibleTripInspection(trip, "after"); ok {
 		rows = append(rows, []maxsdk.Button{{Text: "Фото после", Payload: fmt.Sprintf("photo-phase:%s:%d:after", trip.ID, trip.Version)}})
 	}
+	if len(trip.Issues) > 0 {
+		rows = append(rows, []maxsdk.Button{{Text: fmt.Sprintf("Замечания (%d)", len(trip.Issues)), Payload: fmt.Sprintf("trip-issues:%s:%d:1", trip.ID, trip.Version)}})
+	}
 	rows = append(rows, []maxsdk.Button{{Text: "Мои поездки", Payload: "trip-list:mine:1"}})
 	vehicleLabel := trip.VehicleID
 	if vehicleIDPattern.MatchString(trip.VehicleID) {
@@ -215,11 +229,42 @@ func (p Bootstrap) showTripDetail(ctx context.Context, actor string, maxID int64
 		vehicleLabel = oneLine(vehicle.Plate)
 	}
 	message := fmt.Sprintf("Поездка %s\nСтатус: %s\nАвтомобиль: %s", trip.ID, oneLine(trip.Status), vehicleLabel)
+	if trip.Status == "closed_by_admin" {
+		message += "\nЗакрыто администратором; часть данных возврата может отсутствовать."
+		if len(trip.MissingData) > 0 {
+			message += " Не хватает: " + shortLabel(oneLine(strings.Join(trip.MissingData, ", "))) + "."
+		}
+	}
 	if !trip.StartedAt.IsZero() {
 		elapsed := max(0, int(time.Since(trip.StartedAt).Minutes()))
 		message += fmt.Sprintf("\nНачало: %s\nДлительность: %d ч %d мин", formatMoment(trip.StartedAt, p.Location), elapsed/60, elapsed%60)
 	}
 	return p.sendView(ctx, maxID, message, rows)
+}
+
+func (p Bootstrap) showTripIssues(ctx context.Context, maxID int64, trip dataapi.Trip, page int) error {
+	if page < 1 || page > 20 || (page-1)*5 >= len(trip.Issues) {
+		return p.sendView(ctx, maxID, "Страница замечаний недоступна. Откройте поездку снова через /trips.", nil)
+	}
+	start := (page - 1) * 5
+	end := min(start+5, len(trip.Issues))
+	lines := []string{fmt.Sprintf("Замечания поездки %s · страница %d", trip.ID, page)}
+	for index, issue := range trip.Issues[start:end] {
+		lines = append(lines, fmt.Sprintf("%d. %s · %s: %s", start+index+1, shortLabel(oneLine(issue.Category)), shortLabel(oneLine(issue.Status)), shortLabel(oneLine(issue.Description))))
+	}
+	controls := []maxsdk.Button{}
+	if page > 1 {
+		controls = append(controls, maxsdk.Button{Text: "Назад", Payload: fmt.Sprintf("trip-issues:%s:%d:%d", trip.ID, trip.Version, page-1)})
+	}
+	if end < len(trip.Issues) && page < 20 {
+		controls = append(controls, maxsdk.Button{Text: "Далее", Payload: fmt.Sprintf("trip-issues:%s:%d:%d", trip.ID, trip.Version, page+1)})
+	}
+	rows := [][]maxsdk.Button{}
+	if len(controls) > 0 {
+		rows = append(rows, controls)
+	}
+	rows = append(rows, []maxsdk.Button{{Text: "К поездке", Payload: "trip:" + trip.ID}})
+	return p.sendView(ctx, maxID, strings.Join(lines, "\n"), rows)
 }
 
 func visibleTripInspection(trip dataapi.Trip, phase string) (dataapi.Inspection, bool) {
