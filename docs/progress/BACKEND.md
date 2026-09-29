@@ -1,23 +1,23 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03, BE-01…BE-12 и UI-01 закрыты только в Go/mock контуре. BE-12 code 1d175d7120c6c7021e68800b22e824d4871b8a9b и checkpoint 085768d39f3c22d64a06e2e763c1ba4686f0d884 опубликованы; Actions #292 прошёл все пять jobs. Gate backend_ready_for_integration=true означает готовность только backend/mock, full_stack_accepted=false. Data API v1.13 — contract commit caa134ddffcc0edd501851ae82f12020c992e75a. На origin/codex/data SHA 9eb2211b29e48fce8a6afc410bc986fa98a4988e: DE-09 IN_PROGRESS, OpenAPI v1.0 и data_ready_for_integration=false; ответы backend на вопросы 1–5 опубликованы здесь, но data progress ещё их не отразил. Удалённой ветки codex/qa пока нет; QA-01…QA-03 не закрыты. INT и реальный MAX не проверены; H-01 остаётся HUMAN_REQUIRED. services/data/ не менялся. План: [IMPLEMENTATION_PLAN](../IMPLEMENTATION_PLAN.md); очередь: [HANDOFF](../HANDOFF.md).
+Единственный текущий статус backend. BE-12 и обязательный UI-01 закрыты только в Go/mock; backend gate true, full stack false. По прямому распоряжению пользователя начат INT-01: проверить/завершить недостающее DE и перейти к MVP-интеграции. QA пропускается по решению пользователя, но остаётся непроведённой и не считается PASS. На origin/codex/data SHA 9eb2211b29e48fce8a6afc410bc986fa98a4988e зафиксированы DE-09 IN_PROGRESS, OpenAPI v1.0, data_ready_for_integration=false; сначала аудит в integration branch, не перезаписывая исходную codex/data ветку.
 
 ```yaml
 status_schema: 1
 track: backend
-lock_state: HANDOFF
+lock_state: ACTIVE
 owner: A
-session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
+session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T21:53:18Z"
-current_task: BE-12
-current_substep: "BE-12 закрыта как Go/mock gate: code 1d175d7120c6c7021e68800b22e824d4871b8a9b; опубликованный checkpoint 085768d39f3c22d64a06e2e763c1ba4686f0d884; Actions #292 success по всем пяти jobs. Очередь передана в HANDOFF; INT ждёт DE-09 на контракте v1.13 и QA-03."
+heartbeat_utc: "2026-09-29T22:08:14Z"
+current_task: INT-01
+current_substep: "Claim INT-01 до любых изменений: пользователь разрешил закончить реально недостающий DE в интеграционной ветке и пропустить QA для срочного MVP. QA остаётся непроверенной; начинаю с аудита data branch v1.0/DE-09, затем codex/integration и фактические Python gates."
 last_verified_code_commit: "1d175d7120c6c7021e68800b22e824d4871b8a9b"
-checkpoint_state: VERIFIED
+checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "BE-12 gate verified; следующий этап — INT-01 после того, как data engineer опубликует DE-09 с implementation/fixtures/tests на contract v1.13 и выставит data_ready_for_integration=true, а QA опубликует QA-03. Сейчас data SHA 9eb2211b29e48fce8a6afc410bc986fa98a4988e остаётся на v1.0/DE-09 IN_PROGRESS и codex/qa отсутствует; до обоих gates сервисы не соединять. После публикации заново сверить ветки и запустить INT-01. Backend/mock готов, но Python, PostgreSQL/S3, совместная интеграция и реальный MAX не проверены. H-01 нужен для реального MAX; H-03/H-04 — контакты/retention; retired_at — P1; hold 15 минут сохранён."
+next_step: "Сначала обычным push опубликовать claim-коммит. После подтверждения создать codex/integration от backend, слить codex/data без force/rebase и проверить реальные отличия реализации/fixtures от contract v1.13. Если DE-09 не готов, исправлять его в integration branch и прогнать PostgreSQL/S3/Python CI; исходную codex/data ветку сохранить. QA gate пропускается по прямому решению пользователя, отмечать QA как PASS нельзя. Затем перейти к INT-01/02 Compose и Go→Python интеграции; фиксировать все непрошедшие проверки, full_stack_accepted пока false."
 human_required: [H-01]
 ```
 
@@ -571,6 +571,7 @@ human_required: [H-01]
 
 | UTC | От → кому | Задача / SHA | Результат |
 |---|---|---|---|
+| 2026-09-29 22:08 | HANDOFF → A | INT-01 / checkpoint 8eace49 | Пользователь поручил завершить недостающий DE в integration branch и пропустить QA для ускорения MVP; QA не считается пройденной. Сначала опубликован отдельный claim до изменений кода. |
 | 2026-09-29 21:53 | A → HANDOFF | BE-12 / code 1d175d7, checkpoint 085768d | Go/mock gate verified; Actions #292 all green. Backend ready for integration; INT ждёт DE-09 на contract v1.13 и QA-03. Очередь освобождена, передачи другому ноутбуку не подтверждалось. |
 | 2026-09-29 11:26 | B → A | BE-08 / `6f9584f` | Пользователь подтвердил, что исполнитель B сессии `30274d30-ee62-4c3e-9df9-08a5c0e1e05e` остановлен; takeover отдельным claim-коммитом до изменения кода |
 | 2026-09-28 13:50 | HANDOFF → B | BE-02 / `e96d59a` | Новый session ID; отдельный claim-коммит до изменения кода |
