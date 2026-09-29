@@ -21,7 +21,7 @@ jobs:
           set -euo pipefail
           test_root="$(mktemp -d)"
           trap 'rm -rf -- "$test_root"' EXIT
-          XDG_DATA_HOME="$test_root/xdg" scripts/bootstrap.sh >/dev/null
+          XDG_DATA_HOME="$test_root/xdg" bash scripts/bootstrap.sh >/dev/null
           secret_dir="$test_root/xdg/max-fleet/secrets"
           test "$(stat -c '%a' "$secret_dir")" = 700
           test "$(stat -c '%a' "$secret_dir/data_api_token")" = 444
