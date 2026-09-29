@@ -18,10 +18,12 @@ type commandRecord struct {
 }
 
 type mockCommand struct {
-	Operation string
-	TargetID  string
-	Version   int64
-	Payload   json.RawMessage
+	Operation   string
+	TargetID    string
+	Version     int64
+	NullTarget  bool
+	NullVersion bool
+	Payload     json.RawMessage
 }
 
 func parseCommand(body []byte) (mockCommand, bool) {
@@ -35,11 +37,34 @@ func parseCommand(body []byte) (mockCommand, bool) {
 		}
 	}
 	var command mockCommand
-	if json.Unmarshal(fields["operation"], &command.Operation) != nil || json.Unmarshal(fields["target_id"], &command.TargetID) != nil || json.Unmarshal(fields["expected_version"], &command.Version) != nil || !validUUID(command.TargetID) || command.Version < 1 {
+	if json.Unmarshal(fields["operation"], &command.Operation) != nil {
+		return mockCommand{}, false
+	}
+	if strings.TrimSpace(string(fields["target_id"])) == "null" {
+		command.NullTarget = true
+	} else if json.Unmarshal(fields["target_id"], &command.TargetID) != nil {
+		return mockCommand{}, false
+	}
+	if strings.TrimSpace(string(fields["expected_version"])) == "null" {
+		command.NullVersion = true
+	} else if json.Unmarshal(fields["expected_version"], &command.Version) != nil {
 		return mockCommand{}, false
 	}
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(fields["payload"], &payload); err != nil || payload == nil {
+		return mockCommand{}, false
+	}
+	if command.NullTarget != command.NullVersion {
+		return mockCommand{}, false
+	}
+	if command.NullTarget {
+		var purpose string
+		if command.Operation == "employee.grant" {
+			// Employee grants have no existing aggregate to target.
+		} else if command.Operation != "challenge.create" || json.Unmarshal(payload["purpose"], &purpose) != nil || purpose != "employee_grant" {
+			return mockCommand{}, false
+		}
+	} else if !validUUID(command.TargetID) || command.Version < 1 {
 		return mockCommand{}, false
 	}
 	command.Payload = fields["payload"]

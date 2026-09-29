@@ -47,7 +47,7 @@ type stateSnapshot struct {
 
 func (s *Server) snapshot() stateSnapshot {
 	state := stateSnapshot{
-		Version:                 15,
+		Version:                 16,
 		SeedSHA:                 fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)),
 		Vehicles:                append([]dataapi.Vehicle(nil), s.vehicles...),
 		Employees:               make(map[string]dataapi.Employee, len(s.employees)),
@@ -216,7 +216,7 @@ func (s *Server) loadSnapshot(path string) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var state stateSnapshot
-	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 15) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version >= 7 && (state.IssueAssets == nil || state.StageResults == nil)) || (state.Version >= 8 && (state.Inbox == nil || state.InboxKeys == nil)) || (state.Version >= 9 && state.InboxClaims == nil) || (state.Version >= 10 && state.InboxTransitions == nil) || (state.Version >= 11 && (state.Integrations == nil || state.IntegrationLeases == nil)) || (state.Version >= 12 && state.IntegrationCheckpoints == nil) || (state.Version >= 13 && (state.Notifications == nil || state.NotificationClaims == nil)) || (state.Version >= 14 && state.NotificationTransitions == nil) || (state.Version >= 15 && state.Conversations == nil) {
+	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 16) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version >= 7 && (state.IssueAssets == nil || state.StageResults == nil)) || (state.Version >= 8 && (state.Inbox == nil || state.InboxKeys == nil)) || (state.Version >= 9 && state.InboxClaims == nil) || (state.Version >= 10 && state.InboxTransitions == nil) || (state.Version >= 11 && (state.Integrations == nil || state.IntegrationLeases == nil)) || (state.Version >= 12 && state.IntegrationCheckpoints == nil) || (state.Version >= 13 && (state.Notifications == nil || state.NotificationClaims == nil)) || (state.Version >= 14 && state.NotificationTransitions == nil) || (state.Version >= 15 && state.Conversations == nil) {
 		return errors.New("data-mock: invalid snapshot; refusing to reset")
 	}
 	if state.Challenges == nil {
