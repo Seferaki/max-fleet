@@ -6,12 +6,12 @@
 status_schema: 1
 track: backend
 lock_state: ACTIVE
-owner: B
-session_id: "30274d30-ee62-4c3e-9df9-08a5c0e1e05e"
+owner: A
+session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T09:12:02Z"
+heartbeat_utc: "2026-09-29T11:26:22Z"
 current_task: BE-08
-current_substep: "BE-08: post-return mock реализован; добавить Go диалог сообщения из карточки"
+current_substep: "Takeover с B: пользователь подтвердил остановку сессии 30274d30-ee62-4c3e-9df9-08a5c0e1e05e; продолжаю Go-диалог post-return сообщения из карточки"
 last_verified_code_commit: "e87e23bbaf770dc42b677cdfaa65cc707cdfa086"
 checkpoint_state: WIP
 contract_commit: "1aa6ebfab72f403d0dc96294ed88ff6f9945e629"
@@ -462,6 +462,7 @@ human_required: [H-01]
 
 | UTC | От → кому | Задача / SHA | Результат |
 |---|---|---|---|
+| 2026-09-29 11:26 | B → A | BE-08 / `6f9584f` | Пользователь подтвердил, что исполнитель B сессии `30274d30-ee62-4c3e-9df9-08a5c0e1e05e` остановлен; takeover отдельным claim-коммитом до изменения кода |
 | 2026-09-28 13:50 | HANDOFF → B | BE-02 / `e96d59a` | Новый session ID; отдельный claim-коммит до изменения кода |
 | 2026-09-28 13:48 | B → HANDOFF | BE-02 / `0cc89a0` | Webhook counters и worker lifecycle проверены, CI success; код обработчика диалогов и политика multi-photo polling WIP, локальные MAX Fleet контейнеры остановлены |
 | 2026-09-27 12:19 | FREE → A | S-01 / `3d53d5a` | Claim опубликован в `codex/backend` |
