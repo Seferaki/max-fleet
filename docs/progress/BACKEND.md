@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "27659325-800e-4ea6-99ac-3d8edec02849"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T03:37:32Z"
-current_task: BE-07
-current_substep: "BE-07 Go/mock: safe complete и recovery проверены; UI-01 manual map остаётся P0"
-last_verified_code_commit: "033161eced999a40508a07df9af9069ba33bf2d7"
+heartbeat_utc: "2026-09-29T07:24:14Z"
+current_task: UI-01
+current_substep: "UI-01: подпись, срок и actor MAX initData проверены в Go; HTTP context и location ещё впереди"
+last_verified_code_commit: "0bc3b2152264d61b89bd5324c9a630077134fda2"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "UI-01: React/Leaflet manual map, Go initData auth и return.set_location; затем BE-07 контакт ответственного и финальная регрессия Go/mock"
+next_step: "UI-01: Go GET context с auth/owner, затем POST location с idempotency/CAS; React/Leaflet и связь с MAX, затем BE-07 регрессия"
 human_required: [H-01]
 ```
 
@@ -35,7 +35,7 @@ human_required: [H-01]
 | BE-05 | DONE | `856785401024a28f7b0ba4a92c65219a6774ad27` — 8 ракурсов, upload/replace/view/media/recovery; [CI c2a39a5](https://github.com/Seferaki/max-fleet/actions/runs/36476231053) success и локальный gateway verify | Реальный MAX/Python остаются INT; BE-06 |
 | BE-06 | DONE | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ; `da3931879aeb663dd529c8c5af8cdb1e744d9cdd` — контракт v1.2; `d3a54dc7cfa6a0b93253527751671f6cf3c81ebc` — Go conversation; `f73ccbec636c39309202cc68716b087622d96e3c` — описание; `79e98ba3b09f26997d6867a60650c9367b0a27a2` — до 3 фото; `ccb4eedf036efbf3432f440d8f60bec907398132` — issue.create/recovery; `626086e96668660c87430fb1e73a2d355c4c86fc` — summary/start/recovery; `0eb2fc5e8a82a367b4f0377783bbd8a7bf81f90f` — полный mock take/hold expiry и README | Реальный MAX и Python — отдельные INT; BE-07 |
 | BE-07 | IN_PROGRESS | `4dd7ad33419cf10d8e5b7e4b6eb924d52a458c6f` — активная карточка и begin return/recovery; `9fb0703c4e94304384a6ec6b44c6aee3c803434f` — return math/recovery; `a69c51a182bc0e19655cc4e74a1cfa12f75f70c8` — cancel/fresh draft; `ba605b0e8d5420943b18344cce4a2e50c784c4e3` — safety checklist/recovery; `5be149e482bd79c761d68e9f6170e562b72c0dd1` — after 8 фото/confirm; `d52b3bb8c187b5e6eaa0dbf1959b786288d41dc0` — replace after; `2e4aed14faf7614b54b6ae78c111585074ad4649` — fuel after/retry; `01ca6e133a4901c502493c63deb8832aa7fdb931` — odometer after/retry | Issue, карта и complete ещё не реализованы |
-| UI-01 | TODO | — | См. план |
+| UI-01 | IN_PROGRESS | `0bc3b2152264d61b89bd5324c9a630077134fda2` — проверка подписанного MAX initData | HTTP context/location и React карта впереди |
 | BE-08 | TODO | — | См. план |
 | BE-09 | TODO | — | См. план |
 | BE-10 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- UI-01 code `0bc3b2152264d61b89bd5324c9a630077134fda2`: Go проверяет подпись `WebAppData`, возраст `auth_date`, уникальность полей и извлекает actor только из подписанного `user.id`; чужой/просроченный/искажённый initData отвергается. `go test ./internal/mapapi -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. HTTP маршруты и React карта ещё не созданы, UI-01 WIP; реальный MAX/Python не проверены.
 
 - BE-07 code `033161eced999a40508a07df9af9069ba33bf2d7`: итог return показывает только после анкеты, 8 подтверждённых after-фото, топлива и пробега; без точки/issue указывает недостающее; unsafe parking/keys/lock не даёт complete. `return.complete` с CAS/lease и OwnCommandResult при потере ответа; успех сверяет completed Return и Trip. MAX меню удержано в лимите 10 строк. Тест проверил отсутствие точки, чужого actor, отсутствие lease, unsafe, happy complete, lost reply/retry и admin menu. `go test ./internal/dialog -run '^TestReturn(CompleteRequiresSafetyAndRecoversLostReply|SummaryBlocksUnsafeParkingKeysAndLock|MenuFitsMAXKeyboardWithAdminIssueDraft)$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. React manual map и реальный MAX/Python не проверены, BE-07 WIP.
 
