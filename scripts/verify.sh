@@ -34,11 +34,13 @@ verify_web() {
     cd "$repo_root/web"
     npm ci --no-audit --no-fund
     npm run typecheck
+    npm test
     npm run build
 }
 
 verify_docker() {
     cd "$repo_root"
+    docker compose -f deploy/compose.backend.yaml config --no-interpolate --quiet
     if ! docker info >/dev/null 2>&1; then
         echo 'Docker Engine недоступен. Контейнерные сборки не проверены.' >&2
         return 1

@@ -1,6 +1,6 @@
 # Настройка, Docker и минимальные действия человека
 
-S-03 добавила локальные `scripts/bootstrap.ps1`, `scripts/bootstrap.sh`, `scripts/verify.ps1`, `scripts/verify.sh` и Dockerfile каркаса. Они не означают готовность приложения: Compose и доменные сервисы появятся в BE-01, DE-01 и INT. Агент выполняет технические шаги сам; человек нужен для своих аккаунтов, приватных данных, оплаты/решений владельца и устройств.
+Backend Compose запускает Go gateway, contract mock и React map web; он не подключается к PostgreSQL/Python и не означает готовность приложения к реальному MAX. Агент выполняет технические шаги сам; человек нужен для своих аккаунтов, приватных данных, оплаты/решений владельца и устройств.
 
 ## 1. Human gates
 
@@ -83,7 +83,17 @@ HUMAN_REQUIRED: H-01
 6. При смене ноутбука человек один раз заполняет локальные secrets либо пользуется согласованным приватным менеджером; Git переносит только код.
 7. При подозрении на попадание токена в Git/лог сначала отозвать/заменить у провайдера, затем убрать источник утечки. Простое удаление последнего файла не удаляет историю.
 
-На Windows агент запускает `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap.ps1`: восемь случайных service/DB/storage секретов создаются в `%LOCALAPPDATA%\MAXFleet\secrets` с ACL текущего пользователя, существующие не перезаписываются. Токен MAX вводит владелец отдельно через `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/enter-max-token.ps1 -Enter`; `-Check` показывает только наличие. На Unix `sh scripts/bootstrap.sh` создаёт те же service/DB/storage секреты в `${XDG_DATA_HOME:-$HOME/.local/share}/max-fleet/secrets` с правами 700/600. Реальные DATABASE_URL и seed оформляются позже вместе с Python, значения не копируются в чат.
+На Windows `scripts/bootstrap.ps1` создаёт восемь случайных service/DB/storage секретов с ACL текущего пользователя; существующие файлы не перезаписываются, значения не выводятся. Если `%LOCALAPPDATA%` содержит кириллицу и Docker Desktop не может смонтировать его, задайте перед запуском `MAX_FLEET_SECRETS_DIR` абсолютным ASCII-путём вне репозитория, например `C:\MAXFleet\secrets`. Backend Compose получает пути только к двум локальным файлам `data_api_token` и `worker_api_token`; в PowerShell после bootstrap их можно задать без копирования значений:
+
+```powershell
+$env:MAX_FLEET_SECRETS_DIR = 'C:\MAXFleet\secrets'
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
+$env:MAX_FLEET_DATA_API_TOKEN_FILE = Join-Path $env:MAX_FLEET_SECRETS_DIR 'data_api_token'
+$env:MAX_FLEET_WORKER_API_TOKEN_FILE = Join-Path $env:MAX_FLEET_SECRETS_DIR 'worker_api_token'
+docker compose -f deploy/compose.backend.yaml up --build -d --wait
+```
+
+Переменные путей и secret-файлы должны оставаться локальными; значения файлов не копируются в `.env`, Git или чат. Если Docker Desktop не может читать директорию с пользовательским ACL, `scripts/prepare-compose-token.ps1` создаёт защищённые копии рядом с каталогом секретов и печатает только путь. Токен MAX владелец вводит отдельно локальной командой `scripts/enter-max-token.ps1 -Enter`; `-Check` показывает только наличие. На Unix `scripts/bootstrap.sh` создаёт те же service/DB/storage секреты в XDG_DATA_HOME или домашнем каталоге с правами 700/600. Реальные DATABASE_URL и seed оформляются позже вместе с Python; значения не копируются в чат.
 
 Проверки: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` либо `sh scripts/verify.sh all`. Направления: `contract`, `gateway`, `web`, `docker`. Отсутствующий инструмент/Engine даёт ошибку, а не зелёный результат. Для pre-commit проверки выбранных файлов: `py scripts/check-secrets.py --staged`; CI сканирует tracked-файлы без печати содержимого.
 
@@ -91,7 +101,7 @@ HUMAN_REQUIRED: H-01
 
 ## 5. Docker: три независимых контура
 
-| Compose-файл (будет создан) | Сервисы | Для кого |
+| Compose-файл | Сервисы | Для кого |
 |---|---|---|
 | deploy/compose.backend.yaml | gateway, data-mock, web/proxy | Backend A/B без БД |
 | deploy/compose.data.yaml | data-api, worker, migrate, postgres, s3 | Data engineer без MAX |

@@ -12,7 +12,8 @@ PATTERNS = {
     "aws-access-key": re.compile(rb"AKIA[0-9A-Z]{16}"),
     "authorization-value": re.compile(rb"(?i)Authorization\s*[:=]\s*Bearer\s+[A-Za-z0-9._-]{20,}"),
 }
-FORBIDDEN_PATH = re.compile(r"(^|/)(?:\.env(?:\..+)?|secrets/|data/|backups/)|\.(?:pem|key|p12|pfx|dump|sqlite)$")
+# Root runtime data is forbidden; services/data/ is source code owned by the data engineer.
+FORBIDDEN_PATH = re.compile(r"(^|/)(?:\.env(?:\..+)?|secrets/|backups/)|^data/|\.(?:pem|key|p12|pfx|dump|sqlite)$")
 
 
 def git(*args):

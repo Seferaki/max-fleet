@@ -1,6 +1,20 @@
 ﻿$ErrorActionPreference = 'Stop'
 
-$secretDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'MAXFleet\secrets'
+$secretDirectoryOverride = $env:MAX_FLEET_SECRETS_DIR
+if ([string]::IsNullOrWhiteSpace($secretDirectoryOverride)) {
+    $secretDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'MAXFleet\secrets'
+} else {
+    if (-not [System.IO.Path]::IsPathRooted($secretDirectoryOverride)) {
+        throw 'MAX_FLEET_SECRETS_DIR must be an absolute path outside the repository.'
+    }
+    $secretDirectory = [System.IO.Path]::GetFullPath($secretDirectoryOverride)
+    $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+    $repositoryPrefix = $repositoryRoot + [System.IO.Path]::DirectorySeparatorChar
+    if ($secretDirectory.Equals($repositoryRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $secretDirectory.StartsWith($repositoryPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'MAX_FLEET_SECRETS_DIR must be outside the repository.'
+    }
+}
 $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $names = @(
     'max_webhook_secret',

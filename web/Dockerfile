@@ -1,11 +1,11 @@
-FROM node:22.13.1-alpine@sha256:e2b39f7b64281324929257d0f8004fb6cb4bf0fdfb9aa8cedb235a766aec31da AS build
+FROM node:22.22.2-alpine@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f AS build
 WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
 ARG VITE_MAP_TILE_URL
 ARG VITE_MAP_ATTRIBUTION
-RUN npm run build
+RUN npm test && npm run build
 
 FROM nginxinc/nginx-unprivileged:1.29.3-alpine@sha256:5aea7cc516b419e3526f47dd1531be31a56a046cfe44754d94f9383e13e2ee99
 COPY --from=build /src/dist/ /usr/share/nginx/html/

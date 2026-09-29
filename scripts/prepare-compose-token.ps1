@@ -1,8 +1,21 @@
 param([ValidateSet('data_api_token', 'worker_api_token')][string]$Name = 'data_api_token')
 $ErrorActionPreference = 'Stop'
 
-$repositoryRoot = Split-Path -Parent $PSScriptRoot
-$source = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) (Join-Path 'MAXFleet\secrets' $Name)
+$secretDirectory = if ([string]::IsNullOrWhiteSpace($env:MAX_FLEET_SECRETS_DIR)) {
+    Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'MAXFleet\secrets'
+} else {
+    if (-not [System.IO.Path]::IsPathRooted($env:MAX_FLEET_SECRETS_DIR)) {
+        throw 'MAX_FLEET_SECRETS_DIR must be an absolute path outside the repository.'
+    }
+    [System.IO.Path]::GetFullPath($env:MAX_FLEET_SECRETS_DIR)
+}
+$repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$repositoryPrefix = $repositoryRoot + [System.IO.Path]::DirectorySeparatorChar
+if ($secretDirectory.Equals($repositoryRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+    $secretDirectory.StartsWith($repositoryPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw 'MAX_FLEET_SECRETS_DIR must be outside the repository.'
+}
+$source = Join-Path $secretDirectory $Name
 if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
     & (Join-Path $PSScriptRoot 'bootstrap.ps1') | Out-Null
 }
@@ -10,7 +23,7 @@ if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
     throw "$Name is missing after bootstrap"
 }
 
-$directory = Join-Path $repositoryRoot '.local\compose-secrets'
+$directory = Join-Path (Split-Path -Parent $secretDirectory) 'compose-secrets'
 $target = Join-Path $directory $Name
 New-Item -ItemType Directory -Path $directory -Force | Out-Null
 Copy-Item -LiteralPath $source -Destination $target -Force

@@ -46,12 +46,20 @@ function Verify-Web {
         Assert-Exit 'npm ci'
         npm run typecheck
         Assert-Exit 'typecheck'
+        npm test
+        Assert-Exit 'npm test'
         npm run build
         Assert-Exit 'web build'
     } finally { Pop-Location }
 }
 
 function Verify-Docker {
+    Push-Location $repoRoot
+    try {
+        docker compose -f deploy/compose.backend.yaml config --no-interpolate --quiet
+        Assert-Exit 'Docker Compose config'
+    } finally { Pop-Location }
+
     docker info --format '{{.ServerVersion}}' 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw 'Docker Engine недоступен. Контейнерные сборки не проверены.'
