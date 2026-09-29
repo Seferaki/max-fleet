@@ -20,16 +20,18 @@ names = (
 )
 for name in names:
     path = directory / name
+    file_mode = 0o444 if name in {"data_api_token", "worker_api_token"} else 0o600
     try:
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
         if not path.is_file() or path.stat().st_size == 0:
             raise SystemExit(f"Пустой или неверный secret-файл: {name}")
-        path.chmod(0o600)
+        path.chmod(file_mode)
         print(f"{name}: уже существует")
         continue
     with os.fdopen(descriptor, "w", encoding="ascii") as output:
         output.write(secrets.token_hex(32))
+    path.chmod(file_mode)
     print(f"{name}: создан")
 print("MAX token вводится владельцем локально, не в чат")
 PY

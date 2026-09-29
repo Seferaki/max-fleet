@@ -15,6 +15,19 @@ jobs:
       - uses: actions/checkout@v4
       - name: Проверить правила путей secret scan
         run: python3 scripts/test_check_secrets.py
+      - name: Проверить режимы локальных secret-файлов без чтения значений
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_root="$(mktemp -d)"
+          trap 'rm -rf -- "$test_root"' EXIT
+          XDG_DATA_HOME="$test_root/xdg" scripts/bootstrap.sh >/dev/null
+          secret_dir="$test_root/xdg/max-fleet/secrets"
+          test "$(stat -c '%a' "$secret_dir")" = 700
+          test "$(stat -c '%a' "$secret_dir/data_api_token")" = 444
+          test "$(stat -c '%a' "$secret_dir/worker_api_token")" = 444
+          test "$(stat -c '%a' "$secret_dir/postgres_password")" = 600
+          echo "Bootstrap file permissions passed"
       - name: Проверить tracked-файлы без вывода содержимого
         run: python3 scripts/check-secrets.py --tracked
 
@@ -85,8 +98,10 @@ jobs:
           trap cleanup EXIT
           openssl rand -hex 32 > "$secret_dir/data_api_token"
           openssl rand -hex 32 > "$secret_dir/worker_api_token"
+          # File-backed Compose secrets are bind mounts; service containers run as UID 10001.
+          # The parent stays private to the runner, while mounted tokens must be readable by that UID.
           chmod 700 "$secret_dir"
-          chmod 600 "$secret_dir"/*
+          chmod 444 "$secret_dir"/*
           export MAX_FLEET_DATA_API_TOKEN_FILE="$secret_dir/data_api_token"
           export MAX_FLEET_WORKER_API_TOKEN_FILE="$secret_dir/worker_api_token"
           "${compose[@]}" up --build -d --wait --wait-timeout 180
