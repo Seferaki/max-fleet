@@ -16,17 +16,21 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+import yaml
+
 BASE = os.environ.get("DATA_API_URL", "http://127.0.0.1:18000")
 SECRETS = Path(os.environ["MAX_FLEET_SECRETS_DIR"])
 TOKEN = (SECRETS / "data_api_token").read_text().strip()
 WORKER = (SECRETS / "worker_api_token").read_text().strip()
+CONTRACT = Path(__file__).resolve().parents[3] / "contracts" / "data-api.openapi.yaml"
+CONTRACT_VERSION = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))["info"]["version"]
 DRIVER, ADMIN = "8000000000000000001", "8000000000000000003"
 
 
 def call(method: str, path: str, actor: str | None, body: bytes | None = None, *, ctype: str | None = None,
          key: str | None = None, worker: bool = False) -> tuple[int, dict]:
     headers = {"Authorization": f"Bearer {WORKER if worker else TOKEN}", "X-Request-ID": str(uuid.uuid4()),
-               "X-Contract-Version": "1.0"}
+               "X-Contract-Version": CONTRACT_VERSION}
     if actor:
         headers["X-Actor-Max-ID"] = actor
     if key:
