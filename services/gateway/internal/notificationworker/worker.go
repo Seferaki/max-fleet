@@ -39,10 +39,19 @@ type Worker struct {
 }
 
 type Result struct {
-	Claimed int
-	Sent    int
-	Retried int
-	Dead    int
+	RequestID             string
+	Claimed               int
+	Sent                  int
+	Retried               int
+	Dead                  int
+	OldestQueueAgeSeconds int64
+	Failures              []Failure
+}
+
+type Failure struct {
+	Operation string
+	RequestID string
+	ErrorCode string
 }
 
 type safeSendError interface {
@@ -85,21 +94,36 @@ func (w Worker) RunOnce(ctx context.Context, maxItems int) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	claimKey, err := randomKey("notification-claim:")
+	requestID, err := randomUUID()
 	if err != nil {
 		return Result{}, err
+	}
+	result := Result{RequestID: requestID}
+	claimKey, err := randomKey("notification-claim:")
+	if err != nil {
+		return result, err
 	}
 	claim, err := w.Store.ClaimNotifications(ctx, w.ID, maxItems, claimKey)
 	if err != nil {
-		return Result{}, err
+		recordErrorFailure(&result, "claim", err)
+		return result, err
 	}
-	result := Result{Claimed: len(claim.Items)}
+	result.Claimed = len(claim.Items)
 	for _, item := range claim.Items {
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		if !validLease(item, w.Now().UTC()) {
+		now := w.Now().UTC()
+		if !validLease(item, now) {
+			recordFailure(&result, "lease_validate", "INVALID_NOTIFICATION_LEASE")
 			return result, errors.New("notification worker received an invalid lease")
+		}
+		queueAge := now.Sub(item.EnqueuedAt)
+		if queueAge < 0 {
+			queueAge = 0
+		}
+		if ageSeconds := int64(queueAge / time.Second); ageSeconds > result.OldestQueueAgeSeconds {
+			result.OldestQueueAgeSeconds = ageSeconds
 		}
 		message, eventErr := formatMessage(item.Event)
 		userID, userErr := parseRecipient(item.RecipientMaxUserID)
@@ -108,11 +132,14 @@ func (w Worker) RunOnce(ctx context.Context, maxItems int) (Result, error) {
 			if userErr != nil {
 				code = "INVALID_RECIPIENT"
 			}
+			recordFailure(&result, "dead_letter", code)
 			transition, err := w.Store.RetryNotification(ctx, item.DeliveryID, item.LeaseToken, code, nil, true, transitionKey(item, "dead"))
 			if err != nil {
+				recordErrorFailure(&result, "dead_letter", err)
 				return result, err
 			}
 			if transition.State != "dead" {
+				recordFailure(&result, "dead_letter", "DEAD_LETTER_NOT_CONFIRMED")
 				return result, errors.New("notification worker could not dead-letter an invalid delivery")
 			}
 			result.Dead++
@@ -127,6 +154,7 @@ func (w Worker) RunOnce(ctx context.Context, maxItems int) (Result, error) {
 		}
 		if sendErr != nil || !validWorkerString(providerMessageID, 1, 200) {
 			code := sendErrorCode(sendErr)
+			recordFailure(&result, "send", code)
 			dead := item.Attempt >= defaultAttempts
 			var retryAfter *time.Time
 			if !dead {
@@ -135,15 +163,18 @@ func (w Worker) RunOnce(ctx context.Context, maxItems int) (Result, error) {
 			}
 			transition, err := w.Store.RetryNotification(ctx, item.DeliveryID, item.LeaseToken, code, retryAfter, dead, transitionKey(item, "retry"))
 			if err != nil {
+				recordErrorFailure(&result, "retry", err)
 				return result, err
 			}
 			if dead {
 				if transition.State != "dead" {
+					recordFailure(&result, "retry", "DEAD_LETTER_NOT_CONFIRMED")
 					return result, errors.New("notification worker could not dead-letter an exhausted delivery")
 				}
 				result.Dead++
 			} else {
 				if transition.State != "retry" {
+					recordFailure(&result, "retry", "RETRY_NOT_CONFIRMED")
 					return result, errors.New("notification worker could not schedule a retry")
 				}
 				result.Retried++
@@ -158,9 +189,11 @@ func (w Worker) RunOnce(ctx context.Context, maxItems int) (Result, error) {
 		}
 		transition, err := w.Store.AckNotification(ctx, item.DeliveryID, item.LeaseToken, providerMessageID, transitionKey(item, "ack"))
 		if err != nil {
+			recordErrorFailure(&result, "ack", err)
 			return result, err
 		}
 		if transition.State != "sent" {
+			recordFailure(&result, "ack", "ACK_NOT_CONFIRMED")
 			return result, errors.New("notification worker did not receive a sent acknowledgement")
 		}
 		result.Sent++
@@ -254,6 +287,30 @@ func sendErrorCode(err error) string {
 	return "MAX_SEND_FAILED"
 }
 
+func recordFailure(result *Result, operation, code string) {
+	if !safeCode.MatchString(code) {
+		code = "WORKER_FAILURE"
+	}
+	result.Failures = append(result.Failures, Failure{Operation: operation, RequestID: result.RequestID, ErrorCode: code})
+}
+
+func recordErrorFailure(result *Result, operation string, err error) {
+	requestID := result.RequestID
+	code := "WORKER_FAILURE"
+	var apiErr *dataapi.APIError
+	if errors.As(err, &apiErr) {
+		if validUUID(apiErr.RequestID) {
+			requestID = apiErr.RequestID
+		}
+		if safeCode.MatchString(apiErr.Code) {
+			code = apiErr.Code
+		} else {
+			code = "DATA_API_ERROR"
+		}
+	}
+	result.Failures = append(result.Failures, Failure{Operation: operation, RequestID: requestID, ErrorCode: code})
+}
+
 func backoff(attempt int) time.Duration {
 	if attempt < 1 {
 		attempt = 1
@@ -279,6 +336,17 @@ func randomKey(prefix string) (string, error) {
 		return "", errors.New("cannot generate notification claim key")
 	}
 	return prefix + hex.EncodeToString(value[:]), nil
+}
+
+func randomUUID() (string, error) {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return "", errors.New("cannot generate notification request ID")
+	}
+	value[6] = (value[6] & 0x0f) | 0x40
+	value[8] = (value[8] & 0x3f) | 0x80
+	encoded := hex.EncodeToString(value[:])
+	return encoded[:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:], nil
 }
 
 func validWorkerString(value string, minLength, maxLength int) bool {

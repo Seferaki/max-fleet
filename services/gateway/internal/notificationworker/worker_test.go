@@ -137,7 +137,7 @@ func TestWorkerSendsOutboxEventAndAcknowledgesProviderReceipt(t *testing.T) {
 	sender := &senderStub{}
 	worker := testWorker(&now, store, sender)
 	result, err := worker.RunOnce(context.Background(), 10)
-	if err != nil || result != (Result{Claimed: 1, Sent: 1}) {
+	if err != nil || result.Claimed != 1 || result.Sent != 1 || result.Retried != 0 || result.Dead != 0 || !validUUID(result.RequestID) || result.OldestQueueAgeSeconds != 15*60 || len(result.Failures) != 0 {
 		t.Fatalf("result = %+v, %v", result, err)
 	}
 	if len(sender.calls) != 1 || sender.calls[0].userID != 8000000000000000001 || !strings.Contains(sender.calls[0].text, "Поездка закрыта администратором") || strings.Contains(sender.calls[0].text, "actor") {
@@ -159,7 +159,7 @@ func TestWorkerRetriesRateLimitWithBackoffAndResumesAfterRestart(t *testing.T) {
 	firstWorker := testWorker(&now, store, blockedSender)
 	first, err := firstWorker.RunOnce(context.Background(), 10)
 	wantRetryAt := now.Add(5 * time.Second)
-	if err != nil || first != (Result{Claimed: 1, Retried: 1}) || store.deliveries[0].state != "retry" || store.retryCodes[0] != "MAX_RATE_LIMIT" || store.deliveries[0].retryAfter == nil || !store.deliveries[0].retryAfter.Equal(wantRetryAt) {
+	if err != nil || first.Claimed != 1 || first.Retried != 1 || first.Dead != 0 || len(first.Failures) != 1 || first.Failures[0].Operation != "send" || first.Failures[0].RequestID != first.RequestID || first.Failures[0].ErrorCode != "MAX_RATE_LIMIT" || store.deliveries[0].state != "retry" || store.retryCodes[0] != "MAX_RATE_LIMIT" || store.deliveries[0].retryAfter == nil || !store.deliveries[0].retryAfter.Equal(wantRetryAt) {
 		t.Fatalf("rate-limit retry = %+v, %v; delivery=%+v", first, err, store.deliveries[0])
 	}
 
@@ -167,7 +167,7 @@ func TestWorkerRetriesRateLimitWithBackoffAndResumesAfterRestart(t *testing.T) {
 	restartedSender := &senderStub{}
 	restartedWorker := testWorker(&now, store, restartedSender)
 	recovered, err := restartedWorker.RunOnce(context.Background(), 10)
-	if err != nil || recovered != (Result{Claimed: 1, Sent: 1}) || len(restartedSender.calls) != 1 || store.deliveries[0].state != "sent" {
+	if err != nil || recovered.Claimed != 1 || recovered.Sent != 1 || len(recovered.Failures) != 0 || len(restartedSender.calls) != 1 || store.deliveries[0].state != "sent" {
 		t.Fatalf("recovery = %+v, %v; sends=%d state=%s", recovered, err, len(restartedSender.calls), store.deliveries[0].state)
 	}
 }
@@ -179,14 +179,14 @@ func TestWorkerDocumentsAtLeastOnceWhenMAXResponseIsLost(t *testing.T) {
 	uncertainSender := &senderStub{err: &codedSendError{code: "MAX_SEND_FAILED"}}
 	firstWorker := testWorker(&now, store, uncertainSender)
 	first, err := firstWorker.RunOnce(context.Background(), 1)
-	if err != nil || first != (Result{Claimed: 1, Retried: 1}) {
+	if err != nil || first.Claimed != 1 || first.Retried != 1 || len(first.Failures) != 1 || first.Failures[0].ErrorCode != "MAX_SEND_FAILED" {
 		t.Fatalf("uncertain send = %+v, %v", first, err)
 	}
 	now = now.Add(backoff(1))
 	restartedSender := &senderStub{}
 	secondWorker := testWorker(&now, store, restartedSender)
 	second, err := secondWorker.RunOnce(context.Background(), 1)
-	if err != nil || second != (Result{Claimed: 1, Sent: 1}) || len(uncertainSender.calls)+len(restartedSender.calls) != 2 {
+	if err != nil || second.Claimed != 1 || second.Sent != 1 || len(second.Failures) != 0 || len(uncertainSender.calls)+len(restartedSender.calls) != 2 {
 		t.Fatalf("retry after uncertain result = %+v, %v; send calls=%d", second, err, len(uncertainSender.calls)+len(restartedSender.calls))
 	}
 }
@@ -196,13 +196,34 @@ func TestWorkerDeadLettersInvalidRecipientAndUnsupportedEvent(t *testing.T) {
 	store := testStore(&now, "not-a-max-id")
 	sender := &senderStub{}
 	result, err := testWorker(&now, store, sender).RunOnce(context.Background(), 10)
-	if err != nil || result != (Result{Claimed: 1, Dead: 1}) || store.retryCodes[0] != "INVALID_RECIPIENT" || len(sender.calls) != 0 {
+	if err != nil || result.Claimed != 1 || result.Dead != 1 || len(result.Failures) != 1 || result.Failures[0].Operation != "dead_letter" || result.Failures[0].ErrorCode != "INVALID_RECIPIENT" || store.retryCodes[0] != "INVALID_RECIPIENT" || len(sender.calls) != 0 {
 		t.Fatalf("invalid recipient result = %+v, %v; codes=%v sends=%d", result, err, store.retryCodes, len(sender.calls))
 	}
 
 	message, err := formatMessage(dataapi.NotificationEvent{Type: "unknown", ResourceID: "84212591-fdaf-41aa-8f27-e4c4ba7d7561", OccurredAt: now})
 	if err == nil || message != "" {
 		t.Fatalf("unsupported event was formatted: %q, %v", message, err)
+	}
+}
+
+type failingClaimStore struct {
+	Store
+	err error
+}
+
+func (s failingClaimStore) ClaimNotifications(context.Context, string, int, string) (dataapi.NotificationClaim, error) {
+	return dataapi.NotificationClaim{}, s.err
+}
+
+func TestWorkerFailureKeepsDataAPIRequestIDAndSafeCode(t *testing.T) {
+	now := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
+	requestID := "10000000-0000-4000-8000-000000000001"
+	apiErr := &dataapi.APIError{Status: 503, RequestID: requestID, Code: "DATABASE_UNAVAILABLE"}
+	store := testStore(&now, "8000000000000000001")
+	worker := testWorker(&now, failingClaimStore{Store: store, err: apiErr}, &senderStub{})
+	result, err := worker.RunOnce(context.Background(), 10)
+	if !errors.Is(err, apiErr) || len(result.Failures) != 1 || result.Failures[0].Operation != "claim" || result.Failures[0].RequestID != requestID || result.Failures[0].ErrorCode != "DATABASE_UNAVAILABLE" {
+		t.Fatalf("DataAPI failure was not reduced to safe diagnostics: result=%+v err=%v", result, err)
 	}
 }
 

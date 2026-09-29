@@ -375,10 +375,13 @@ func notificationWorkerSetup() (notificationworker.Worker, bool, error) {
 func observeNotifications(result notificationworker.Result, err error) {
 	if err != nil {
 		log.Print("gateway: notification worker cycle failed; retrying")
-		return
 	}
-	if result.Claimed > 0 {
-		log.Printf("gateway: notifications claimed=%d sent=%d retried=%d dead=%d", result.Claimed, result.Sent, result.Retried, result.Dead)
+	for _, failure := range result.Failures {
+		log.Printf("gateway: notification operation=%s request_id=%s error_code=%s", failure.Operation, failure.RequestID, failure.ErrorCode)
+	}
+	if result.Claimed > 0 || len(result.Failures) > 0 {
+		log.Printf("gateway: notification metrics request_id=%s claimed=%d sent=%d retried=%d dead=%d errors=%d oldest_queue_age_seconds=%d",
+			result.RequestID, result.Claimed, result.Sent, result.Retried, result.Dead, len(result.Failures), result.OldestQueueAgeSeconds)
 	}
 }
 

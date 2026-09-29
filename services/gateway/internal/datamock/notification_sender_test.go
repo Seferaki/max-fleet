@@ -86,7 +86,7 @@ func TestNotificationWorkerRetriesAndRecoversAfterMockRestart(t *testing.T) {
 	worker := notificationworker.Worker{ID: "gateway-notification-worker", Store: store, Sender: sender, Now: now}
 
 	first, err := worker.RunOnce(context.Background(), 1)
-	if err != nil || first != (notificationworker.Result{Claimed: 1, Retried: 1}) {
+	if err != nil || first.Claimed != 1 || first.Retried != 1 || first.Dead != 0 || len(first.Failures) != 1 || first.Failures[0].ErrorCode != "MAX_RATE_LIMIT" {
 		t.Fatalf("first send = %+v, %v", first, err)
 	}
 	failed := findNotification(t, mock, issueID)
@@ -101,7 +101,7 @@ func TestNotificationWorkerRetriesAndRecoversAfterMockRestart(t *testing.T) {
 	sender.err = nil
 	worker = notificationworker.Worker{ID: "gateway-notification-worker", Store: store, Sender: sender, Now: now}
 	second, err := worker.RunOnce(context.Background(), 1)
-	if err != nil || second != (notificationworker.Result{Claimed: 1, Sent: 1}) || len(sender.calls) != 2 {
+	if err != nil || second.Claimed != 1 || second.Sent != 1 || len(second.Failures) != 0 || len(sender.calls) != 2 {
 		t.Fatalf("recovered send = %+v, %v; calls=%d", second, err, len(sender.calls))
 	}
 	sent := findNotification(t, restarted, issueID)
@@ -121,7 +121,7 @@ func TestNotificationWorkerCanDuplicateAfterMAXSendBeforeAck(t *testing.T) {
 	worker := notificationworker.Worker{ID: "gateway-notification-worker", Store: failingAck, Sender: sender, Now: now}
 
 	first, err := worker.RunOnce(context.Background(), 1)
-	if err == nil || first != (notificationworker.Result{Claimed: 1}) || len(sender.calls) != 1 {
+	if err == nil || first.Claimed != 1 || first.Sent != 0 || len(first.Failures) != 1 || first.Failures[0].Operation != "ack" || len(sender.calls) != 1 {
 		t.Fatalf("lost ack was not surfaced: %+v, %v; sends=%d", first, err, len(sender.calls))
 	}
 	leased := findNotification(t, mock, issueID)
@@ -137,7 +137,7 @@ func TestNotificationWorkerCanDuplicateAfterMAXSendBeforeAck(t *testing.T) {
 	defer server.Close()
 	worker = notificationworker.Worker{ID: "gateway-notification-worker", Store: store, Sender: sender, Now: now}
 	second, err := worker.RunOnce(context.Background(), 1)
-	if err != nil || second != (notificationworker.Result{Claimed: 1, Sent: 1}) || len(sender.calls) != 2 {
+	if err != nil || second.Claimed != 1 || second.Sent != 1 || len(second.Failures) != 0 || len(sender.calls) != 2 {
 		t.Fatalf("expired delivery was not recovered: %+v, %v; sends=%d", second, err, len(sender.calls))
 	}
 	sent := findNotification(t, restarted, issueID)

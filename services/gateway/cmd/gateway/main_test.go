@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/datamock"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dialog"
+	"github.com/Seferaki/max-fleet/services/gateway/internal/notificationworker"
 	maxbot "github.com/max-messenger/max-bot-api-client-go/v2"
 )
 
@@ -27,6 +30,37 @@ func secretFile(t *testing.T, name, value string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestObserveNotificationsLogsSafeRequestAndQueueMetrics(t *testing.T) {
+	oldWriter := log.Writer()
+	var output bytes.Buffer
+	log.SetOutput(&output)
+	defer log.SetOutput(oldWriter)
+
+	observeNotifications(notificationworker.Result{
+		RequestID:             "10000000-0000-4000-8000-000000000001",
+		Claimed:               2,
+		Sent:                  1,
+		Retried:               1,
+		OldestQueueAgeSeconds: 83,
+		Failures: []notificationworker.Failure{{
+			Operation: "send",
+			RequestID: "20000000-0000-4000-8000-000000000002",
+			ErrorCode: "MAX_RATE_LIMIT",
+		}},
+	}, nil)
+	got := output.String()
+	for _, want := range []string{"operation=send", "request_id=20000000-0000-4000-8000-000000000002", "error_code=MAX_RATE_LIMIT", "claimed=2", "sent=1", "retried=1", "dead=0", "errors=1", "oldest_queue_age_seconds=83"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("notification log omitted %q: %s", want, got)
+		}
+	}
+	for _, forbidden := range []string{"8000000000000000001", "Причина:", "private reason", "synthetic delivery id"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("notification log leaked %q: %s", forbidden, got)
+		}
+	}
 }
 
 func TestGatewayWebhookWiringAndMockProductionBan(t *testing.T) {
