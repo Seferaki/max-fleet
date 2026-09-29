@@ -169,7 +169,7 @@ func (w Worker) RunOnce(ctx context.Context, maxItems int) (Result, error) {
 }
 
 func validLease(item dataapi.NotificationLease, now time.Time) bool {
-	return validUUID(item.DeliveryID) && item.LeaseToken != "" && len(item.LeaseToken) <= 200 && !strings.ContainsAny(item.LeaseToken, "\r\n") && item.Attempt > 0 && item.LeaseExpiresAt.After(now)
+	return validUUID(item.DeliveryID) && !item.EnqueuedAt.IsZero() && item.LeaseToken != "" && len(item.LeaseToken) <= 200 && !strings.ContainsAny(item.LeaseToken, "\r\n") && item.Attempt > 0 && item.LeaseExpiresAt.After(now)
 }
 
 func parseRecipient(value string) (int64, error) {

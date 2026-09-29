@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.12",
+  "contract_version": "1.13",
   "fake_clock_utc": "2026-09-27T09:00:00Z",
   "seed": "../examples/synthetic-seed.json",
   "cases": [

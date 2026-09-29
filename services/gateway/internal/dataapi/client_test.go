@@ -53,7 +53,7 @@ func TestRetry503KeepsRequestID(t *testing.T) {
 		if r.Header.Get("X-Request-ID") != firstID {
 			t.Error("retry changed request ID")
 		}
-		_, _ = w.Write([]byte(`{"data":{"contract_version":"1.12","build_sha":"test","mode":"mock","capabilities":[]},"request_id":"` + testRequestID + `"}`))
+		_, _ = w.Write([]byte(`{"data":{"contract_version":"1.13","build_sha":"test","mode":"mock","capabilities":[]},"request_id":"` + testRequestID + `"}`))
 	})
 	meta, err := c.Meta(context.Background())
 	if err != nil || calls != 2 || meta.Mode != "mock" {
@@ -70,7 +70,7 @@ func Test409ReturnsTypedErrorWithoutRetry(t *testing.T) {
 	})
 	_, err := c.Vehicle(context.Background(), "900001", testRequestID)
 	var apiErr *APIError
-	if !errors.As(err, &apiErr) || apiErr.Status != 409 || apiErr.Code != "STALE_VERSION" || apiErr.Details.CurrentVersion == nil || *apiErr.Details.CurrentVersion != 4 || calls != 1 {
+	if !errors.As(err, &apiErr) || apiErr.Status != 409 || apiErr.RequestID != testRequestID || apiErr.Code != "STALE_VERSION" || apiErr.Details.CurrentVersion == nil || *apiErr.Details.CurrentVersion != 4 || calls != 1 {
 		t.Fatalf("unexpected error: %v, calls=%d", err, calls)
 	}
 	if strings.Contains(err.Error(), "private-test-token") {

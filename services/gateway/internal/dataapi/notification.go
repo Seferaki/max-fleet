@@ -14,6 +14,7 @@ type NotificationLease struct {
 	DeliveryID         string            `json:"delivery_id"`
 	Event              NotificationEvent `json:"event"`
 	RecipientMaxUserID string            `json:"recipient_max_user_id"`
+	EnqueuedAt         time.Time         `json:"enqueued_at"`
 	LeaseToken         string            `json:"lease_token"`
 	LeaseExpiresAt     time.Time         `json:"lease_expires_at"`
 	Attempt            int               `json:"attempt"`

@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	ContractVersion = "1.12"
+	ContractVersion = "1.13"
 	maxJSONBytes    = 2 << 20
 	maxAttempts     = 4 // initial request and at most three retries
 )
@@ -355,6 +355,7 @@ func requestWithMode[T any](ctx context.Context, c *Client, method, path, actorM
 			return zero, fmt.Errorf("data-api: invalid HTTP %d error response", res.StatusCode)
 		}
 		envelope.Error.Status = res.StatusCode
+		envelope.Error.RequestID = envelope.RequestID
 		if (res.StatusCode == http.StatusTooManyRequests || res.StatusCode == http.StatusServiceUnavailable) && attempt < maxAttempts-1 {
 			if err := c.wait(ctx, backoff(attempt, res.Header.Get("Retry-After"))); err != nil {
 				return zero, err

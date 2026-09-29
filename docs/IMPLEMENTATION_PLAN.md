@@ -221,7 +221,7 @@
 2. Уведомления начала/возврата/issue/блокировок/admin close/access grant/change только из outbox: все администраторы получают событие; при admin close дополнительно уведомляется водитель, при выдаче или изменении доступа — затронутый сотрудник.
 3. После restart worker продолжает pending/retry из data service; /menu восстанавливает flow по API.
 4. Проверить падение после domain commit и после MAX send до ack; при неопределённом результате MAX повтор может дать дубль, поэтому фиксировать только гарантию at-least-once.
-5. Логи request_id/operation/error_code, метрики возраста очереди/retries/ошибок, без actor ID, текста причины, PII или secret.
+5. Логи request_id/operation/error_code; метрики возраста старшей записи очереди по enqueued_at, retries/dead/ошибок, без actor ID, текста причины, PII или secret.
 
 Готово: воспроизводимые fault-сценарии с mock transport; trip не откатывается при ошибке уведомления.
 

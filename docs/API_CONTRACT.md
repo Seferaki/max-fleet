@@ -1,13 +1,13 @@
 # Контракт Go ↔ mock ↔ Python
 
-Контракт v1.12, 29.09.2026. Машинная схема и JSON fixtures: [contracts/data-api.openapi.yaml](../contracts/data-api.openapi.yaml), [внешний API карты](../contracts/map-api.openapi.yaml), [CHANGELOG](../contracts/CHANGELOG.md). Go mock реализуется отдельно от Python; проверка схем и mock не означает проверку Python/MAX. Поведение определяется [PRODUCT_SPEC](../PRODUCT_SPEC.md), модель — [DATABASE](DATABASE.md).
+Контракт v1.13, 29.09.2026. Машинная схема и JSON fixtures: [contracts/data-api.openapi.yaml](../contracts/data-api.openapi.yaml), [внешний API карты](../contracts/map-api.openapi.yaml), [CHANGELOG](../contracts/CHANGELOG.md). Go mock реализуется отдельно от Python; проверка схем и mock не означает проверку Python/MAX. Поведение определяется [PRODUCT_SPEC](../PRODUCT_SPEC.md), модель — [DATABASE](DATABASE.md).
 
 ## 1. Транспорт и доверие
 
 - Внутренняя база URL: `http://data-api:8000/internal/v1`; mock: `http://data-mock:8000/internal/v1`. Go использует один HTTP-клиент; переключается только URL.
 - Authorization: Bearer DATA_API_TOKEN подтверждает сервис Go. Python не публикуется наружу. Между разными хостами нужен TLS; plaintext допустим только в изолированной Docker-сети одного хоста.
 - X-Actor-Max-ID — десятичная строка проверенного MAX ID. Go формирует её после валидации источника; не копирует клиентский заголовок. Python проверяет роль и владение по БД.
-- X-Request-ID — UUID трассировки. X-Contract-Version: 1.12 — версия контракта. Несовместимую версию явно отклонять.
+- X-Request-ID — UUID трассировки. X-Contract-Version: 1.13 — версия контракта. Несовместимую версию явно отклонять.
 - Worker-маршруты требуют отдельный WORKER_API_TOKEN, не пользовательскую авторизацию.
 - Каждая мутация принимает Idempotency-Key; существующий агрегат — expected_version. Тот же логический запрос после timeout получает тот же ключ; изменённый body — новый ключ.
 - Команды из inbox дополнительно передают X-Inbox-Event-ID и X-Inbox-Lease. Python под блокировкой actor проверяет актуальный fencing token до изменения домена; просроченный worker не выполняет новую команду. Запрос карты проходит собственную авторизацию и version check, не притворяется inbox worker.
@@ -121,11 +121,13 @@ Python проверяет сигнатуру/MIME, декодирование, 1
 | GET /integrations/{key} | mode/marker, без секретов |
 | POST /integrations/{key}/lease | Получить/продлить single-poller lease |
 | POST /integrations/{key}/checkpoint | CAS marker, только после durable записи всех событий пачки |
-| POST /notifications/claim | delivery_id, event snapshot, recipient, lease_token |
+| POST /notifications/claim | delivery_id, event snapshot, recipient, enqueued_at, lease_token |
 | POST /notifications/{id}/ack | sent + provider_message_id, проверка lease |
 | POST /notifications/{id}/retry | retry/dead, error_code, retry_after; домен не откатывается |
 
-Получатели материализуются data service в отдельные delivery-записи в той же доменной транзакции: все администраторы получают событие, `trip_admin_closed` также адресуется водителю, а `access_changed` — затронутому сотруднику. `employee.grant` создаёт `access_changed` с reason `granted`; `employee.access` сохраняет переданную причину. Для access event `resource_id` — ID сотрудника, `vehicle_id: null`. OpenAPI v1.12 уже задаёт эти типы событий и nullable поля, поэтому форма контракта не меняется.
+Получатели материализуются data service в отдельные delivery-записи в той же доменной транзакции: все администраторы получают событие, `trip_admin_closed` также адресуется водителю, а `access_changed` — затронутому сотруднику. `employee.grant` создаёт `access_changed` с reason `granted`; `employee.access` сохраняет переданную причину. Для access event `resource_id` — ID сотрудника, `vehicle_id: null`. OpenAPI v1.13 сохраняет типы событий и nullable поля; lease дополнен временем постановки delivery в очередь.
+
+OpenAPI v1.13 добавляет в NotificationLease обязательное enqueued_at — серверное UTC-время создания delivery. Оно позволяет считать возраст очереди независимо от occurred_at исходного события; sender измеряет возраст старшей записи в полученной пачке и не пишет recipient ID, причину или содержимое события в лог.
 
 Технические мутации также имеют Idempotency-Key. Повтор claim возвращает прежнюю аренду, пока она действительна. После expiry другой worker может получить запись; устаревший token больше не валиден. Lease token не логируется.
 

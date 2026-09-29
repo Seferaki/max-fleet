@@ -20,6 +20,7 @@ const notificationLeaseDuration = 2 * time.Minute
 type mockNotification struct {
 	ID             string                    `json:"id"`
 	Event          dataapi.NotificationEvent `json:"event"`
+	EnqueuedAt     time.Time                 `json:"enqueued_at"`
 	Recipient      string                    `json:"recipient"`
 	Status         string                    `json:"status"`
 	LeaseToken     string                    `json:"lease_token"`
@@ -67,10 +68,11 @@ func (s *Server) enqueueNotification(event dataapi.NotificationEvent, additional
 		ordered = append(ordered, recipient)
 	}
 	sort.Strings(ordered)
+	enqueuedAt := s.now().UTC()
 	for _, recipient := range ordered {
 		id := newRequestID()
 		s.notificationSequence++
-		s.notifications[id] = mockNotification{ID: id, Event: event, Recipient: recipient, Status: "pending", Sequence: s.notificationSequence}
+		s.notifications[id] = mockNotification{ID: id, Event: event, EnqueuedAt: enqueuedAt, Recipient: recipient, Status: "pending", Sequence: s.notificationSequence}
 	}
 }
 
@@ -140,6 +142,11 @@ func (s *Server) claimNotifications(w http.ResponseWriter, r *http.Request, requ
 	result := dataapi.NotificationClaim{Items: []dataapi.NotificationLease{}}
 	for _, id := range ids {
 		item := s.notifications[id]
+		if item.EnqueuedAt.IsZero() {
+			// Older mock snapshots predate enqueued_at; event time is the only
+			// durable lower-bound fallback available for those rows.
+			item.EnqueuedAt = item.Event.OccurredAt.UTC()
+		}
 		if item.Status == "sent" || item.Status == "dead" {
 			continue
 		}
@@ -158,7 +165,7 @@ func (s *Server) claimNotifications(w http.ResponseWriter, r *http.Request, requ
 		item.Attempt++
 		item.NextAttemptAt = nil
 		s.notifications[id] = item
-		result.Items = append(result.Items, dataapi.NotificationLease{DeliveryID: id, Event: item.Event, RecipientMaxUserID: item.Recipient, LeaseToken: item.LeaseToken, LeaseExpiresAt: expires, Attempt: item.Attempt})
+		result.Items = append(result.Items, dataapi.NotificationLease{DeliveryID: id, Event: item.Event, RecipientMaxUserID: item.Recipient, EnqueuedAt: item.EnqueuedAt, LeaseToken: item.LeaseToken, LeaseExpiresAt: expires, Attempt: item.Attempt})
 		if len(result.Items) >= input.MaxItems {
 			break
 		}

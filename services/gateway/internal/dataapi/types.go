@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-// DTOs mirror the read projections of contracts/data-api.openapi.yaml v1.12.
+// DTOs mirror the read projections of contracts/data-api.openapi.yaml v1.13.
 // Nullable fields use pointers so absent values remain distinct from zero values.
 type Meta struct {
 	ContractVersion string   `json:"contract_version"`
@@ -233,6 +233,7 @@ type ErrorDetails struct {
 
 type APIError struct {
 	Status    int          `json:"-"`
+	RequestID string       `json:"-"`
 	Code      string       `json:"code"`
 	Message   string       `json:"message"`
 	Retryable bool         `json:"retryable"`

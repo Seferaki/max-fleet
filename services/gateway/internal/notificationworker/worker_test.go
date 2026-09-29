@@ -125,6 +125,7 @@ func testStore(now *time.Time, recipient string) *memoryStore {
 				ResourceID: "84212591-fdaf-41aa-8f27-e4c4ba7d7561",
 				OccurredAt: time.Date(2026, 9, 29, 9, 30, 0, 0, time.UTC),
 			},
+			EnqueuedAt:         time.Date(2026, 9, 29, 9, 45, 0, 0, time.UTC),
 			RecipientMaxUserID: recipient,
 		}}},
 	}
@@ -221,5 +222,18 @@ func TestFormatMessageCompactsUntrustedReason(t *testing.T) {
 func TestBackoffCapsAtFiveMinutes(t *testing.T) {
 	if backoff(1) != 5*time.Second || backoff(5) != 80*time.Second || backoff(7) != 5*time.Minute || backoff(10) != 5*time.Minute {
 		t.Fatalf("unexpected backoff: %v %v %v %v", backoff(1), backoff(5), backoff(7), backoff(10))
+	}
+}
+
+func TestLeaseRequiresEnqueuedTimestamp(t *testing.T) {
+	now := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
+	store := testStore(&now, "8000000000000000001")
+	item := store.deliveries[0].item
+	item.EnqueuedAt = time.Time{}
+	item.LeaseToken = "lease-token"
+	item.LeaseExpiresAt = now.Add(time.Minute)
+	item.Attempt = 1
+	if validLease(item, now) {
+		t.Fatal("accepted notification lease without enqueued_at")
 	}
 }
