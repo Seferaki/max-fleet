@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03, BE-01…BE-08 и UI-01 выполнены на Go mock; BE-09 в работе. Последний проверенный backend/contract code checkpoint v1.9 — `ae4f01fe042c2d8fd653a9804a853a158ceb4507`; его проверки и публикация фиксируются ниже. На `origin/codex/data` опубликован Python checkpoint `9eb2211b29e48fce8a6afc410bc986fa98a4988e`: DE-01…DE-08 готовы, DE-09 ожидает backend; Python использует OpenAPI v1.0 (`aa56f0e05b3c2458eee1fe88550d183ece9075af`) и не синхронизирован с v1.9. До INT data engineer должен перенести общий контракт; `services/data/` backend-исполнителем не менялся. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03, BE-01…BE-08 и UI-01 выполнены на Go mock; BE-09 в работе. Последний проверенный backend/contract code checkpoint v1.10 — `a70150167a21ca489748b4ff8e1ac453a8be7017`; его проверки и публикация фиксируются ниже. На `origin/codex/data` опубликован Python checkpoint `9eb2211b29e48fce8a6afc410bc986fa98a4988e`: DE-01…DE-08 готовы, DE-09 ожидает backend; Python использует OpenAPI v1.0 (`aa56f0e05b3c2458eee1fe88550d183ece9075af`) и не синхронизирован с v1.10. До INT data engineer должен перенести общий контракт; `services/data/` backend-исполнителем не менялся. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T17:04:20Z"
+heartbeat_utc: "2026-09-29T17:17:16Z"
 current_task: BE-09
-current_substep: "BE-09/7: подключить список/карточку issue и действия к MAX admin flow согласно v1.9: take-work только status, терминальные решения с комментарием и подтверждением."
-last_verified_code_commit: "ae4f01fe042c2d8fd653a9804a853a158ceb4507"
+current_substep: "BE-09/7.1: OpenAPI v1.10 и durable conversation для admin issue resolution; контракт и mock проверены."
+last_verified_code_commit: "a70150167a21ca489748b4ff8e1ac453a8be7017"
 checkpoint_state: WIP
-contract_commit: "ae4f01fe042c2d8fd653a9804a853a158ceb4507"
+contract_commit: "a70150167a21ca489748b4ff8e1ac453a8be7017"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-09/7: добавить в MAX admin flow список/карточку замечаний и actions «Взять в работу» (status-only), «Проблема устранена» и «Известное неблокирующее» (комментарий + confirmation) через issue.resolve с issue.version, idempotency и проверенным actor; проверить restart/потерянный ответ и stale callback. Затем передать data engineer OpenAPI v1.9 для синхронизации до INT; services/data backend-исполнителем не менять. MAX admin UI пока не вызывает issue.resolve; Go/mock не являются проверкой Python или реального MAX. Odometer correction v1.7 доступна только через Go client/mock; контакты/retention ждут H-03/H-04, retired_at — P1, hold остаётся 15 минут. Mock не является продуктовой приёмкой."
+next_step: "BE-09/7.2: подключить /adminissues, список/карточку и фото issue к MAX admin flow, затем реализовать status-only take-work и восстановимый terminal flow с комментарием/подтверждением. Проверить ACL, stale callback, idempotency после потерянного ответа и restart. После Go flow зафиксировать API v1.10 для синхронизации data engineer до INT; services/data backend-исполнителем не менять. Python пока на v1.0, MAX admin UI и Python не проверены. Odometer correction v1.7 доступна только через Go client/mock; контакты/retention ждут H-03/H-04, retired_at — P1, hold остаётся 15 минут. Mock не является продуктовой приёмкой."
 human_required: [H-01]
 ```
 
@@ -78,6 +78,8 @@ human_required: [H-01]
 Дополнительные замечания учтены в плане: категории `parking`/`car_lock` и составной вопрос с отдельными `keys_returned`/`car_locked` уже в BE-08; подтверждение прироста свыше 1000 км готово; audited correction во время hold/return и `assigned_to` остаются BE-09; contacts ждут владельца/ACL/retention (H-03/H-04); `retired_at` — P1 после приёмки P0; требование пользователя сохраняет hold 15 минут. PII retention должен быть определён до реального пилота.
 
 ## Последний checkpoint
+
+- BE-09/7.1 code `a70150167a21ca489748b4ff8e1ac453a8be7017`: контракт поднят с v1.9 до v1.10: добавлены `issue_admin_resolution` и `context.issue_version`, чтобы сохранять шаг комментария/подтверждения и привязывать черновик к версии issue. Mock разрешает эти шаги только admin actor, проверяет текущую Issue.version, форму контекста и состояние comment/confirmation; добавлены fixture и scenario. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction contract` → PASS (2 OpenAPI, 37 data routes, 24 command examples, 18 other examples, 73 scenarios; обе схемы valid); `go test ./internal/dataapi ./internal/datamock` (из `services/gateway`) → PASS; специализированный restart/auth/version test → PASS; `git diff --check`, staged secret scan (28 путей) → PASS. Код ещё не опубликован на момент этой записи. Go admin MAX flow ещё не подключён; Python ветка остаётся v1.0 и не менялась; реальный MAX не проверен. Следующий шаг — admin issue UI/dialog flow и фото с ограниченным доступом.
 
 - BE-09/6 code `ae4f01fe042c2d8fd653a9804a853a158ceb4507`: исправлено расхождение опубликованного v1.8 с PRODUCT_SPEC §13.7 до синхронизации Python. В OpenAPI v1.9 `issue.resolve(in_progress)` принимает только `status`; сервер назначает assignee и пишет actor в audit без комментария/подтверждения. `resolved`/`known_nonblocking` требуют непустой comment и `confirmation=true`; Go client/mock отвергают лишние поля у take-work и терминальные payload без обоих условий. Добавлены пример и scenario, а также клиентские/серверные тесты на payload, ACL, CAS, idempotency, restart/replay и snapshot. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction contract` → PASS (37 data routes, 24 command examples, 17 other examples, 72 scenarios; обе OpenAPI valid); `go test ./internal/dataapi ./internal/datamock -run 'Issue(Resolve|SnapshotMigration)|IssueResolveClientPayload' -count=10` (из `services/gateway`) → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS; `git diff --cached --check` и `py scripts/check-secrets.py --staged` (28 staged paths) → PASS. Синтетические и contract checks only; MAX UI ещё не вызывает action, Python остаётся на v1.0, services/data не менялся. Следующий шаг — подключить админский список и решения issue в MAX flow. BE-09 остаётся IN_PROGRESS.
 - Публикация v1.9: code `ae4f01fe042c2d8fd653a9804a853a158ceb4507` и status `531e32d4a6c7d7ece63d89b17de5b4dedcff7b62` отправлены обычным push; `git ls-remote origin refs/heads/codex/backend` подтвердил `531e32d4a6c7d7ece63d89b17de5b4dedcff7b62`. Перед push `fetch` подтвердил remote base `ca046d74bfb8e7b692587ebfb972a7fbe4060fcb`, ACTIVE owner A/session `94672c6f-598a-4d27-b87f-26fe106c59e0`, staged diff пуст, tracked scan 238 файлов без совпадений; в двух commits нет `services/data/`. Ветка Python остаётся `9eb2211b29e48fce8a6afc410bc986fa98a4988e`, contract v1.0.
