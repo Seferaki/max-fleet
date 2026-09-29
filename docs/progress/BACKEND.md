@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "2a3026c7-1c0f-4258-9d7c-020601272841"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T02:30:58Z"
+heartbeat_utc: "2026-09-29T02:33:30Z"
 current_task: BE-07
-current_substep: "BE-07: 8 after-фото и confirm проверены; далее replace и поля"
-last_verified_code_commit: "5be149e482bd79c761d68e9f6170e562b72c0dd1"
+current_substep: "BE-07: замена after-фото проверена; далее топливо/пробег"
+last_verified_code_commit: "d52b3bb8c187b5e6eaa0dbf1959b786288d41dc0"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-07: замена одного after-ракурса со сбросом подтверждения, топливо и пробег; затем issue по проблемным ответам, точка парковки и безопасное завершение. UI-01 React карта остаётся P0"
+next_step: "BE-07: топливо и пробег после поездки с baseline и retry; затем issue по проблемным ответам, точка парковки и безопасное завершение. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -34,7 +34,7 @@ human_required: [H-01]
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
 | BE-05 | DONE | `856785401024a28f7b0ba4a92c65219a6774ad27` — 8 ракурсов, upload/replace/view/media/recovery; [CI c2a39a5](https://github.com/Seferaki/max-fleet/actions/runs/36476231053) success и локальный gateway verify | Реальный MAX/Python остаются INT; BE-06 |
 | BE-06 | DONE | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ; `da3931879aeb663dd529c8c5af8cdb1e744d9cdd` — контракт v1.2; `d3a54dc7cfa6a0b93253527751671f6cf3c81ebc` — Go conversation; `f73ccbec636c39309202cc68716b087622d96e3c` — описание; `79e98ba3b09f26997d6867a60650c9367b0a27a2` — до 3 фото; `ccb4eedf036efbf3432f440d8f60bec907398132` — issue.create/recovery; `626086e96668660c87430fb1e73a2d355c4c86fc` — summary/start/recovery; `0eb2fc5e8a82a367b4f0377783bbd8a7bf81f90f` — полный mock take/hold expiry и README | Реальный MAX и Python — отдельные INT; BE-07 |
-| BE-07 | IN_PROGRESS | `4dd7ad33419cf10d8e5b7e4b6eb924d52a458c6f` — активная карточка и begin return/recovery; `9fb0703c4e94304384a6ec6b44c6aee3c803434f` — return math/recovery; `a69c51a182bc0e19655cc4e74a1cfa12f75f70c8` — cancel/fresh draft; `ba605b0e8d5420943b18344cce4a2e50c784c4e3` — safety checklist/recovery; `5be149e482bd79c761d68e9f6170e562b72c0dd1` — after 8 фото/confirm | Replace, поля, issue, карта и complete ещё не реализованы |
+| BE-07 | IN_PROGRESS | `4dd7ad33419cf10d8e5b7e4b6eb924d52a458c6f` — активная карточка и begin return/recovery; `9fb0703c4e94304384a6ec6b44c6aee3c803434f` — return math/recovery; `a69c51a182bc0e19655cc4e74a1cfa12f75f70c8` — cancel/fresh draft; `ba605b0e8d5420943b18344cce4a2e50c784c4e3` — safety checklist/recovery; `5be149e482bd79c761d68e9f6170e562b72c0dd1` — after 8 фото/confirm; `d52b3bb8c187b5e6eaa0dbf1959b786288d41dc0` — replace after | Поля, issue, карта и complete ещё не реализованы |
 | UI-01 | TODO | — | См. план |
 | BE-08 | TODO | — | См. план |
 | BE-09 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-07 after-replace code commit `d52b3bb8c187b5e6eaa0dbf1959b786288d41dc0` опубликован обычным push. Сотрудник выбирает сохранённый ракурс after и отправляет новое фото с `/replace N`; неуспешная загрузка оставляет старое фото и подтверждение, успешная замена сохраняет остальные 7 слотов и сбрасывает подтверждение 8/8. Устаревшая кнопка отклоняется. `go test ./internal/dialog -run '^TestReturnAfterPhotosEightConfirmAndErrors$' -count=1 -v` → PASS с расширенной проверкой замены; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. BE-07 WIP; следующий шаг — топливо/пробег после.
 
 - BE-07 after-photo code commit `5be149e482bd79c761d68e9f6170e562b72c0dd1` опубликован обычным push. После return math восемь фото загружаются последовательно в after-осмотр через Go→mock HTTP API и подтверждаются отдельной версионной командой. До math и для чужого actor загрузка не засчитывается. Синтетический тест проверил 1…8, неполный комплект, девятое фото, duplicate hash, ошибку скачивания, отсутствие lease и сохранение trip в `returning` после confirm. Первый узкий тест ожидал другую безопасную формулировку для чужого actor; ожидание исправлено, повтор PASS. `go test ./internal/dialog -run '^TestReturnAfterPhotosEightConfirmAndErrors$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Замена after-фото и остальные шаги ещё не реализованы; BE-07 WIP.
 
