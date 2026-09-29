@@ -1,5 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 
+# MAX_FLEET_SECRETS_DIR also supports ASCII paths for Cyrillic Windows profiles; the guard keeps secrets outside the repository.
 $secretDirectoryOverride = $env:MAX_FLEET_SECRETS_DIR
 if ([string]::IsNullOrWhiteSpace($secretDirectoryOverride)) {
     $secretDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'MAXFleet\secrets'

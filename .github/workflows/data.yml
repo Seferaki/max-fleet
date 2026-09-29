@@ -1,0 +1,51 @@
+name: data
+
+on:
+  push:
+    branches: [codex/data]
+    paths: [services/data/**, deploy/compose.data.yaml, contracts/**, .github/workflows/data.yml]
+  pull_request:
+    paths: [services/data/**, deploy/compose.data.yaml, contracts/**, .github/workflows/data.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Проверить tracked-файлы без вывода содержимого
+        run: python3 scripts/check-secrets.py --tracked
+
+  python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/data
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_PASSWORD: ci-only-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:ci-only-password@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.7"
+      - run: uv python install 3.12
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run mypy app
+      - run: uv run pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --build-arg BUILD_SHA=${{ github.sha }} -t max-fleet-data:ci services/data
