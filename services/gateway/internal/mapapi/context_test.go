@@ -20,6 +20,26 @@ type contextReader struct {
 	state   dataapi.CurrentState
 	vehicle dataapi.Vehicle
 	calls   int
+	command dataapi.CommandResult
+	writes  int
+}
+
+func (f *contextReader) OwnCommandResult(context.Context, string, string, string) (dataapi.CommandResult, error) {
+	if f.command.Operation != "" {
+		return f.command, nil
+	}
+	return dataapi.CommandResult{}, &dataapi.APIError{Status: http.StatusNotFound, Code: "NOT_FOUND"}
+}
+func (f *contextReader) ReturnSetLocation(_ context.Context, actor, id string, version int64, key string, inbox *dataapi.InboxLease, input dataapi.LocationInput) (dataapi.CommandResult, error) {
+	if actor != "123" || id != testReturnID || version != f.state.Return.Version || key != "stable-key-1" || inbox != nil || input.Source != "manual_map" || !input.Confirmed {
+		return dataapi.CommandResult{}, fmt.Errorf("unexpected command identity or payload")
+	}
+	f.writes++
+	f.state.Return.Version++
+	f.state.Return.ParkingLocation = &dataapi.ParkingLocation{Latitude: input.Latitude, Longitude: input.Longitude, Landmark: input.Landmark, Source: input.Source}
+	encoded, _ := json.Marshal(f.state.Return)
+	f.command = dataapi.CommandResult{Operation: "return.set_location", Aggregate: encoded}
+	return f.command, nil
 }
 
 func (f *contextReader) Me(context.Context, string) (dataapi.Me, error) {

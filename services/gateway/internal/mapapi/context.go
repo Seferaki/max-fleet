@@ -18,6 +18,8 @@ type Reader interface {
 	Me(context.Context, string) (dataapi.Me, error)
 	State(context.Context, string) (dataapi.CurrentState, error)
 	Vehicle(context.Context, string, string) (dataapi.Vehicle, error)
+	OwnCommandResult(context.Context, string, string, string) (dataapi.CommandResult, error)
+	ReturnSetLocation(context.Context, string, string, int64, string, *dataapi.InboxLease, dataapi.LocationInput) (dataapi.CommandResult, error)
 }
 
 type Point struct {
@@ -56,12 +58,7 @@ func (h *Handler) Context(w http.ResponseWriter, r *http.Request) {
 		writeError(w, requestID, http.StatusBadRequest, "INVALID_REQUEST", "Неверный запрос", false)
 		return
 	}
-	auth := r.Header.Get("Authorization")
-	if !strings.HasPrefix(auth, "MaxInitData ") || len(r.Header.Values("Authorization")) != 1 {
-		writeError(w, requestID, http.StatusUnauthorized, "INVALID_INIT_DATA", "Откройте карту снова из MAX", false)
-		return
-	}
-	actor, err := h.verifier.Actor(strings.TrimPrefix(auth, "MaxInitData "))
+	actor, err := h.actor(r)
 	if err != nil {
 		writeError(w, requestID, http.StatusUnauthorized, "INVALID_INIT_DATA", "Откройте карту снова из MAX", false)
 		return
@@ -110,6 +107,14 @@ func (h *Handler) Context(w http.ResponseWriter, r *http.Request) {
 		Data      Context `json:"data"`
 		RequestID string  `json:"request_id"`
 	}{result, requestID})
+}
+
+func (h *Handler) actor(r *http.Request) (string, error) {
+	auth := r.Header.Get("Authorization")
+	if !strings.HasPrefix(auth, "MaxInitData ") || len(r.Header.Values("Authorization")) != 1 {
+		return "", ErrInvalidInitData
+	}
+	return h.verifier.Actor(strings.TrimPrefix(auth, "MaxInitData "))
 }
 
 func validPoint(point Point) bool {
