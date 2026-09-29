@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T15:55:59Z"
+heartbeat_utc: "2026-09-29T16:00:25Z"
 current_task: BE-09
-current_substep: "BE-09: пять admin-команд и контракт v1.6 опубликованы; следующий подшаг — audited odometer correction при активном hold/возврате, затем assigned_to."
+current_substep: "BE-09: подготовка контракта v1.7 vehicle.correct_snapshot: одометр-only при exact active hold/trip; сохранить assignment и inspection, корректировать return baseline по vehicle snapshot."
 last_verified_code_commit: "17ebba523954c8396150a9182128f9fd5a7a7078"
 checkpoint_state: WIP
 contract_commit: "17ebba523954c8396150a9182128f9fd5a7a7078"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-09 WIP: финальные mock/client-команды для vehicle.block/unblock, employee.grant/access и trip.admin_close реализованы и покрыты actor/version/hash/one-use/idempotency/recovery тестами; available_data теперь входит в admin_close proof по v1.6. Следующий кодовый шаг — исправить ODOMETER_ROLLBACK через аудируемую коррекцию snapshot при active hold/return без переписи inspection или assignment, затем добавить assigned_to. Перед INT синхронизировать согласованные версии контракта с Python; services/data не менять. Contacts/retention остаются политическим блокером H-03/H-04, P1 retired_at отложен; hold 15 минут сохранён. Mock не является продуктовой приёмкой. Code commit 17ebba5 и status commit 3583956 опубликованы обычным push; remote SHA подтверждён через git ls-remote."
+next_step: "BE-09 WIP: опубликованы admin-команды v1.6, code/status checkpoint `cb42c8eab2fd849d98fc47ad1f3e9042e6b51257` подтверждён. Текущий шаг: контракт v1.7 и Go/mock vehicle.correct_snapshot для одометр-only коррекции с exact assignment, CAS, audit/recovery; return rollback сверяется с корректированным vehicle snapshot, исходные inspection/assignment сохраняются. Затем issue.assigned_to. Перед INT синхронизировать контракт и команды с Python; services/data не менять. Контакты/retention ждут решения H-03/H-04, retired_at — P1, hold остаётся 15 минут. Mock не является продуктовой приёмкой."
 human_required: [H-01]
 ```
 
