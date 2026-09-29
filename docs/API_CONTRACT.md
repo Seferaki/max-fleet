@@ -125,6 +125,8 @@ Python проверяет сигнатуру/MIME, декодирование, 1
 | POST /notifications/{id}/ack | sent + provider_message_id, проверка lease |
 | POST /notifications/{id}/retry | retry/dead, error_code, retry_after; домен не откатывается |
 
+Получатели материализуются data service в отдельные delivery-записи в той же доменной транзакции: все администраторы получают событие, `trip_admin_closed` также адресуется водителю, а `access_changed` — затронутому сотруднику. `employee.grant` создаёт `access_changed` с reason `granted`; `employee.access` сохраняет переданную причину. Для access event `resource_id` — ID сотрудника, `vehicle_id: null`. OpenAPI v1.12 уже задаёт эти типы событий и nullable поля, поэтому форма контракта не меняется.
+
 Технические мутации также имеют Idempotency-Key. Повтор claim возвращает прежнюю аренду, пока она действительна. После expiry другой worker может получить запись; устаревший token больше не валиден. Lease token не логируется.
 
 У MAX не предполагается универсальный update_id: ключ message event составляется из message ID и типа, callback — callback ID и типа; другие события получают стабильный fingerprint нормализованных полей. Пакет polling не подтверждается новым marker до сохранения всех событий. Предел гарантий: доставка уведомлений at-least-once; бизнес-команда идемпотентна.

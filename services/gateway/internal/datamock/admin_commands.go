@@ -105,6 +105,8 @@ func (s *Server) vehicleBlock(w http.ResponseWriter, requestID, actor string, co
 	}
 	vehicle.Version++
 	vehicle.UpdatedAt = now
+	vehicleID := vehicle.ID
+	s.enqueueNotification(dataapi.NotificationEvent{Type: "vehicle_blocked", ResourceID: vehicle.ID, VehicleID: &vehicleID, Reason: &reason, OccurredAt: now})
 	return commandResult("vehicle.block", *vehicle), true
 }
 
@@ -172,6 +174,8 @@ func (s *Server) employeeGrant(w http.ResponseWriter, requestID, actor string, c
 	s.consumeAdminProof(proof, now)
 	employee := dataapi.Employee{ID: newRequestID(), MaxUserID: payload.MaxUserID, DisplayName: payload.DisplayName, Role: "employee", CanStartTrip: true, Version: 1, UpdatedAt: now}
 	s.employees[payload.MaxUserID] = employee
+	reason := "granted"
+	s.enqueueNotification(dataapi.NotificationEvent{Type: "access_changed", ResourceID: employee.ID, Reason: &reason, OccurredAt: now}, employee.MaxUserID)
 	return commandResult("employee.grant", employee), true
 }
 
@@ -213,6 +217,7 @@ func (s *Server) employeeAccess(w http.ResponseWriter, requestID, actor string, 
 	employee.Version++
 	employee.UpdatedAt = now
 	s.employees[maxID] = employee
+	s.enqueueNotification(dataapi.NotificationEvent{Type: "access_changed", ResourceID: employee.ID, Reason: &reason, OccurredAt: now}, employee.MaxUserID)
 	return commandResult("employee.access", employee), true
 }
 
@@ -323,6 +328,8 @@ func (s *Server) tripAdminClose(w http.ResponseWriter, requestID, actor string, 
 	vehicle.Version++
 	vehicle.UpdatedAt = now
 	s.consumeAdminProof(proof, now)
+	vehicleID := trip.VehicleID
+	s.enqueueNotification(dataapi.NotificationEvent{Type: "trip_admin_closed", ResourceID: trip.ID, VehicleID: &vehicleID, Reason: &reason, OccurredAt: now}, employee.MaxUserID)
 	return commandResult("trip.admin_close", trip), true
 }
 

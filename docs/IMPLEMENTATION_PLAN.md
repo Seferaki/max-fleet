@@ -218,7 +218,7 @@
 Зависимости: BE-09. Покрытие: AC-12, AC-20, AC-24.
 
 1. Claim/ack/retry delivery; lease, backoff, 429, dead recipients.
-2. Уведомления начала/возврата/issue/блокировок/admin close только из outbox.
+2. Уведомления начала/возврата/issue/блокировок/admin close/access grant/change только из outbox: все администраторы получают событие; при admin close дополнительно уведомляется водитель, при выдаче или изменении доступа — затронутый сотрудник.
 3. После restart worker продолжает pending; /menu восстанавливает flow по API.
 4. Проверить падение после domain commit и после MAX send до ack; честно ограничить гарантию доставки.
 5. Логи request_id/operation/error_code, метрики queue age/retries/ошибок, без PII/secret.

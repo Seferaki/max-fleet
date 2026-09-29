@@ -38,6 +38,43 @@ func testBeforeIssueNotification(t *testing.T, mock *Server) string {
 	return issue.ID
 }
 
+func assertAdminNotificationRecipients(t *testing.T, mock *Server, eventType, resourceID, extraRecipient string, vehicleID, reason *string) {
+	t.Helper()
+	want := make(map[string]bool)
+	for maxID, employee := range mock.employees {
+		if employee.Role == "admin" {
+			want[maxID] = true
+		}
+	}
+	if extraRecipient != "" {
+		want[extraRecipient] = true
+	}
+	got := make(map[string]bool)
+	for _, item := range mock.notifications {
+		if item.Event.Type != eventType || item.Event.ResourceID != resourceID {
+			continue
+		}
+		if item.Status != "pending" || got[item.Recipient] {
+			t.Fatalf("notification is not one pending delivery per recipient: %+v", item)
+		}
+		got[item.Recipient] = true
+		if (item.Event.VehicleID == nil) != (vehicleID == nil) || vehicleID != nil && *item.Event.VehicleID != *vehicleID {
+			t.Fatalf("notification vehicle_id mismatch: %+v", item.Event)
+		}
+		if (item.Event.Reason == nil) != (reason == nil) || reason != nil && *item.Event.Reason != *reason {
+			t.Fatalf("notification reason mismatch: %+v", item.Event)
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("notification recipients = %v, want %v", got, want)
+	}
+	for recipient := range want {
+		if !got[recipient] {
+			t.Fatalf("missing notification recipient %q (got %v)", recipient, got)
+		}
+	}
+}
+
 func TestNotificationOutboxClaimRestartExpiryAndAuth(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	clock := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)

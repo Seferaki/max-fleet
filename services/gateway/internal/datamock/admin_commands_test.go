@@ -68,6 +68,9 @@ func TestVehicleAdminCommandsBindActorIntentAndConsumeProofOnce(t *testing.T) {
 	if err != nil || replayed.Operation != blockedResult.Operation || string(replayed.Aggregate) != string(blockedResult.Aggregate) {
 		t.Fatalf("idempotent block replay: %+v %v", replayed, err)
 	}
+	vehicleID := firstVehicleID
+	reasonCopy := reason
+	assertAdminNotificationRecipients(t, mock, "vehicle_blocked", firstVehicleID, "", &vehicleID, &reasonCopy)
 	_, err = client.VehicleBlock(ctx, adminActorID, firstVehicleID, 2, reason, proofID, "block-proof-reuse", nil)
 	expectAPIError(t, err, "CHALLENGE_INVALID")
 
@@ -117,10 +120,13 @@ func TestEmployeeGrantUsesNullTargetAndConsumesProofOnce(t *testing.T) {
 	if err != nil || created.MaxUserID != maxUserID || created.DisplayName != displayName || created.Role != "employee" || !created.CanStartTrip || created.Version != 1 {
 		t.Fatalf("grant result: %+v %v", created, err)
 	}
+	grantedReason := "granted"
+	assertAdminNotificationRecipients(t, mock, "access_changed", created.ID, created.MaxUserID, nil, &grantedReason)
 	replayed, err := client.EmployeeGrant(context.Background(), adminActorID, maxUserID, displayName, proofID, "grant-correct", nil)
 	if err != nil || string(replayed.Aggregate) != string(createdResult.Aggregate) {
 		t.Fatalf("idempotent grant replay: %+v %v", replayed, err)
 	}
+	assertAdminNotificationRecipients(t, mock, "access_changed", created.ID, created.MaxUserID, nil, &grantedReason)
 	_, err = client.EmployeeGrant(context.Background(), adminActorID, maxUserID, displayName, proofID, "grant-proof-reuse", nil)
 	expectAPIError(t, err, "CHALLENGE_INVALID")
 }
@@ -184,6 +190,9 @@ func TestEmployeeAccessRequiresAdminAndReleasesCancelledHold(t *testing.T) {
 	if status != http.StatusForbidden || code != "ADMIN_REQUIRED" || result != nil {
 		t.Fatalf("non-admin access change: status=%d code=%s result=%+v", status, code, result)
 	}
+	if len(mock.notifications) != 0 {
+		t.Fatalf("denied access change created notifications: %+v", mock.notifications)
+	}
 	changedResult, err := client.EmployeeAccess(context.Background(), adminActorID, employee.ID, version, false, reason, proofID, "access-correct", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -192,6 +201,13 @@ func TestEmployeeAccessRequiresAdminAndReleasesCancelledHold(t *testing.T) {
 	if err != nil || changed.CanStartTrip || changed.Version != version+1 {
 		t.Fatalf("access result: %+v %v", changed, err)
 	}
+	reasonCopy := reason
+	assertAdminNotificationRecipients(t, mock, "access_changed", employee.ID, employee.MaxUserID, nil, &reasonCopy)
+	replayed, err := client.EmployeeAccess(context.Background(), adminActorID, employee.ID, version, false, reason, proofID, "access-correct", nil)
+	if err != nil || string(replayed.Aggregate) != string(changedResult.Aggregate) {
+		t.Fatalf("idempotent access replay: %+v %v", replayed, err)
+	}
+	assertAdminNotificationRecipients(t, mock, "access_changed", employee.ID, employee.MaxUserID, nil, &reasonCopy)
 	if got := mock.checkouts[checkout.ID]; got.Status != "cancelled" || got.Inspection.Status != "abandoned" {
 		t.Fatalf("employee hold was not safely cancelled: %+v", got)
 	}
@@ -270,6 +286,9 @@ func TestTripAdminClosePreservesMissingDataAndDoesNotRollBackOdometer(t *testing
 	if err != nil || string(replayed.Aggregate) != string(closedResult.Aggregate) {
 		t.Fatalf("idempotent admin close replay: %+v %v", replayed, err)
 	}
+	vehicleID := firstVehicleID
+	reasonCopy := reason
+	assertAdminNotificationRecipients(t, mock, "trip_admin_closed", tripID, employee.MaxUserID, &vehicleID, &reasonCopy)
 	_, err = client.TripAdminClose(context.Background(), adminActorID, tripID, closed.Version, reason, proofID, available, "admin-close-proof-reuse", nil)
 	expectAPIError(t, err, "CHALLENGE_INVALID")
 }

@@ -44,18 +44,33 @@ type notificationTransitionRecord struct {
 
 // Called under the domain command mutex, before its snapshot commit.
 func (s *Server) enqueueAdminNotification(eventType, resourceID, vehicleID string, at time.Time) {
-	admins := make([]string, 0)
+	vehicle := vehicleID
+	s.enqueueNotification(dataapi.NotificationEvent{Type: eventType, ResourceID: resourceID, VehicleID: &vehicle, OccurredAt: at})
+}
+
+// Adds one delivery per administrator and any event-specific recipients.
+// The caller holds the domain command mutex so these rows commit atomically with the event.
+func (s *Server) enqueueNotification(event dataapi.NotificationEvent, additionalRecipients ...string) {
+	recipients := make(map[string]struct{})
 	for maxID, employee := range s.employees {
 		if employee.Role == "admin" {
-			admins = append(admins, maxID)
+			recipients[maxID] = struct{}{}
 		}
 	}
-	sort.Strings(admins)
-	for _, recipient := range admins {
+	for _, maxID := range additionalRecipients {
+		if validMaxID(maxID) {
+			recipients[maxID] = struct{}{}
+		}
+	}
+	ordered := make([]string, 0, len(recipients))
+	for recipient := range recipients {
+		ordered = append(ordered, recipient)
+	}
+	sort.Strings(ordered)
+	for _, recipient := range ordered {
 		id := newRequestID()
-		vehicle := vehicleID
 		s.notificationSequence++
-		s.notifications[id] = mockNotification{ID: id, Event: dataapi.NotificationEvent{Type: eventType, ResourceID: resourceID, VehicleID: &vehicle, OccurredAt: at}, Recipient: recipient, Status: "pending", Sequence: s.notificationSequence}
+		s.notifications[id] = mockNotification{ID: id, Event: event, Recipient: recipient, Status: "pending", Sequence: s.notificationSequence}
 	}
 }
 
