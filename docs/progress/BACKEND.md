@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "27659325-800e-4ea6-99ac-3d8edec02849"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T03:08:06Z"
+heartbeat_utc: "2026-09-29T03:10:42Z"
 current_task: BE-07
-current_substep: "BE-07 WIP: диалог сохраняет черновик issue_during; фото и submit впереди"
-last_verified_code_commit: "3cc8219781fd500f84066f900f3dc8305fe794c3"
+current_substep: "BE-07 WIP: issue_during черновик и до 3 фото; submit впереди"
+last_verified_code_commit: "54e9811abcf82264151591ad91e9c252e0389386"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-07: добавить до 3 фото issue_during и submit/recovery, затем issue_after, парковку и безопасный complete; UI-01 React карта P0"
+next_step: "BE-07: issue_during review/submit/recovery и admin notification, затем issue_after, парковка и безопасный complete; UI-01 React карта P0"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-07 code `54e9811abcf82264151591ad91e9c252e0389386`: фото для issue_during stage-ятся со scope trip и сохраняются в conversation CAS/lease, не занимают 8 ракурсов осмотра; меню показывает прогресс и ограничение 3/3. Тест проверил failed download, повтор, лимит, stale callback и сохранность 8 фото. `go test ./internal/dialog -run '^TestTripIssuePhotosStaySeparateAndRetry$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Issue не отправлен, реальный MAX/Python не проверены, BE-07 WIP.
 
 - BE-07 code `3cc8219781fd500f84066f900f3dc8305fe794c3`: карточка активной поездки открывает категории проблемы, `/issue <категория> <описание>` сохраняет issue_during conversation с CAS/lease; черновик не назван отправленным. Тест проверил owner, stale callback, отсутствие lease, запись и повтор без роста версии. `go test ./internal/dialog -run '^TestTripIssueDraftOwnerVersionAndDurableSave$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK. Фото/submit ещё не реализованы; реальный MAX/Python не проверены, BE-07 WIP.
 
