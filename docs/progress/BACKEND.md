@@ -9,9 +9,9 @@ lock_state: ACTIVE
 owner: A
 session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T13:35:34Z"
+heartbeat_utc: "2026-09-29T13:38:06Z"
 current_task: BE-08
-current_substep: "BE-08: MAX-диалог просмотра previous-inspection photos реализован в 5d8cd01a3b86987f59ae2645cb5639ede1185706; targeted test и gateway verify прошли; публикация ожидает сверки lock/секретов"
+current_substep: "BE-08: MAX-диалог просмотра previous-inspection photos реализован и проверен; code+status опубликованы обычным push, ls-remote подтвердил 8c70633c0b6eb141009c9026c2b34850626266f8"
 last_verified_code_commit: "5d8cd01a3b86987f59ae2645cb5639ede1185706"
 checkpoint_state: WIP
 contract_commit: "bb6f258f8e1fa8f1f028a77df68b36226de1444b"
@@ -475,7 +475,7 @@ human_required: [H-01]
 
 ### Текущий проверенный подшаг BE-08
 
-- Code commit `5d8cd01a3b86987f59ae2645cb5639ede1185706`: добавлены вход из карточки «Предыдущий осмотр», список сохранённых ракурсов и выдача выбранного фото через private previous-inspection API. До меню и после чтения файла Go повторно проверяет сотрудника, актуальный finalized after-осмотр, версию, ID осмотра, время обновления и занятый слот; stale callback отклоняется, ошибки NOT_FOUND/STORAGE_UNAVAILABLE получают безопасное сообщение. Фото не сопровождается trip/driver ID. `& ..\..\.local\go-dist\go\bin\go.exe test ./internal/dialog -run '^TestPreviousInspectionShowsOnlyProjectionAndRechecksActor$' -count=1 -v` (из `services/gateway`) → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS; `git diff --check` и staged secret scan перед code commit → PASS. Проверены Go/mock диалог и gateway, не реальный MAX или Python; 8+8 acceptance и общий IDOR/recovery остаются WIP. Следующий подшаг — проверить полный photo upload/replace/view после начала и после завершения поездки, ошибки хранения, устаревшие права/версии и восстановление после потерянного ответа; затем обновить этот checkpoint по фактам.
+- Code commit `5d8cd01a3b86987f59ae2645cb5639ede1185706`: добавлены вход из карточки «Предыдущий осмотр», список сохранённых ракурсов и выдача выбранного фото через private previous-inspection API. До меню и после чтения файла Go повторно проверяет сотрудника, актуальный finalized after-осмотр, версию, ID осмотра, время обновления и занятый слот; stale callback отклоняется, ошибки NOT_FOUND/STORAGE_UNAVAILABLE получают безопасное сообщение. Фото не сопровождается trip/driver ID. `& ..\..\.local\go-dist\go\bin\go.exe test ./internal/dialog -run '^TestPreviousInspectionShowsOnlyProjectionAndRechecksActor$' -count=1 -v` (из `services/gateway`) → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS; `git diff --check` и staged secret scan перед code commit → PASS. Code commit и status checkpoint опубликованы обычным push; `git ls-remote origin refs/heads/codex/backend` подтвердил `8c70633c0b6eb141009c9026c2b34850626266f8`. Проверены Go/mock диалог и gateway, не реальный MAX или Python; 8+8 acceptance и общий IDOR/recovery остаются WIP. Следующий подшаг — проверить полный photo upload/replace/view после начала и после завершения поездки, ошибки хранения, устаревшие права/версии и восстановление после потерянного ответа; затем обновить этот checkpoint по фактам.
 
 ## Журнал передачи
 
