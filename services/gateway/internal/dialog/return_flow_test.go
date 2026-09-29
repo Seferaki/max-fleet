@@ -120,4 +120,15 @@ func TestFullReturnThroughDialogOnMock(t *testing.T) {
 	if err != nil || vehicle.Status != "available" {
 		t.Fatalf("vehicle was not released after confirmed complete: %+v %v", vehicle, err)
 	}
+	changedFuel := 25
+	if _, err := actor.InspectionUpdate(ctx, driver, trip.AfterInspection.ID, trip.AfterInspection.Version, dataapi.InspectionUpdateInput{FuelLevel: &changedFuel}, "completed-trip-must-not-change-fuel", nil); err == nil {
+		t.Fatal("completed after inspection accepted a fuel rewrite")
+	}
+	if _, err := actor.ReturnSetLocation(ctx, driver, draft.ID, draft.Version, "completed-trip-must-not-change-location", nil, dataapi.LocationInput{Latitude: 55.8, Longitude: 37.7, Source: "manual_map", Confirmed: true}); err == nil {
+		t.Fatal("completed return accepted a parking rewrite")
+	}
+	unchanged, err := actor.Trip(ctx, driver, trip.ID)
+	if err != nil || unchanged.Version != trip.Version || unchanged.AfterInspection == nil || *unchanged.AfterInspection.FuelLevel != *trip.AfterInspection.FuelLevel || unchanged.ParkingLocation == nil || unchanged.ParkingLocation.ID != trip.ParkingLocation.ID {
+		t.Fatalf("completed trip snapshot changed: %+v %v", unchanged, err)
+	}
 }
