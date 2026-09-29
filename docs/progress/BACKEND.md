@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "27659325-800e-4ea6-99ac-3d8edec02849"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T07:45:32Z"
+heartbeat_utc: "2026-09-29T07:49:08Z"
 current_task: UI-01
-current_substep: "UI-01: React/Leaflet/MAX UI/Bridge экран и тесты доступны; deployment и связь с диалогом впереди"
-last_verified_code_commit: "12bbdf320bfc8e516f00979507a8d9ddd3f3808a"
+current_substep: "UI-01: React экран принимает return ID из MAX start_param как подсказку; Go проверяет подписанного владельца"
+last_verified_code_commit: "f92eb6a00e1bdc599d6c04f8fbcafa33fbd03925"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "UI-01: Nginx/Compose proxy web→gateway, dev setup, связать кнопку MAX с текущим return ID; затем UI/BE-07 регрессия"
+next_step: "UI-01: Nginx/Compose proxy web→gateway и dev setup; затем MAX deep-link кнопка текущего return ID и регрессия"
 human_required: [H-01]
 ```
 
@@ -35,7 +35,7 @@ human_required: [H-01]
 | BE-05 | DONE | `856785401024a28f7b0ba4a92c65219a6774ad27` — 8 ракурсов, upload/replace/view/media/recovery; [CI c2a39a5](https://github.com/Seferaki/max-fleet/actions/runs/36476231053) success и локальный gateway verify | Реальный MAX/Python остаются INT; BE-06 |
 | BE-06 | DONE | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ; `da3931879aeb663dd529c8c5af8cdb1e744d9cdd` — контракт v1.2; `d3a54dc7cfa6a0b93253527751671f6cf3c81ebc` — Go conversation; `f73ccbec636c39309202cc68716b087622d96e3c` — описание; `79e98ba3b09f26997d6867a60650c9367b0a27a2` — до 3 фото; `ccb4eedf036efbf3432f440d8f60bec907398132` — issue.create/recovery; `626086e96668660c87430fb1e73a2d355c4c86fc` — summary/start/recovery; `0eb2fc5e8a82a367b4f0377783bbd8a7bf81f90f` — полный mock take/hold expiry и README | Реальный MAX и Python — отдельные INT; BE-07 |
 | BE-07 | IN_PROGRESS | `4dd7ad33419cf10d8e5b7e4b6eb924d52a458c6f` — активная карточка и begin return/recovery; `9fb0703c4e94304384a6ec6b44c6aee3c803434f` — return math/recovery; `a69c51a182bc0e19655cc4e74a1cfa12f75f70c8` — cancel/fresh draft; `ba605b0e8d5420943b18344cce4a2e50c784c4e3` — safety checklist/recovery; `5be149e482bd79c761d68e9f6170e562b72c0dd1` — after 8 фото/confirm; `d52b3bb8c187b5e6eaa0dbf1959b786288d41dc0` — replace after; `2e4aed14faf7614b54b6ae78c111585074ad4649` — fuel after/retry; `01ca6e133a4901c502493c63deb8832aa7fdb931` — odometer after/retry | Issue, карта и complete ещё не реализованы |
-| UI-01 | IN_PROGRESS | `0bc3b2152264d61b89bd5324c9a630077134fda2` — initData; `46e898e326672f07e266a9b59e81a0e6035b9d90` — context; `f07e73314a313b6b774550ab987c9953e815664f` — location; `855ed0cbfe19e9592cb8d80c8951f170c3079f34` — gateway; `dd518f3960c30cba29793d74d6b4971e4acc3b54` — web API client; `12bbdf320bfc8e516f00979507a8d9ddd3f3808a` — React карта | Deployment и связь с MAX впереди |
+| UI-01 | IN_PROGRESS | `0bc3b2152264d61b89bd5324c9a630077134fda2` — initData; `46e898e326672f07e266a9b59e81a0e6035b9d90` — context; `f07e73314a313b6b774550ab987c9953e815664f` — location; `855ed0cbfe19e9592cb8d80c8951f170c3079f34` — gateway; `dd518f3960c30cba29793d74d6b4971e4acc3b54` — web API client; `12bbdf320bfc8e516f00979507a8d9ddd3f3808a` — React карта; `f92eb6a00e1bdc599d6c04f8fbcafa33fbd03925` — MAX start_param | Deployment и связь с MAX впереди |
 | BE-08 | TODO | — | См. план |
 | BE-09 | TODO | — | См. план |
 | BE-10 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- UI-01 code `f92eb6a00e1bdc599d6c04f8fbcafa33fbd03925`: экран принимает ID текущего возврата из `start_param` подписанной строки Bridge или URL как подсказку маршрута, отклоняет разные/повторные значения; право доступа остаётся за Go. Тест повторного открытия теперь использует MAX start_param. `npm test` → 6 PASS; `npm run build` → PASS; staged diff/secret scan → exit 0. Deep link MAX на реальном устройстве не проверен, Nginx/Compose и кнопка впереди; UI-01 WIP.
 
 - UI-01 code `12bbdf320bfc8e516f00979507a8d9ddd3f3808a`: React/Leaflet карта с MAX UI и Bridge, выбор кликом/drag/вводом координат, `selected=false` у стартового центра, необязательный ориентир, явное сохранение; ошибка тайлов оставляет ввод координат, GPS не используется. При timeout экран удерживает выбранную точку и ключ для retry; reopen восстанавливает сохранённый маркер. `npm run typecheck` → PASS; `npm test` → 6 PASS (центр, отказ Bridge, тайлы/координаты, timeout/retry, reopen); `npm run build` → PASS; staged diff/secret scan → exit 0. Визуальный экран не проверен в настоящем MAX, Nginx/Compose и кнопка MAX ещё впереди; UI-01 WIP, Python не проверен.
 
