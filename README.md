@@ -2,7 +2,7 @@
 
 Чат-бот MAX для общего корпоративного автопарка: сотрудник выбирает машину, фиксирует состояние до и после поездки, возвращает её с точкой парковки; администратор управляет доступом и разбирает замечания.
 
-**Статус на 30.09.2026:** BE-12 закрыта как Go/mock gate. Actions [#292](https://github.com/Seferaki/max-fleet/actions/runs/36635818102) прошёл все пять jobs на опубликованном checkpoint; backend готов к интеграции (backend_ready_for_integration=true), full stack не принят. Сквозной синтетический сценарий проверяет неизвестного actor, выдачу/проверку доступа, hold 15 минут, 8+8 фото, замечание и admin assignment/resolution, историю и ручную точку парковки. Data API v1.13 — контрактный checkpoint; Python branch codex/data всё ещё на OpenAPI v1.0 и DE-09 IN_PROGRESS, data_ready_for_integration=false. Ветка codex/qa пока не опубликована, QA-01…QA-03 не закрыты. INT не начат до этих gates и синхронизации Python с контрактом v1.13. Совместная интеграция, PostgreSQL/S3 через Python и реальный MAX не проверены; для MAX нужен H-01.
+**Статус на 30.09.2026:** BE-12 и обязательный UI-01 закрыты как Go/mock gates; Actions [#292](https://github.com/Seferaki/max-fleet/actions/runs/36635818102) прошёл пять jobs. Активна INT-01 в `codex/integration`. Python синхронизирован с OpenAPI v1.13: локальные `ruff`, `mypy` и PostgreSQL-тесты — 43 passed; отдельный Data Compose healthy, live smoke через PostgreSQL/SeaweedFS прошёл с 8+8 фото, ручной точкой парковки и завершением возврата. Полный Compose и Go → Python ещё проверяются. QA пропускается по решению владельца и остаётся NOT RUN, не PASS; исходная `codex/data` сохранена на SHA `9eb2211b29e48fce8a6afc410bc986fa98a4988e`. Реальный MAX не проверен; для него нужен H-01.
 
 ## Начать работу
 
@@ -46,7 +46,7 @@ Mermaid-диаграммы встроены в документы и отобр�
 
 `S-01…S-03: подготовка и контракт → backend с mock / Python и БД / QA отдельно → INT-01…INT-06: соединение, проверка, демонстрация`.
 
-Текущая backend-задача — BE-12: пройти полный синтетический путь до истории и admin review. Для локальной полной проверки используйте `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` при наличии Go 1.27.1, Python 3.12 с зависимостями из `contracts/requirements-dev.txt`, Node 22.22.2 и Docker Engine. Подготовка приватных локальных секретов и запуска описана в [OPERATIONS](docs/OPERATIONS.md). Работа mock не доказывает готовность реального MAX или Python-сервиса.
+Текущая задача — INT-01: проверить полный synthetic stack и соединение Go с Python Data API, не подключая Go к PostgreSQL. Проверки Go/mock не доказывают готовность реального MAX. Для локальной полной проверки используйте `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` при наличии Go 1.27.1, Python 3.12, Node 22.22.2 и Docker Engine. Подготовка приватных локальных секретов и запуска описана в [OPERATIONS](docs/OPERATIONS.md).
 
 ## Секреты
 

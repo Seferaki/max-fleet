@@ -1,20 +1,20 @@
 # Прогресс data engineer
 
-Обновляет только data engineer в своей ветке. Чтение backend-кода не требуется. [Задание](../DATA_ENGINEER.md), [модель БД](../DATABASE.md), [план](../IMPLEMENTATION_PLAN.md).
+История исходной ветки `codex/data` сохранена на `9eb2211b29e48fce8a6afc410bc986fa98a4988e`. Ниже зафиксирован отдельный аудит интегратора в `codex/integration`: Python-код v1.13 синхронизирован и живой DE-контур проверен; исходная ветка data не переписывалась. [Задание](../DATA_ENGINEER.md), [модель БД](../DATABASE.md), [план](../IMPLEMENTATION_PLAN.md).
 
 ```yaml
 status_schema: 1
-track: data
-owner: Anton
-branch: codex/data
-current_task: DE-09
-current_substep: "DE-01…DE-08 выполнены; gate ждёт решений backend по контрактным вопросам 1–5"
-last_verified_code_commit: "см. git log codex/data — checkpoint feat(DE-01…DE-07)"
-contract_commit: "aa56f0e05b3c2458eee1fe88550d183ece9075af"
-migration_head: "0001"
-data_ready_for_integration: false
-checkpoint_state: WIP
-next_step: "Согласовать с backend контрактные вопросы 1–5 (ниже), затем выставить DATA_READY_FOR_INTEGRATION; проверить права docker secrets на Linux"
+track: data-integration-audit
+owner: A
+branch: codex/integration
+current_task: INT-01
+current_substep: "В integration перенесён Python API v1.13 и миграция 0002; live PostgreSQL/SeaweedFS lifecycle smoke прошёл"
+last_verified_code_commit: "36c18f2b7e143e12c036e280a10c21fd8415cbda"
+contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
+migration_head: "0002"
+data_ready_for_integration: true
+checkpoint_state: VERIFIED
+next_step: "Завершить Go → Python проверку в compose.full; это отдельный integration gate, не покрытый data_ready_for_integration"
 human_required: []
 ```
 
@@ -28,37 +28,44 @@ human_required: []
 | DE-06 | DONE | Возврат, отмена→новый ID, UNSAFE_RETURN, повреждение→needs_review, admin close с missing_data, block/unblock с math proof, employee.grant/access, issue.resolve, vehicle.edit/correct_snapshot (только свободная машина)/annotate; двойной complete → один 200 | — |
 | DE-07 | DONE | Inbox: дубликаты, порядок по actor, claim/ack/retry, fencing команд по lease; истёкший lease старого worker не ack-ает и не выполняет команду после перехвата; integration lease/checkpoint CAS; outbox + получатели в доменной транзакции; claim/ack/retry/dead уведомлений | — |
 | DE-08 | DONE | `scripts/load.py`: 50 users, 20 rps, 600 с — 12 000 запросов, p50 14.9 мс, p95 34.4 мс, p99 45.4 мс, 5xx 0%; 10×5 MiB параллельно — 10/10 200, max 2.9 с; EXPLAIN — все выборки < 1 мс по индексам; `scripts/backup-restore.sh` — 21 таблица / 3258 строк совпали, 27 объектов SHA-256 совпали, 0 битых ссылок | — |
-| DE-09 | IN_PROGRESS | CI data на GitHub зелёный (ruff, mypy, pytest на PostgreSQL, Docker build, secret-scan); cold start `down -v` → `up` проверен | Решения backend по контрактным вопросам 1–5; права docker secrets на Linux |
+| DE-09 | READY FOR INT (audit в integration) | Code `5ea435ecaa11f3364a112f476b9cb3f88b223be9`, smoke version fix `36c18f2b7e143e12c036e280a10c21fd8415cbda`; `uv sync --frozen`, Ruff, mypy, PostgreSQL 17.6 pytest: 43 passed; Data Compose healthy; live PostgreSQL + SeaweedFS smoke: 8 before + 8 after, `manual_map`, return complete и previous-inspection read. Исходный `codex/data` оставлен без переписывания | Go → Python проверяется в INT-01; Linux secrets/QA не проверялись, QA пропущена по решению владельца |
 
 ## Последний checkpoint
 
-Реализован весь внутренний API v1 (36 маршрутов) в `services/data/`. Проверено локально (Windows 11, Docker Desktop, PostgreSQL 17.6):
+Реализован внутренний API v1.13 (36 маршрутов) в `services/data/`. Проверено локально (Windows 11, Docker Desktop, PostgreSQL 17.6):
 
-- `uv run pytest` — 41 passed (реальный PostgreSQL, S3 — in-memory адаптер в тестах);
-- `uv run ruff check .` и `uv run mypy app` — без ошибок;
+- `TEST_DATABASE_URL=<отдельный disposable PostgreSQL 17.6> uv run pytest -q` — 43 passed (реальный PostgreSQL, S3 — in-memory адаптер в тестах);
+- `uv run ruff check app tests migrations` и `uv run mypy app` — без ошибок;
 - `docker compose -f deploy/compose.data.yaml up -d --build` с `SEED_SYNTHETIC=1` — migrate exit 0, data-api healthy;
-- `scripts/smoke.py` против живого контура (реальные PostgreSQL + SeaweedFS S3): взятие → 8 фото → поездка → возврат → 8 фото → точка → завершение — PASS;
+- `uv run ruff check scripts/smoke.py` — PASS; `scripts/smoke.py` против живого контура (реальные PostgreSQL + SeaweedFS S3): взятие → 8 фото → поездка → возврат → 8 фото → `manual_map` → завершение и чтение прошлого осмотра — PASS;
 - runtime-роль БД не может менять схему; анонимный запрос к S3 → 403.
 
-GitHub CI `data` зелёный. Готовность к INT не заявляется до решения контрактных вопросов.
+Контрактные вопросы сопоставлены с OpenAPI v1.13, Go client/mock и Python. Data API готов для интеграции по проверкам выше; Go → Python, MAX, Linux host-secret permissions и QA ещё не приняты этим выводом.
 
 Найдено при нагрузке: в контейнере с read-only ФС Starlette не мог буферизовать multipart > 1 MiB во временный файл (400 на фото 5 MiB) — добавлен tmpfs `/tmp` 128 MiB для data-api.
 
 Окружение: на Windows с кириллицей в профиле Docker Desktop не монтирует файлы из `%LOCALAPPDATA%` — секреты кладутся в ASCII-путь через `MAX_FLEET_SECRETS_DIR` (добавлено в `scripts/bootstrap.ps1`). На Linux docker secrets из файлов с правами 0600 другого владельца могут быть недоступны пользователю 10001 контейнера — проверить на INT.
 
-## Контрактные вопросы
+## Контрактные вопросы — решения интегратора в `codex/integration`
 
-Python повторяет поведение Go data-mock там, где mock и текст контракта расходятся, чтобы Go на INT получил знакомые ответы. Нужно решение backend (и при необходимости правка контракта/mock):
+Устаревшие вопросы из исходного handoff закрыты сверкой текущего v1.13 и фактических реализаций. Версию контракта повышать не потребовалось:
 
-1. **`return.complete` → aggregate.** OpenAPI объявляет `Trip`, data-mock возвращает `Return`. Python сейчас возвращает `Return` (как mock).
-2. **Версии checkout/return при фото и `inspection.update`.** Описание OpenAPI: «Фото не повышает checkout/return version». Mock повышает версию родителя и при фото, и при `inspection.update`, и при `inspection.confirm_photos`. Python — как mock.
-3. **HTTP-статус `RULES_REQUIRED` и `CHALLENGE_EXPIRED`.** Таблица контракта — 422, mock — 409. Python — 422 по контракту (Go-клиент ветвится по коду ошибки, не по статусу).
-4. **Не-admin на `/admin/*` (чтение).** Контракт перечисляет `ADMIN_REQUIRED`, mock и Go-тесты ждут `ACCESS_DENIED`. Python: чтение — `ACCESS_DENIED` (как mock), админские команды — `ADMIN_REQUIRED`.
-5. **Admin challenge (не реализован в mock).** Python требует в `intent_payload` ровно поля: block — `operation,target_id,expected_version,reason`; unblock — + `review_completed`; access — `…,can_start_trip,reason`; grant — `target_id=null, expected_version=null, max_user_id, display_name`; admin_close — `…,reason`. `challenge.answer` возвращает `challenge_proof_id = challenge.id`; итоговая команда передаёт его как `challenge_id` и проверяет SHA-256 намерения. Нужна сверка с BE-09.
-6. **`conversation.save`.** `target_id` = `employee.id` самого actor; при отсутствии состояния текущая версия = 1 (как `conversation_version` в `/state`), первое сохранение даёт версию 2.
-7. **`employee.grant` на существующий MAX ID** → 409 `INVALID_STATE` (в контракте «явный конфликт» без кода).
-8. **Получатели уведомлений.** Mock — только администраторы. Python — администраторы + водитель при `trip_admin_closed` + сотрудник при `access_changed` (PRODUCT_SPEC §13.6 п.8).
-9. **`GET /vehicles/{id}/previous-inspection/photos/{slot}`** есть в OpenAPI, но не в mock; в Python реализован.
+1. **`return.complete`.** OpenAPI использует общий `CommandResult` с `aggregate`; mock и Python возвращают агрегат Return. Go декодирует конкретный DTO по операции.
+2. **Версии фото и осмотра.** Текущий OpenAPI v1.13 явно говорит, что фото повышает Inspection и родительский checkout/return; `inspection.update` и `inspection.confirm_photos` также повышают версии. Go mock и Python совпадают.
+3. **Ошибки правил/challenge.** `RULES_REQUIRED` и `CHALLENGE_EXPIRED` — 422 в OpenAPI, mock и Python.
+4. **Admin ACL.** Чтение `/admin/*` возвращает `ACCESS_DENIED`; команды требуют `ADMIN_REQUIRED`. Контракт, mock и Python совпадают.
+5. **Admin challenge.** Go BE-09 и Python используют поля intent, proof ID и повторную проверку SHA-256 intent; контрактные и Go регрессии пройдены в опубликованных checkpoint.
+6. **`conversation.save`.** `target_id` — employee самого actor; начальная версия 1 согласована с `/state`, первое сохранение создаёт версию 2.
+7. **`employee.grant` существующего MAX ID** возвращает 409 `INVALID_STATE`.
+8. **Получатели уведомлений.** Admin получают все события; driver получает `trip_admin_closed`, employee — `access_changed`. Это соответствует PRODUCT_SPEC §13.6 и Python/Go mock.
+9. **Previous inspection photo.** Маршрут есть в контракте, Python и Go mock.
+
+## Замечания DE для MVP и границы решений
+
+- Одометр на активной брони/поездке теперь можно аудируемо исправить только у vehicle snapshot с CAS по `vehicle.version`; assignment, исходный осмотр и фото не меняются. Прирост свыше 1000 км за поездку уже просит дополнительное подтверждение в Go; верхний предел не вводится.
+- Issue хранит `assigned_to` и terminal resolution metadata; категории `parking`, `car_lock` и `post_return` поддержаны. Возврат задаёт один составной вопрос «машина закрыта, ключи возвращены», сохраняя ответы `car_locked` и `keys_returned` раздельно.
+- Hold остаётся 15 минут согласно исходному требованию. Контакты сотрудников/ответственных не добавлялись до приватного seed и решения H-03; срок хранения PII/фото и регламент backup нужно утвердить по H-04 до живого пилота.
+- `retired_at` остаётся P1 после приёмки P0. Непроверенные Linux permissions, независимая QA и реальный MAX не выводятся как готовые.
 
 ## Результаты нагрузки и восстановления
 
