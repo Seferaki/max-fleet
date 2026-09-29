@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T21:39:04Z"
+heartbeat_utc: "2026-09-29T21:47:14Z"
 current_task: BE-12
-current_substep: "BE-11 DONE (mock): Actions #290 для aea1d80 прошёл все пять jobs, включая Linux bootstrap permissions, gateway race и Compose cold start/restart. BE-12 начат: сопоставляю имеющиеся полные take/return flows и доступ/admin пути, затем соберу один синтетический acceptance path."
-last_verified_code_commit: "e57517a91937562ec4b06c8cb60193e44d51a6fe"
+current_substep: "BE-12/12.1: code commit 1d175d7120c6c7021e68800b22e824d4871b8a9b добавляет unknown→access→take→issue→return→history→admin; исправлена неактуальная issue projection completed Trip. Целевой и полный Go test, vet и build прошли локально; code/status ещё не опубликованы, Actions pending."
+last_verified_code_commit: "1d175d7120c6c7021e68800b22e824d4871b8a9b"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-11 закрыта только для Go/mock: Actions #290 зелёный, code SHA e57517a опубликован. Завершить BE-12 полным synthetic path unknown→access→take→issue→return→history→admin, сверить payload с контрактом v1.13 и только после проверок установить backend_ready_for_integration=true. Перед INT ждать опубликованный DE-09 gate и QA-03; Python должен перенести v1.13, а реальный MAX остаётся непроверенным. H-03/H-04 нужны для контактов/retention; retired_at — P1; hold остаётся 15 минут."
+next_step: "Перед публикацией выполнить свежий fetch, подтвердить ACTIVE A/session 94672c6f-598a-4d27-b87f-26fe106c59e0, проверить outgoing/staged diff и secret scan; обычным push отправить BE-12 code и этот WIP status. Проверить Actions для опубликованного SHA и выполнить оставшуюся сверку v1.13/image versions, затем решить BE-12 gate только по артефактам. До INT ждать DE-09, синхронизированный с v1.13, и QA-03; не подключать сервисы раньше. Python/MAX не проверены; H-01 нужен для реального MAX, H-03/H-04 — для контактов/retention; retired_at — P1; hold остаётся 15 минут."
 human_required: [H-01]
 ```
 
@@ -40,7 +40,7 @@ human_required: [H-01]
 | BE-09 | DONE (mock) | `17ebba523954c8396150a9182128f9fd5a7a7078` — admin-команды v1.6; `8c4a4a705ba5337d77c5cb8e1a684e7cf5180344` — odometer correction v1.7; `821e7735c81dd320f69d56c7e2766515efc0d807` — issue assignment/resolve v1.8; `ae4f01fe042c2d8fd653a9804a853a158ceb4507` — v1.9 status-only take-work; `a70150167a21ca489748b4ff8e1ac453a8be7017` — v1.10 durable resolution conversation; `2a1c72215e6ed295a0993816e846bd64262d6ab4` — admin issue MAX flow/photos/recovery; `61f6f1749445a181c216511faf6eb3c9b5fc3973` — v1.11 correction schema/mock; `03faac7fde0a0cf3cc08ceac6ce2a63e95226d82` — `/adminodo` durable MAX/mock correction and recovery; `5877f459d93d4482559f279d4e2b479437c8b5ed` — in-trip flow and permanent API-error handling tests; `a679941c1a9dac104502e41c5ffa10edb67fc7a4` — v1.12 durable admin-close conversation and mock validation; `637c8baf321483f15e4f05df756429ef5c051aea` — admin-only close button for active/returning trips, targeted test PASS; `0f7c45a24f3994b0f368ab45b8ab2d7f84c93be3` — durable MAX admin-close reason/data/math challenge, stale/version/actor checks and recovery; targeted flow and full gateway gates PASS | Go/mock админские действия и отказы проверены; остаются настоящие MAX/Python, v1.12 sync и H-03/H-04 для контактов/retention |
 | BE-10 | DONE (mock) | e2f1976221a14bc6684c34605fd4d53e39f3bf00 — recipients; c0bd317cb22967ebb29b4da29fde53bff7d801ea — sender core; 90e74c7430f1652996faa90461f611a0d400d712 — gateway startup/recovery; caa134ddffcc0edd501851ae82f12020c992e75a — Data API v1.13 enqueued_at; c7ad26747876e824b4f6e69c119e62747d7fb79b — безопасные логи operation/request_id/error_code и метрики batch; 5e913f91ebf71275dcdb75b697d94ae93a94e62d — dead-letter после пятой ошибки, отказ неизвестному event и сохранение поездки при ошибке MAX. Targeted Go tests PASS; verify gateway PASS; verify contract PASS (2 OpenAPI/37 routes/24 commands/22 examples/75 scenarios); staged secret/diff checks PASS; code published at checkpoint 65458515e103287c47276558f58a61b0ceb484ac. Go/mock only; Python/MAX/INT remain unverified. | BE-11 Docker/security/CI; data v1.13 sync before INT |
 | BE-11 | DONE (mock) | Code `1612d4e9ff99ae35ea31b13a29f3fcfe20e87e78`; fixes `8734ab0e1fe283cbf1388c95763f3681be83c821`, `18cc884cfdf09d8b49cdaae862c89f576efecec8`, `e57517a91937562ec4b06c8cb60193e44d51a6fe`. Actions [#290](https://github.com/Seferaki/max-fleet/actions/runs/36633923376) all jobs green: Linux bootstrap permissions, contract, Go test/race/vet/build, web, Compose cold start/health/restart/non-root/read-only. | Только mock; Python/MAX не проверены. BE-12 synthetic gate. |
-| BE-12 | IN_PROGRESS | Основание: BE-11 code `e57517a91937562ec4b06c8cb60193e44d51a6fe`, Actions #290 зелёный; пока только чтение сценариев и контрактных fixtures. | Добавить/прогнать полный путь unknown→access→take→issue→return→history→admin; gate остаётся false до артефактов и опубликованных проверок. |
+| BE-12 | IN_PROGRESS | Локальный code `1d175d7120c6c7021e68800b22e824d4871b8a9b`: полный synthetic lifecycle test; Go test/vet/build PASS. Ещё не опубликован, Actions pending. | Опубликовать code + WIP status после preflight; проверить CI и оставшиеся требования BE-12. Gate=false. |
 | INT-01 | TODO | — | См. план |
 | INT-02 | TODO | — | См. план |
 | INT-03 | TODO | — | См. план |
@@ -94,6 +94,14 @@ human_required: [H-01]
 ## Текущий checkpoint BE-11
 
 - Перед push `aea1d80` fresh fetch подтвердил ACTIVE A/session `94672c6f-598a-4d27-b87f-26fe106c59e0`; tracked/staged scan и outgoing diff проверены; обычный push подтверждён `git ls-remote`. Actions #290 для опубликованного checkout завершился `success`. Проверки по-прежнему относятся к Go/mock; `backend_ready_for_integration=false` до BE-12, Python/MAX не интегрированы.
+
+## Текущий checkpoint BE-12 (WIP)
+
+- Code commit `1d175d7120c6c7021e68800b22e824d4871b8a9b` добавляет `TestBE12SyntheticLifecycleUnknownAccessTakeIssueReturnHistoryAdmin`. Сквозной тест проверяет отказ неизвестному actor; admin challenge и выдачу employee access; запрет employee на admin read; hold 15 минут; math/rules; before inspection с 8 фото; issue категории `car_lock`; return с 8 фото и ручной map point; owner history; admin history, назначение исполнителя `assigned_to` и разрешение замечания.
+- Тест обнаружил, что completed Trip projection показывал старый status замечания после admin resolution. В read projection завершённой поездки теперь обновляется вложенная issue-информация из текущего mock issue state; сохранённый snapshot поездки/version не меняется.
+- Из `services/gateway`: `go test ./internal/datamock -run '^TestBE12SyntheticLifecycleUnknownAccessTakeIssueReturnHistoryAdmin$' -count=1 -v` → PASS; `go test ./...` → PASS; `go vet ./...` → PASS; `go build ./cmd/gateway ./cmd/data-mock` → PASS. `py scripts/check-secrets.py --tracked` → 253 tracked files, 0 matches; `git diff --check` и staged secret scan перед code commit → PASS.
+- Текущий code commit локален и ещё не опубликован; GitHub Actions на нём не запускался. Не помечать BE-12 DONE. Следом выполнить remote/owner/secret preflight, commit/push этого status и code обычным push, затем проверить все CI jobs и оставшиеся критерии BE-12.
+- Это только синтетический Go/mock acceptance path. Контракт v1.13 не менялся; Python, PostgreSQL, S3, реальный MAX и совместная интеграция не проверялись. `services/data/` не изменялся; `backend_ready_for_integration=false`, `full_stack_accepted=false`.
 
 ## Решения backend по контрактным вопросам Data Engineer
 
