@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/inboxworker"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxsdk"
 )
@@ -73,5 +74,86 @@ func TestReturnIssueDraftOwnedReturnAndDurableSave(t *testing.T) {
 	state, err = actor.State(ctx, driver)
 	if err != nil || state.ConversationVersion != 2 {
 		t.Fatalf("repeat changed draft: %+v %v", state, err)
+	}
+}
+
+func TestReturnIssuePhotosUseInspectionScopeWithoutAfterSlots(t *testing.T) {
+	now := time.Date(2026, 9, 29, 3, 0, 0, 0, time.UTC)
+	actor, store, closeServer := mockClients(t, now)
+	defer closeServer()
+	const driver = "8000000000000000001"
+	ctx := context.Background()
+	draftReturn := readyChecklistDraft(t, actor, driver)
+	state, err := actor.State(ctx, driver)
+	if err != nil || state.Trip == nil {
+		t.Fatal(err)
+	}
+	me, err := actor.Me(ctx, driver)
+	if err != nil || me.Employee == nil {
+		t.Fatal(err)
+	}
+	vehicle, err := actor.Vehicle(ctx, driver, state.Trip.VehicleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	category, description, kind := "cleanliness", "Грязный салон", "photo"
+	input := dataapi.ConversationSaveInput{Flow: "issue_after", Step: "collect_photos", PendingInputKind: &kind, Context: dataapi.ConversationContext{TargetID: &draftReturn.Inspection.ID, TripID: &state.Trip.ID, ReturnID: &draftReturn.ID, VehicleID: &state.Trip.VehicleID, VehicleVersion: &vehicle.Version, IssueCategory: &category, DraftText: &description}}
+	if _, err := actor.ConversationSave(ctx, driver, me.Employee.ID, 1, input, "after-photo-setup-draft", nil); err != nil {
+		t.Fatal(err)
+	}
+	fetcher := &syntheticPhotoFetcher{image: samplePhoto(t, 90)}
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: actor, Commands: actor, PhotoStore: actor, Photos: fetcher, MAX: sender}
+	if err := processor.Handle(ctx, menuItem(driver, "after-photo-menu", now)); err != nil {
+		t.Fatal(err)
+	}
+	var help string
+	for _, row := range sender.Messages()[0].Buttons {
+		if strings.HasPrefix(row[0].Payload, "return-issue-photos:") {
+			help = row[0].Payload
+		}
+	}
+	if help == "" {
+		t.Fatal("after issue photo entry absent")
+	}
+	if err := processor.Handle(ctx, callbackItem(driver, "after-photo-help", help, now)); err != nil || !strings.Contains(sender.Messages()[1].Text, "0/3") {
+		t.Fatalf("photo help: %v %+v", err, sender.Messages())
+	}
+	worker := inboxworker.Worker{ID: "after-photo-worker", Store: store, Processor: processor, Now: func() time.Time { return now }}
+	deliver := func(key string) string {
+		t.Helper()
+		event := photoItem(driver, key, now).Event
+		if _, err := store.StoreInbox(ctx, event, maxsdk.InboxIdempotencyKey(event)); err != nil {
+			t.Fatal(err)
+		}
+		if result, err := worker.RunOnce(ctx, 1); err != nil || result.Acked != 1 {
+			t.Fatalf("photo %s: %+v %v", key, result, err)
+		}
+		messages := sender.Messages()
+		return messages[len(messages)-1].Text
+	}
+	fetcher.err = maxsdk.ErrPhotoUnavailable
+	if got := deliver("after-photo-download-failed"); !strings.Contains(got, "Не удалось") {
+		t.Fatalf("download error: %q", got)
+	}
+	fetcher.err = nil
+	for number := 1; number <= 3; number++ {
+		fetcher.image = samplePhoto(t, uint8(90+number))
+		if got := deliver(fmt.Sprintf("after-photo-%d", number)); !strings.Contains(got, fmt.Sprintf("%d/3", number)) {
+			t.Fatalf("photo %d: %q", number, got)
+		}
+	}
+	if got := deliver("after-photo-fourth"); !strings.Contains(got, "Четвёртое не добавлено") {
+		t.Fatalf("fourth photo: %q", got)
+	}
+	if err := processor.Handle(ctx, photoItem(driver, "after-photo-3", now)); err != nil || !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, "уже сохранено") {
+		t.Fatalf("replayed photo: %v %+v", err, sender.Messages())
+	}
+	state, err = actor.State(ctx, driver)
+	if err != nil || state.Conversation == nil || len(state.Conversation.Context.AssetIDs) != 3 || state.ConversationVersion != 5 || state.Return == nil || len(state.Return.Inspection.OccupiedSlots) != 0 {
+		t.Fatalf("issue photos entered after slots: %+v %v", state, err)
+	}
+	if err := processor.Handle(ctx, callbackItem(driver, "after-photo-old-help", help, now)); err != nil || !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, "изменился") {
+		t.Fatalf("stale help: %v %+v", err, sender.Messages())
 	}
 }

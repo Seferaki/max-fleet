@@ -19,6 +19,10 @@ func issuePhotoDraft(state dataapi.CurrentState) (*dataapi.Conversation, bool) {
 		trip := state.Trip
 		return draft, trip != nil && trip.Status == "active" && state.Return == nil && draft.Context.TripID != nil && *draft.Context.TripID == trip.ID && *draft.Context.TargetID == trip.ID && *draft.Context.VehicleID == trip.VehicleID
 	}
+	if draft.Flow == "issue_after" {
+		trip, returnDraft := state.Trip, state.Return
+		return draft, trip != nil && trip.Status == "returning" && returnDraft != nil && returnDraft.Status == "draft" && returnDraft.Step == "checklist" && returnDraft.Inspection.Status == "draft" && draft.Context.TripID != nil && *draft.Context.TripID == trip.ID && draft.Context.ReturnID != nil && *draft.Context.ReturnID == returnDraft.ID && *draft.Context.TargetID == returnDraft.Inspection.ID && *draft.Context.VehicleID == trip.VehicleID
+	}
 	if draft.Flow != "issue_before" || checkout == nil || checkout.Status != "holding" || checkout.Step != "inspection" || !inspectionReadyForIssueQuestion(checkout.Inspection) || checkout.Inspection.NewDamage == nil || !*checkout.Inspection.NewDamage || *draft.Context.TargetID != checkout.Inspection.ID || *draft.Context.VehicleID != checkout.VehicleID {
 		return nil, false
 	}
@@ -74,6 +78,8 @@ func (p Bootstrap) issuePhotoStage(ctx context.Context, item dataapi.InboxClaimI
 	scopeType, employeeID := "inspection", ""
 	if draft.Flow == "issue_during" {
 		scopeType, employeeID = "trip", state.Trip.EmployeeID
+	} else if draft.Flow == "issue_after" {
+		employeeID = state.Trip.EmployeeID
 	} else {
 		employeeID = state.Checkout.EmployeeID
 	}
