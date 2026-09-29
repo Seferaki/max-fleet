@@ -37,7 +37,7 @@ func (s *Server) startCheckout(w http.ResponseWriter, requestID, actor string, c
 		return dataapi.CommandResult{}, false
 	}
 	if checkout.IntentConfirmedAt == nil || checkout.RulesAcceptedAt == nil || checkout.RulesVersionID == nil || *checkout.RulesVersionID != s.rules.ID {
-		s.fail(w, requestID, http.StatusConflict, "RULES_REQUIRED")
+		s.fail(w, requestID, http.StatusUnprocessableEntity, "RULES_REQUIRED")
 		return dataapi.CommandResult{}, false
 	}
 	if len(checkout.Inspection.MissingSlots) != 0 {

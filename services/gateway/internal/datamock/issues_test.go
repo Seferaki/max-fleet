@@ -25,7 +25,7 @@ func TestBeforeIssueCancelsHoldAndBlocksVehicle(t *testing.T) {
 		t.Fatal(err)
 	}
 	hold, _ := dataapi.DecodeAggregate[dataapi.Checkout](created)
-	input := dataapi.IssueCreateInput{Category: "body_damage", Description: "Демонстрационное повреждение до выезда", InspectionID: &hold.Inspection.ID}
+	input := dataapi.IssueCreateInput{Category: "parking", Description: "Демонстрационная проблема с парковкой до выезда", InspectionID: &hold.Inspection.ID}
 	_, err = client.IssueCreate(ctx, "8000000000000000002", firstVehicleID, 2, input, "foreign-issue-1", nil)
 	expectAPIError(t, err, "NOT_FOUND")
 	if _, err := client.IssueCreate(ctx, driverID, firstVehicleID, 2, dataapi.IssueCreateInput{Category: "body_damage", Description: "   ", InspectionID: &hold.Inspection.ID}, "empty-issue-1", nil); err == nil {
@@ -45,7 +45,7 @@ func TestBeforeIssueCancelsHoldAndBlocksVehicle(t *testing.T) {
 		t.Fatal(err)
 	}
 	issue, err := dataapi.DecodeAggregate[dataapi.Issue](issued)
-	if err != nil || issue.Stage != "before" || issue.Status != "open" || !issue.BlocksIssuance {
+	if err != nil || issue.Stage != "before" || issue.Category != "parking" || issue.Status != "open" || !issue.BlocksIssuance {
 		t.Fatalf("before issue: %+v %v", issue, err)
 	}
 	if len(mock.notifications) != 1 {
@@ -180,7 +180,7 @@ func TestPostReturnIssueKeepsCompletedTripAndBlocksHeldVehicle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := dataapi.IssueCreateInput{Category: "mechanical", Description: "После возврата слышен посторонний звук", TripID: &tripID, AssetIDs: []string{asset.AssetID}}
+	input := dataapi.IssueCreateInput{Category: "car_lock", Description: "После поездки машина не закрывается", TripID: &tripID, AssetIDs: []string{asset.AssetID}}
 	_, err = client.IssueCreate(ctx, other, firstVehicleID, 2, input, "foreign-post-return", nil)
 	expectAPIError(t, err, "NOT_FOUND")
 	_, err = client.IssueCreate(ctx, driverID, firstVehicleID, 3, input, "stale-post-return", nil)
@@ -198,7 +198,7 @@ func TestPostReturnIssueKeepsCompletedTripAndBlocksHeldVehicle(t *testing.T) {
 		t.Fatal(err)
 	}
 	issue, err := dataapi.DecodeAggregate[dataapi.Issue](result)
-	if err != nil || issue.Stage != "post_return" || issue.TripID == nil || *issue.TripID != tripID || issue.InspectionID != nil || len(issue.AssetIDs) != 1 {
+	if err != nil || issue.Stage != "post_return" || issue.Category != "car_lock" || issue.TripID == nil || *issue.TripID != tripID || issue.InspectionID != nil || len(issue.AssetIDs) != 1 {
 		t.Fatalf("post-return issue: %+v %v", issue, err)
 	}
 	if !reflect.DeepEqual(mock.trips[tripID], finished) || mock.vehicles[0].Status != "unavailable" || !mock.vehicles[0].NeedsReview || len(mock.notifications) != 1 {

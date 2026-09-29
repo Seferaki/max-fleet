@@ -18,6 +18,8 @@ var issueCategories = []struct{ code, label, alias string }{
 	{"mechanical", "Неисправность", "механика"},
 	{"cleanliness", "Загрязнение", "чистота"},
 	{"keys", "Ключи", "ключи"},
+	{"parking", "Проблема с парковкой", "парковка"},
+	{"car_lock", "Машина не закрывается", "замок"},
 	{"other", "Другое", "другое"},
 }
 

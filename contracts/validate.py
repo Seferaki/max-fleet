@@ -129,6 +129,32 @@ def main():
             or not all(post_return["expected"].values())
             or post_return["expected"]["issue_stage"] != "post_return"):
         raise RuntimeError("Неверная семантика post-return примера")
+    post_return_conversation = check_example(
+        data, "examples/post-return-conversation.json", "Conversation")
+    post_context = post_return_conversation["context"]
+    if (post_return_conversation["flow"] != "issue_post_return"
+            or post_context["target_id"] != post_context["trip_id"]
+            or post_context["issue_category"] not in {"parking", "car_lock"}
+            or post_context["vehicle_id"] is None
+            or post_context["vehicle_version"] is None
+            or len(post_context["asset_ids"]) > 3):
+        raise RuntimeError("Неверная семантика post-return conversation")
+    issue_categories = load_json("examples/issue-categories.json")
+    if (issue_categories["contract_version"] != data["info"]["version"]
+            or {request["payload"]["category"] for request in issue_categories["requests"]}
+            != {"parking", "car_lock"}):
+        raise RuntimeError("Нет актуальных примеров новых категорий замечаний")
+    issue_schema = schema_for(data, "IssueCreateCommand")
+    for request in issue_categories["requests"]:
+        jsonschema.Draft202012Validator(issue_schema,
+                                         format_checker=jsonschema.FormatChecker()).validate(request)
+        payload = request["payload"]
+        if payload["trip_id"] is None or payload["inspection_id"] is not None:
+            raise RuntimeError("Новые категории должны быть привязаны к поездке")
+    invalid_flow = copy.deepcopy(post_return_conversation)
+    invalid_flow["flow"] = "unknown_flow"
+    if jsonschema.Draft202012Validator(schema_for(data, "Conversation")).is_valid(invalid_flow):
+        raise RuntimeError("Неизвестный conversation flow был принят")
     route = "/internal/v1/trips/{id}/inspection-photos/{phase}/{slot}"
     if route not in data["paths"] or photo_read["contract_version"] != data["info"]["version"]:
         raise RuntimeError("Пример чтения фото не совпадает с контрактом")
@@ -151,8 +177,9 @@ def main():
         if expected["error"] is not None and expected["error"] not in error_codes:
             raise RuntimeError(f"Неизвестный error code: {case['id']}")
 
+    other_example_count = len(list((ROOT / "examples").glob("*.json"))) - 1
     print(f"OK: 2 OpenAPI, {len(data['paths'])} data routes, "
-          f"{len(commands)} command examples, 9 other examples, {len(cases)} scenarios")
+          f"{len(commands)} command examples, {other_example_count} other examples, {len(cases)} scenarios")
 
 
 if __name__ == "__main__":

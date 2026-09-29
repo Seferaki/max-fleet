@@ -1,13 +1,13 @@
 # Контракт Go ↔ mock ↔ Python
 
-Контракт v1.3, 29.09.2026. Машинная схема и JSON fixtures: [contracts/data-api.openapi.yaml](../contracts/data-api.openapi.yaml), [внешний API карты](../contracts/map-api.openapi.yaml), [CHANGELOG](../contracts/CHANGELOG.md). Go mock реализуется отдельно от Python; проверка схем и mock не означает проверку Python/MAX. Поведение определяется [PRODUCT_SPEC](../PRODUCT_SPEC.md), модель — [DATABASE](DATABASE.md).
+Контракт v1.4, 29.09.2026. Машинная схема и JSON fixtures: [contracts/data-api.openapi.yaml](../contracts/data-api.openapi.yaml), [внешний API карты](../contracts/map-api.openapi.yaml), [CHANGELOG](../contracts/CHANGELOG.md). Go mock реализуется отдельно от Python; проверка схем и mock не означает проверку Python/MAX. Поведение определяется [PRODUCT_SPEC](../PRODUCT_SPEC.md), модель — [DATABASE](DATABASE.md).
 
 ## 1. Транспорт и доверие
 
 - Внутренняя база URL: `http://data-api:8000/internal/v1`; mock: `http://data-mock:8000/internal/v1`. Go использует один HTTP-клиент; переключается только URL.
 - Authorization: Bearer DATA_API_TOKEN подтверждает сервис Go. Python не публикуется наружу. Между разными хостами нужен TLS; plaintext допустим только в изолированной Docker-сети одного хоста.
 - X-Actor-Max-ID — десятичная строка проверенного MAX ID. Go формирует её после валидации источника; не копирует клиентский заголовок. Python проверяет роль и владение по БД.
-- X-Request-ID — UUID трассировки. X-Contract-Version: 1.3 — версия контракта. Несовместимую версию явно отклонять.
+- X-Request-ID — UUID трассировки. X-Contract-Version: 1.4 — версия контракта. Несовместимую версию явно отклонять.
 - Worker-маршруты требуют отдельный WORKER_API_TOKEN, не пользовательскую авторизацию.
 - Каждая мутация принимает Idempotency-Key; существующий агрегат — expected_version. Тот же логический запрос после timeout получает тот же ключ; изменённый body — новый ключ.
 - Команды из inbox дополнительно передают X-Inbox-Event-ID и X-Inbox-Lease. Python под блокировкой actor проверяет актуальный fencing token до изменения домена; просроченный worker не выполняет новую команду. Запрос карты проходит собственную авторизацию и version check, не притворяется inbox worker.
@@ -25,7 +25,7 @@ UUID, MAX user ID и chat ID в JSON — строки. Время — RFC3339 UT
 |---|---|---|
 | 400 | INVALID_REQUEST, UNSUPPORTED_EVENT | Попросить корректный ввод |
 | 401 | INVALID_SERVICE_TOKEN; INVALID_INIT_DATA во внешнем Go API | Отказать, не раскрыть данные |
-| 403 | ACCESS_DENIED, ADMIN_REQUIRED, CANNOT_START_TRIP | Показать отказ; заблокированному водителю оставить собственный возврат |
+| 403 | ACCESS_DENIED, ADMIN_REQUIRED, CANNOT_START_TRIP | Для read `/admin/*` не-admin получает `ACCESS_DENIED`; для admin-команды — `ADMIN_REQUIRED`. Заблокированному водителю оставить собственный возврат |
 | 404 | NOT_FOUND | Одинаково для чужого и отсутствующего trip/asset |
 | 409 | VEHICLE_UNAVAILABLE, USER_BUSY, STALE_VERSION, HOLD_EXPIRED, INVALID_STATE, IDEMPOTENCY_CONFLICT, COMMAND_IN_PROGRESS | Обновить состояние или подождать; не создавать новую команду автоматически |
 | 413 / 415 | FILE_TOO_LARGE / UNSUPPORTED_MEDIA | Предложить допустимый файл, сохранить остальные фото |
@@ -52,7 +52,7 @@ UUID, MAX user ID и chat ID в JSON — строки. Время — RFC3339 UT
 | /inspections/{id} | Разрешённый контекст, ответы, занятые/недостающие слоты |
 | /assets/{id}/content | Авторизованный поток файла, не публичный URL |
 | /trips/{id}/inspection-photos/{phase}/{slot} | Владелец поездки/admin, приватный поток для ракурса 1…8. `before` — finalized; `after` — только после завершения/закрытия поездки с finalized after. Чужой trip, пустой slot и недоступная фаза → одинаковый 404 |
-| /vehicles/{id}/previous-inspection/photos/{slot} | Обезличенное фото; это право не открывает чужой trip/произвольный asset |
+| /vehicles/{id}/previous-inspection/photos/{slot} | Обезличенное фото; это право не открывает чужой trip/произвольный asset. Mock реализует маршрут вместе с контрактной версией |
 | /admin/summary | Количества доступных, trip, hold, ожидающих проверки; пересечения показателей явно определены |
 | /admin/trips?state=&employee_id=&vehicle_id= | История всех поездок и P0-фильтры |
 | /admin/employees | ФИО, MAX ID, права, текущая поездка |
@@ -81,21 +81,23 @@ Envelope: {"operation":"checkout.create","target_id":"uuid","expected_version":1
 | return.cancel | return / {} | cancelled; trip.active; следующий возврат — новый пустой черновик |
 | return.set_location | return / latitude, longitude, source, landmark?, confirmed=true | Сохранить только draft; source max_geo/manual_map из доверенного канала |
 | return.complete | return / attestation=true | Атомарный trip.completed + snapshot; ключи/закрытие/парковка/8 фото/точка обязательны |
-| issue.create | vehicle / category, description, trip_id?, inspection_id?, asset_ids[0..3] | Проверить один контекст; до выезда отменить hold, в поездке её сохранить; после возврата создать отдельное `post_return` замечание; запретить новую выдачу |
+| issue.create | vehicle / category, description, trip_id?, inspection_id?, asset_ids[0..3] | Категории: `body_damage`, `mechanical`, `cleanliness`, `keys`, `parking`, `car_lock`, `other`. Проверить один контекст; до выезда отменить hold, в поездке её сохранить; после возврата создать отдельное `post_return` замечание; запретить новую выдачу |
 | vehicle.block | vehicle / reason, challenge_id | manual_blocked; отменить hold, сохранить active trip |
 | vehicle.unblock | vehicle / reason, review_completed, challenge_id | Нет нерешённых blocking issues; needs_review снимается явно |
 | vehicle.edit | vehicle / description?, key_instructions?, confirmation=true | Только перечисленные поля и audit |
 | vehicle.correct_snapshot | vehicle / reason, fuel_level?, odometer_km?, location?, confirmation=true | Только свободная машина; отдельная коррекция, включая обоснованное исправление odo; старые осмотры неизменны |
 | vehicle.annotate | vehicle / reason, text, confirmation=true | Append-only уточнение в audit, применимо к активной машине |
-| employee.grant | null / max_user_id, display_name, challenge_id | Новый employee; нельзя назначить admin; existing MAX ID — явный конфликт |
+| employee.grant | null / max_user_id, display_name, challenge_id | Новый employee; нельзя назначить admin; существующий MAX ID даёт `409 INVALID_STATE` |
 | employee.access | employee / can_start_trip, reason, challenge_id | Запрет новых поездок; holding отменить, active возврат сохранить |
 | issue.resolve | issue / status, comment, confirmation=true | in_progress/resolved/known_nonblocking; исходное сообщение неизменно |
 | trip.admin_close | trip / reason, challenge_id, available_data? | closed_by_admin, missing_data, needs_review=true; отсутствующие сведения не выдумывать |
-| conversation.save | actor state / flow, step, context, pending_input_kind? | CAS conversation_version; навигация не меняет бизнес-права |
+| conversation.save | actor state / flow, step, context, pending_input_kind? | CAS conversation_version; разрешённые flow: `issue_before`, `issue_during`, `issue_after`, `return_location`, `issue_post_return`; навигация не меняет бизнес-права |
 
 После math take/return Python одноразово записывает intent_confirmed_at в оформление; второй пример на итоговой кнопке не требуется. Для admin challenge.answer не выполняет административное действие: итоговая команда потребляет challenge_id в своей транзакции. Hash покрывает операцию, объект, версию и критический payload без самого challenge_id. Изменились причина/ID/права — новый proof.
 
 У photo/inspection/return отдельные версии; запись фото увеличивает версию inspection и родительского checkout/return. Перед итоговым start/complete получить актуальный агрегат и показать сводку. `return.complete` возвращает Return; завершённый Trip доступен по GET. Post-return `issue.create` принимает только собственную completed trip с `inspection_id=null`, создаёт отдельное замечание `post_return`, поднимает версию машины, ставит `needs_review` и уведомляет admin. Trip и finalized after-inspection, включая их версии, неизменны. Чужая trip даёт 404. История может показывать связанное замечание отдельной проекцией без автоматического обвинения предыдущего водителя.
+
+Для `issue_post_return` сохранённый `Conversation` принадлежит текущему actor и его completed trip: `target_id=trip_id`, указан vehicle и актуальная версия. Категория, описание и до трёх trip-scoped фото переживают перезапуск; шаги review/done не меняют Trip и finalized after-inspection. Отправка использует стабильный idempotency key и `issue.create` с `inspection_id=null`; после тайм-аута Go сначала ищет результат собственной команды, затем повторяет отправку тем же ключом. Чужой trip или asset скрывается как `404 NOT_FOUND`, устаревшая версия — `409 STALE_VERSION`.
 
 ## 5. Фотографии: multipart
 

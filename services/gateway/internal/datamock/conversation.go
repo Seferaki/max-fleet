@@ -11,6 +11,14 @@ import (
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 )
 
+func validConversationFlow(flow string) bool {
+	switch flow {
+	case "issue_before", "issue_during", "issue_after", "return_location", "issue_post_return":
+		return true
+	}
+	return false
+}
+
 func validConversationContext(context dataapi.ConversationContext) bool {
 	for _, id := range []*string{context.TargetID, context.VehicleID, context.IssueID, context.ChallengeID, context.TripID, context.ReturnID} {
 		if id != nil && !validUUID(*id) {
@@ -35,7 +43,7 @@ func validConversationContext(context dataapi.ConversationContext) bool {
 
 func (s *Server) saveConversation(w http.ResponseWriter, requestID, actor string, command mockCommand) (dataapi.CommandResult, bool) {
 	var input dataapi.ConversationSaveInput
-	if !strictPayload(command.Payload, &input) || strings.TrimSpace(input.Flow) == "" || len(input.Flow) > 80 || strings.TrimSpace(input.Step) == "" || len(input.Step) > 80 || !validConversationContext(input.Context) ||
+	if !strictPayload(command.Payload, &input) || !validConversationFlow(input.Flow) || strings.TrimSpace(input.Step) == "" || len(input.Step) > 80 || !validConversationContext(input.Context) ||
 		input.PendingInputKind != nil && *input.PendingInputKind != "text" && *input.PendingInputKind != "photo" && *input.PendingInputKind != "geo" && *input.PendingInputKind != "none" {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return dataapi.CommandResult{}, false

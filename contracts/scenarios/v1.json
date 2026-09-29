@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.3",
+  "contract_version": "1.4",
   "fake_clock_utc": "2026-09-27T09:00:00Z",
   "seed": "../examples/synthetic-seed.json",
   "cases": [
@@ -47,6 +47,7 @@
     {"id":"return.admin-close","area":"return","given":"admin причина и math proof, обычный возврат невозможен","when":"trip.admin_close","expect":{"http":200,"error":null,"facts":["closed_by_admin","missing_data без фиктивных значений","needs_review=true"]}},
     {"id":"return.post-return-issue","area":"return","given":"владелец завершил поездку и сообщил замечание позднее","when":"issue.create с trip_id завершённой поездки и inspection_id=null","expect":{"http":200,"error":null,"facts":["stage=post_return","trip и after-inspection неизменны","needs_review=true","admin уведомлён без обвинения предыдущего водителя"]}},
     {"id":"return.post-return-foreign","area":"return","given":"сотрудник указал чужую завершённую поездку","when":"issue.create с чужим trip_id","expect":{"http":404,"error":"NOT_FOUND","facts":["замечание и уведомление не созданы","чужая поездка не раскрыта"]}},
+    {"id":"return.post-return-conversation","area":"return","given":"сотрудник открыл свою завершённую поездку","when":"conversation.save flow=issue_post_return","expect":{"http":200,"error":null,"facts":["target_id команды — текущий employee","trip_id и target_id контекста совпадают","черновик переживает restart","Trip и after-inspection не меняются"]}},
 
     {"id":"delivery.db-before-ack","area":"delivery","given":"inbox недоступен","when":"webhook MAX","expect":{"http":503,"error":"DATABASE_UNAVAILABLE","facts":["MAX 200 не отправлен"]}},
     {"id":"delivery.timeout-after-commit","area":"delivery","given":"команда зафиксирована, HTTP ответ потерян","when":"retry с тем же Idempotency-Key","expect":{"http":200,"error":null,"facts":["прежний результат","второй trip не создан"]}},
@@ -57,6 +58,10 @@
 
     {"id":"schema.malformed-uuid","area":"schema","given":"target_id не UUID","when":"POST /commands","expect":{"http":400,"error":"INVALID_REQUEST","facts":["команда не выполняется"]}},
     {"id":"schema.unknown-enum","area":"schema","given":"fuel_level=37","when":"inspection.update","expect":{"http":400,"error":"INVALID_REQUEST","facts":["draft не изменён"]}},
+    {"id":"schema.unknown-conversation-flow","area":"schema","given":"conversation.save содержит неизвестный flow","when":"POST /commands","expect":{"http":400,"error":"INVALID_REQUEST","facts":["команда не выполняется"]}},
+    {"id":"schema.issue-categories","area":"schema","given":"issue.create использует parking или car_lock","when":"POST /commands","expect":{"http":200,"error":null,"facts":["категория сохраняется без переименования","issue остаётся привязанным к своему контексту"]}},
+    {"id":"schema.rules-required-status","area":"schema","given":"math пройден, но версия правил не принята","when":"checkout.start","expect":{"http":422,"error":"RULES_REQUIRED","facts":["поездка не создаётся","hold остаётся активен"]}},
+    {"id":"schema.challenge-expired-status","area":"schema","given":"срок challenge истёк","when":"challenge.answer","expect":{"http":422,"error":"CHALLENGE_EXPIRED","facts":["challenge не подтверждён","состояние оформления не продвигается"]}},
     {"id":"schema.null-omitted","area":"schema","given":"обязательное поле пропущено вместо null","when":"POST /commands","expect":{"http":400,"error":"INVALID_REQUEST","facts":["null и omission различаются"]}},
     {"id":"schema.limit","area":"schema","given":"limit=51","when":"GET /vehicles","expect":{"http":400,"error":"INVALID_REQUEST","facts":["максимум 50"]}},
     {"id":"schema.stale","area":"schema","given":"expected_version от старой кнопки","when":"return.complete","expect":{"http":409,"error":"STALE_VERSION","facts":["показать текущую сводку","не завершать"]}},

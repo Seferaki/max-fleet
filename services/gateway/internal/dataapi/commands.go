@@ -191,7 +191,7 @@ func (c *Client) ReturnCancel(ctx context.Context, actorMaxID, returnID string, 
 
 func (c *Client) IssueCreate(ctx context.Context, actorMaxID, vehicleID string, vehicleVersion int64, input IssueCreateInput, key string, inbox *InboxLease) (CommandResult, error) {
 	if (input.TripID == nil) == (input.InspectionID == nil) || strings.TrimSpace(input.Description) == "" || len(input.Description) > 1000 || len(input.AssetIDs) > 3 ||
-		input.Category != "body_damage" && input.Category != "mechanical" && input.Category != "cleanliness" && input.Category != "keys" && input.Category != "other" {
+		input.Category != "body_damage" && input.Category != "mechanical" && input.Category != "cleanliness" && input.Category != "keys" && input.Category != "parking" && input.Category != "car_lock" && input.Category != "other" {
 		return CommandResult{}, errors.New("data-api: invalid issue input")
 	}
 	if input.TripID != nil && !validUUID(*input.TripID) || input.InspectionID != nil && !validUUID(*input.InspectionID) {

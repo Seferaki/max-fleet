@@ -1,4 +1,4 @@
-"""Build the reviewed MAX Fleet v1 internal HTTP contract.
+"""Build the reviewed MAX Fleet v1.4 internal HTTP contract.
 
 Run: py contracts/build_openapi.py
 Requires PyYAML. The generated YAML is committed so consumers do not need Python.
@@ -62,6 +62,8 @@ schemas = {
     "Version": integer(1),
     "FuelLevel": {"type": "integer", "enum": [0, 25, 50, 75, 100]},
     "PhotoSlot": integer(1, 8),
+    "IssueCategory": string(enum=["body_damage", "mechanical", "cleanliness", "keys", "parking", "car_lock", "other"]),
+    "ConversationFlow": string(enum=["issue_before", "issue_during", "issue_after", "return_location", "issue_post_return"]),
     "ErrorCode": string(enum=[
         "INVALID_REQUEST", "UNSUPPORTED_EVENT", "INVALID_SERVICE_TOKEN", "ACCESS_DENIED",
         "ADMIN_REQUIRED", "CANNOT_START_TRIP", "NOT_FOUND", "VEHICLE_UNAVAILABLE",
@@ -202,7 +204,7 @@ schemas = {
         "conversation_version": ref("Version"),
     }, ("checkout", "trip", "return", "next_step", "conversation", "conversation_version")),
     "Meta": obj({
-        "contract_version": {"const": "1.3"}, "build_sha": string(64),
+        "contract_version": {"const": "1.4"}, "build_sha": string(64),
         "mode": string(enum=["mock", "real"]), "capabilities": array(string(80)),
     }, ("contract_version", "build_sha", "mode", "capabilities")),
     "AdminSummary": obj({
@@ -243,8 +245,8 @@ for name in ("Vehicle", "Trip", "Issue", "Employee"):
 
 spec = {
     "openapi": "3.1.0",
-    "info": {"title": "MAX Fleet Data API", "version": "1.3",
-             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.3 разрешает отдельное замечание владельца после завершения поездки без изменения завершённого снимка."},
+    "info": {"title": "MAX Fleet Data API", "version": "1.4",
+             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.4 задаёт отдельный восстанавливаемый issue_post_return conversation для замечания владельца о завершённой поездке и категории parking/car_lock."},
     "servers": [{"url": "http://data-api:8000"}, {"url": "http://data-mock:8000"}],
     "tags": [{"name": name, "description": description} for name, description in (
         ("read", "Чтение доменных данных с проверкой actor и прав"),
@@ -262,7 +264,7 @@ spec = {
         },
         "parameters": {
             "ContractVersion": {"name": "X-Contract-Version", "in": "header", "required": True,
-                                "schema": {"const": "1.3"}},
+                                "schema": {"const": "1.4"}},
             "RequestID": {"name": "X-Request-ID", "in": "header", "required": True,
                           "schema": ref("UUID")},
             "ActorMaxID": {"name": "X-Actor-Max-ID", "in": "header", "required": True,
@@ -282,10 +284,12 @@ spec = {
 
 
 ERROR_HTTP = {
-    "400": "INVALID_REQUEST", "401": "INVALID_SERVICE_TOKEN", "403": "ACCESS_DENIED",
-    "404": "NOT_FOUND", "409": "STALE_VERSION", "413": "FILE_TOO_LARGE",
-    "415": "UNSUPPORTED_MEDIA", "422": "PHOTO_SET_INCOMPLETE", "429": "RATE_LIMITED",
-    "503": "TEMPORARY_FAILURE",
+    "400": "INVALID_REQUEST", "401": "INVALID_SERVICE_TOKEN",
+    "403": "ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP",
+    "404": "NOT_FOUND", "409": "STALE_VERSION or INVALID_STATE", "413": "FILE_TOO_LARGE",
+    "415": "UNSUPPORTED_MEDIA",
+    "422": "PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation",
+    "429": "RATE_LIMITED", "503": "TEMPORARY_FAILURE",
 }
 
 
@@ -367,7 +371,7 @@ read(P + "/admin/employees/{id}", "getAdminEmployee", "Employee", id_path=True)
 
 
 schemas["Conversation"] = obj({
-    "flow": string(80), "step": string(80),
+    "flow": ref("ConversationFlow"), "step": string(80),
     "context": obj({"target_id": nullable(ref("UUID")),
                     "selected_slot": nullable(ref("PhotoSlot")),
                     "challenge_id": nullable(ref("UUID")),
@@ -377,12 +381,13 @@ schemas["Conversation"] = obj({
                     "issue_id": nullable(ref("UUID")),
                     "cursor": nullable(string(2048)),
                     "draft_text": nullable(string(1000)),
-                    "issue_category": nullable(string(enum=["body_damage", "mechanical", "cleanliness", "keys", "other"])),
+                    "issue_category": nullable(ref("IssueCategory")),
                     "asset_ids": {**array(ref("UUID"), 3), "uniqueItems": True},
                     "vehicle_version": nullable(ref("Version"))}),
     "pending_input_kind": nullable(string(enum=["text", "photo", "geo", "none"])),
     "version": ref("Version"), "updated_at": ref("Timestamp"),
-}, ("flow", "step", "context", "pending_input_kind", "version", "updated_at"))
+}, ("flow", "step", "context", "pending_input_kind", "version", "updated_at"),
+    "issue_post_return belongs to the actor's own completed trip. target_id and trip_id are that trip ID; vehicle_id and vehicle_version bind the draft to its vehicle snapshot. draft_text, issue_category and up to three trip-scoped asset_ids survive restart. Saving the issue uses issue.create with trip_id and inspection_id=null; it must not update the completed trip or finalized after-inspection.")
 
 schemas["LocationInput"] = obj({
     "latitude": {"type": "number", "minimum": -90, "maximum": 90},
@@ -492,13 +497,12 @@ command_specs = [
         "available_data": ref("AdminCloseData"),
     }, ("reason", "challenge_id")), "Trip"),
     ("conversation.save", "existing", payload({
-        "flow": string(80), "step": string(80),
+        "flow": ref("ConversationFlow"), "step": string(80),
         "context": schemas["Conversation"]["properties"]["context"],
         "pending_input_kind": nullable(string(enum=["text", "photo", "geo", "none"])),
     }, ("flow", "step", "context")), "Conversation"),
 ]
 
-schemas["IssueCategory"] = string(enum=["body_damage", "mechanical", "cleanliness", "keys", "other"])
 command_refs = []
 for operation, target_kind, body, result_name in command_specs:
     name = "".join(part.capitalize() for part in operation.replace(".", "_").split("_")) + "Command"

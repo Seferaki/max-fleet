@@ -32,6 +32,14 @@ func expectAPIError(t *testing.T, err error, code string) {
 	}
 }
 
+func expectAPIErrorStatus(t *testing.T, err error, code string, status int) {
+	t.Helper()
+	var apiErr *dataapi.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != code || apiErr.Status != status {
+		t.Fatalf("want %s (HTTP %d), got %v", code, status, err)
+	}
+}
+
 func TestCheckoutHoldIdempotencyAndCancel(t *testing.T) {
 	clock := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
 	mock, err := NewWithClock("test-service-token", func() time.Time { return clock })

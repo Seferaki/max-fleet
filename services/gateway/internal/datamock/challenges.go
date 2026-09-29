@@ -190,7 +190,7 @@ func (s *Server) answerChallenge(w http.ResponseWriter, requestID, actor string,
 		return dataapi.CommandResult{}, false
 	}
 	if !s.now().UTC().Before(challenge.Public.ExpiresAt) {
-		s.fail(w, requestID, http.StatusConflict, "CHALLENGE_EXPIRED")
+		s.fail(w, requestID, http.StatusUnprocessableEntity, "CHALLENGE_EXPIRED")
 		return dataapi.CommandResult{}, false
 	}
 	if challenge.Invalidated || challenge.Solved || challenge.Public.AttemptsRemaining == 0 {

@@ -33,7 +33,7 @@ func TestClientReadsSyntheticFixtures(t *testing.T) {
 	}
 	ctx := context.Background()
 	meta, err := client.Meta(ctx)
-	if err != nil || meta.Mode != "mock" || meta.ContractVersion != "1.3" {
+	if err != nil || meta.Mode != "mock" || meta.ContractVersion != "1.4" {
 		t.Fatalf("meta: %+v %v", meta, err)
 	}
 	me, err := client.Me(ctx, driverID)
@@ -91,7 +91,7 @@ func TestMockAuthorizationAndVersion(t *testing.T) {
 	}
 	request, _ := http.NewRequest(http.MethodGet, server.URL+"/internal/v1/vehicles", nil)
 	request.Header.Set("Authorization", "Bearer wrong-token")
-	request.Header.Set("X-Contract-Version", "1.3")
+	request.Header.Set("X-Contract-Version", "1.4")
 	request.Header.Set("X-Request-ID", "11111111-1111-4111-8111-111111111111")
 	request.Header.Set("X-Actor-Max-ID", driverID)
 	response, err := http.DefaultClient.Do(request)

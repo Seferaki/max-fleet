@@ -109,7 +109,7 @@ func TestDuringIssueConversationRequiresOwnedActiveTrip(t *testing.T) {
 	if _, err := client.ConversationSave(ctx, driverID, me.Employee.ID, 1, invalid, "during-unknown-flow", nil); err == nil {
 		t.Fatal("unsupported conversation flow accepted")
 	} else {
-		expectAPIError(t, err, "INVALID_STATE")
+		expectAPIError(t, err, "INVALID_REQUEST")
 	}
 	wrongID := newRequestID()
 	invalid = input

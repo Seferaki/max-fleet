@@ -64,7 +64,7 @@ func TestTripIssueDraftOwnerVersionAndDurableSave(t *testing.T) {
 	if err := processor.Handle(ctx, callbackItem(driver, "trip-issue-stale", stale, now)); err != nil || !strings.Contains(sender.Messages()[2].Text, "изменилась") {
 		t.Fatalf("stale issue entry: %v %+v", err, sender.Messages())
 	}
-	if err := processor.Handle(ctx, callbackItem(driver, "trip-issue-categories", button, now)); err != nil || len(sender.Messages()[3].Buttons) != 5 {
+	if err := processor.Handle(ctx, callbackItem(driver, "trip-issue-categories", button, now)); err != nil || len(sender.Messages()[3].Buttons) != 7 {
 		t.Fatalf("categories: %v %+v", err, sender.Messages())
 	}
 	if err := processor.Handle(ctx, callbackItem(driver, "trip-issue-kind", sender.Messages()[3].Buttons[1][0].Payload, now)); err != nil || !strings.Contains(sender.Messages()[4].Text, "/issue механика") {

@@ -40,11 +40,20 @@ func TestIssueDraftCategoryDescriptionAndReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	categories := sender.Messages()[1]
-	if len(categories.Buttons) != 5 || categories.Buttons[0][0].Text != "Повреждение кузова" {
+	if len(categories.Buttons) != 7 || categories.Buttons[0][0].Text != "Повреждение кузова" || categories.Buttons[4][0].Text != "Проблема с парковкой" || categories.Buttons[5][0].Text != "Машина не закрывается" {
 		t.Fatalf("categories = %+v", categories.Buttons)
 	}
 	if err := processor.Handle(context.Background(), callbackItem(driver, "draft-kind", categories.Buttons[0][0].Payload, now)); err != nil || !strings.Contains(sender.Messages()[2].Text, "/issue кузов") {
 		t.Fatalf("category hint: %v %+v", err, sender.Messages())
+	}
+	for _, category := range []struct {
+		index  int
+		prompt string
+	}{{4, "/issue парковка"}, {5, "/issue замок"}} {
+		id := fmt.Sprintf("draft-kind-%d", category.index)
+		if err := processor.Handle(context.Background(), callbackItem(driver, id, categories.Buttons[category.index][0].Payload, now)); err != nil || !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, category.prompt) {
+			t.Fatalf("category prompt %d: %v %+v", category.index, err, sender.Messages())
+		}
 	}
 	for _, bad := range []string{"/issue", "/issue неверно текст"} {
 		if err := processor.Handle(context.Background(), odometerTestItem(driver, "bad-draft-"+bad, bad, now)); err != nil || !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, "Категории") && !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, "неверны") {
