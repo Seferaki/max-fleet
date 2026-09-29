@@ -199,6 +199,19 @@ func TestSDKTransportResultAndError(t *testing.T) {
 	}
 }
 
+func TestSDKTransportMarksProviderRateLimitWithoutExposingResponseText(t *testing.T) {
+	sdk := &stubMessages{err: &maxbot.Error{Code: "too.many.requests", Err: "provider message", Message: "sensitive response detail"}}
+	transport := &SDKTransport{messages: sdk}
+	if _, err := transport.SendText(context.Background(), 123, "Уведомление"); err == nil {
+		t.Fatal("accepted provider error")
+	} else {
+		var classified interface{ NotificationErrorCode() string }
+		if !errors.As(err, &classified) || classified.NotificationErrorCode() != "MAX_RATE_LIMIT" || strings.Contains(err.Error(), "sensitive response detail") {
+			t.Fatalf("provider error was not safely classified: %v", err)
+		}
+	}
+}
+
 func TestSDKTransportSendsThroughPinnedSDK(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

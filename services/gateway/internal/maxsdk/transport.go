@@ -49,6 +49,17 @@ type SDKTransport struct {
 	uploader imageUploader
 }
 
+// SendFailure preserves errors.Is while exposing only a bounded category to
+// background workers. Provider response text is intentionally not logged.
+type SendFailure struct {
+	code  string
+	cause error
+}
+
+func (e *SendFailure) Error() string                 { return e.code }
+func (e *SendFailure) Unwrap() error                 { return e.cause }
+func (e *SendFailure) NotificationErrorCode() string { return e.code }
+
 func NewTransport(api *maxbot.Api) (*SDKTransport, error) {
 	if api == nil || api.Messages == nil || api.Upload == nil {
 		return nil, errors.New("MAX messages client is missing")
@@ -131,12 +142,25 @@ func (t *SDKTransport) send(ctx context.Context, userID int64, text string, keyb
 	}
 	result, err := t.messages.Send(ctx, message)
 	if err != nil {
-		return "", err
+		return "", &SendFailure{code: safeSendFailureCode(err), cause: err}
 	}
 	if result.Message.Body.Mid == "" {
 		return "", errors.New("MAX returned a message without an ID")
 	}
 	return result.Message.Body.Mid, nil
+}
+
+func safeSendFailureCode(err error) string {
+	var providerError *maxbot.Error
+	if errors.As(err, &providerError) {
+		code := strings.ToLower(strings.ReplaceAll(providerError.Code, ".", "_"))
+		providerCode := strings.ToLower(strings.ReplaceAll(providerError.Err, ".", "_"))
+		combined := code + "_" + providerCode
+		if strings.Contains(combined, "rate") || strings.Contains(combined, "too_many") || strings.Contains(combined, "429") {
+			return "MAX_RATE_LIMIT"
+		}
+	}
+	return "MAX_SEND_FAILED"
 }
 
 func validateButtons(rows [][]Button) error {
