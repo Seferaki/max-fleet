@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03, BE-01…BE-09 и UI-01 выполнены на Go mock; BE-10 в работе. Текущий Data API v1.13 code/contract commit caa134ddffcc0edd501851ae82f12020c992e75a; он добавляет время постановки notification delivery в очередь. Проверенный Go/mock подшаг BE-10/10.3: code commit caa134ddffcc0edd501851ae82f12020c992e75a ожидает публикации. Python на origin/codex/data commit 9eb2211b29e48fce8a6afc410bc986fa98a4988e использует OpenAPI v1.0 и не синхронизирован; DE-01…DE-08 и их проверки — результаты Data Engineer, независимо от backend. До INT data engineer должен реализовать общий контракт v1.13; services/data здесь не менялся. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03, BE-01…BE-09 и UI-01 выполнены на Go mock; BE-10 в работе. Текущий Data API v1.13 и Go/mock contract commit caa134ddffcc0edd501851ae82f12020c992e75a опубликован; sender age-of-queue timestamp используется следующим подшагом наблюдаемости. Python на origin/codex/data commit 9eb2211b29e48fce8a6afc410bc986fa98a4988e использует OpenAPI v1.0 и не синхронизирован; DE-01…DE-08 и их проверки — результаты Data Engineer, независимо от backend. До INT data engineer должен реализовать общий контракт v1.13; services/data здесь не менялся. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,9 +9,9 @@ lock_state: ACTIVE
 owner: A
 session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T20:17:31Z"
+heartbeat_utc: "2026-09-29T20:18:27Z"
 current_task: BE-10
-current_substep: "BE-10/10.3: обязательный enqueued_at добавлен в контракт v1.13, генератор, mock и Go DTO; contract и full gateway gates PASS; code caa134d ожидает обычной публикации после owner/secret check."
+current_substep: "BE-10/10.3: обязательный enqueued_at добавлен в контракт v1.13, генератор, mock и Go DTO; contract/full gateway gates PASS; code caa134ddffcc0edd501851ae82f12020c992e75a опубликован, remote подтверждён на 9b18996618c9a664fd61b447c3f83c54a3d4d5e1."
 last_verified_code_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
@@ -81,7 +81,7 @@ human_required: [H-01]
 
 ## Последний checkpoint
 
-- BE-10/10.3 code caa134ddffcc0edd501851ae82f12020c992e75a: контракт v1.13 добавляет обязательный enqueued_at для точного возраста delivery; старые mock snapshots получают occurred_at только как нижнюю оценку. Обновлены OpenAPI generator/schema, Go DTO/client, durable mock, текущие examples/scenarios и русская документация. verify contract PASS; go test ./internal/dataapi ./internal/datamock ./internal/notificationworker PASS; verify gateway PASS. Code commit сохранён локально и ожидает обычного push после повторной сверки ACTIVE owner/session и secret scan.
+- BE-10/10.3 code caa134ddffcc0edd501851ae82f12020c992e75a: контракт v1.13 добавляет обязательный enqueued_at для точного возраста delivery; старые mock snapshots получают occurred_at только как нижнюю оценку. Обновлены OpenAPI generator/schema, Go DTO/client, durable mock, текущие examples/scenarios и русская документация. verify contract PASS; go test ./internal/dataapi ./internal/datamock ./internal/notificationworker PASS; verify gateway PASS. Обычный push подтверждён: remote origin/codex/backend равен 9b18996618c9a664fd61b447c3f83c54a3d4d5e1.
 
 - BE-10/10.1 code commit `e2f1976221a14bc6684c34605fd4d53e39f3bf00`: mock outbox создаёт по одной delivery-записи всем admin и дополнительным получателям по событию; `vehicle_blocked` сообщает причину и vehicle ID админам, `trip_admin_closed` дополнительно отправляется водителю, `access_changed` дополнительно сотруднику как при employee.grant (`reason=granted`), так и при employee.access (переданная причина). Дополнительный recipient дедуплицируется, очередь создаётся в доменной критической секции до snapshot commit. Тесты подтверждают права, отсутствие уведомлений при отказе, точные recipient/event поля и отсутствие дубликатов при idempotent replay. PRODUCT_SPEC, IMPLEMENTATION_PLAN, API_CONTRACT и gateway README приведены к этому поведению. Контракт shape/version не менялись: OpenAPI v1.12 уже содержит `vehicle_blocked`, `trip_admin_closed`, `access_changed`, `reason` и nullable `vehicle_id`; Python branch read-only проверен на `9eb2211`. `go test ./internal/datamock -run 'Test(VehicleAdminCommandsBindActorIntentAndConsumeProofOnce|EmployeeGrantUsesNullTargetAndConsumesProofOnce|EmployeeAccessRequiresAdminAndReleasesCancelledHold|TripAdminClosePreservesMissingDataAndDoesNotRollBackOdometer|Notification)' -count=1 -v` (из `services/gateway`) → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → `verify gateway: OK`; staged secret scan и `git diff --cached --check` для 8 Git-файлов → PASS. Это только mock outbox, реальная Python-фан-аут/доставка и MAX sender не проверялись. Code commit пока локальный; перед push ожидаются свежий fetch, очередь ACTIVE A/эта session, tracked/staged scan. Next: Go sender и сбои после send-before-ack. Hold 15 минут, безопасный возврат, 8+8 фото и ручная карта не менялись.
 
