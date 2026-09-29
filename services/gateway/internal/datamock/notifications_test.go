@@ -51,7 +51,7 @@ func TestNotificationOutboxClaimRestartExpiryAndAuth(t *testing.T) {
 	}
 	claimPath := "/internal/v1/notifications/claim"
 	input := map[string]any{"worker_id": "sender-a", "max_items": 10}
-	status, _ := integrationRequest(t, mock.Handler(), http.MethodPost, claimPath, "test-service-token", "1.2", "claim-key-001", input)
+	status, _ := integrationRequest(t, mock.Handler(), http.MethodPost, claimPath, "test-service-token", "1.3", "claim-key-001", input)
 	if status != http.StatusUnauthorized {
 		t.Fatalf("actor service token accepted: %d", status)
 	}
@@ -59,7 +59,7 @@ func TestNotificationOutboxClaimRestartExpiryAndAuth(t *testing.T) {
 	if status != http.StatusBadRequest {
 		t.Fatalf("wrong contract version accepted: %d", status)
 	}
-	status, body := integrationRequest(t, mock.Handler(), http.MethodPost, claimPath, "worker-token", "1.2", "claim-key-001", input)
+	status, body := integrationRequest(t, mock.Handler(), http.MethodPost, claimPath, "worker-token", "1.3", "claim-key-001", input)
 	claim := integrationData[dataapi.NotificationClaim](t, body)
 	if status != http.StatusOK || len(claim.Items) != 1 || claim.Items[0].Event.Type != "issue_created" || claim.Items[0].Event.ResourceID != issueID || claim.Items[0].RecipientMaxUserID != "8000000000000000003" || claim.Items[0].Attempt != 1 || claim.Items[0].LeaseToken == "" {
 		t.Fatalf("notification claim: %d %+v", status, claim)
@@ -68,26 +68,26 @@ func TestNotificationOutboxClaimRestartExpiryAndAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, claimPath, "worker-token", "1.2", "claim-key-001", input)
+	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, claimPath, "worker-token", "1.3", "claim-key-001", input)
 	replayed := integrationData[dataapi.NotificationClaim](t, body)
 	if status != http.StatusOK || len(replayed.Items) != 1 || replayed.Items[0].LeaseToken != claim.Items[0].LeaseToken {
 		t.Fatalf("restart replay: %d %+v", status, replayed)
 	}
-	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, claimPath, "worker-token", "1.2", "claim-key-002", map[string]any{"worker_id": "sender-b", "max_items": 10})
+	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, claimPath, "worker-token", "1.3", "claim-key-002", map[string]any{"worker_id": "sender-b", "max_items": 10})
 	if status != http.StatusOK || len(integrationData[dataapi.NotificationClaim](t, body).Items) != 0 {
 		t.Fatalf("second worker claimed active lease: %d", status)
 	}
 	clock = clock.Add(notificationLeaseDuration + time.Second)
-	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, claimPath, "worker-token", "1.2", "claim-key-003", map[string]any{"worker_id": "sender-b", "max_items": 10})
+	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, claimPath, "worker-token", "1.3", "claim-key-003", map[string]any{"worker_id": "sender-b", "max_items": 10})
 	afterExpiry := integrationData[dataapi.NotificationClaim](t, body)
 	if status != http.StatusOK || len(afterExpiry.Items) != 1 || afterExpiry.Items[0].Attempt != 2 || afterExpiry.Items[0].LeaseToken == claim.Items[0].LeaseToken {
 		t.Fatalf("expired notification lease not fenced: %d %+v", status, afterExpiry)
 	}
-	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, claimPath, "worker-token", "1.2", "claim-key-001", input)
+	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, claimPath, "worker-token", "1.3", "claim-key-001", input)
 	if status != http.StatusConflict || integrationErrorCode(t, body) != "LEASE_EXPIRED" {
 		t.Fatalf("expired claim replay accepted: %d", status)
 	}
-	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, claimPath, "worker-token", "1.2", "claim-key-003", map[string]any{"worker_id": "sender-c", "max_items": 10})
+	status, body = integrationRequest(t, restarted.Handler(), http.MethodPost, claimPath, "worker-token", "1.3", "claim-key-003", map[string]any{"worker_id": "sender-c", "max_items": 10})
 	if status != http.StatusConflict || integrationErrorCode(t, body) != "IDEMPOTENCY_CONFLICT" {
 		t.Fatalf("changed claim replay accepted: %d", status)
 	}
@@ -114,7 +114,7 @@ func TestNotificationClaimRollbackAndV12Upgrade(t *testing.T) {
 	testBeforeIssueNotification(t, mock)
 	save := mock.saveSnapshot
 	mock.saveSnapshot = func(stateSnapshot) error { return errors.New("synthetic disk failure") }
-	status, body := integrationRequest(t, mock.Handler(), http.MethodPost, "/internal/v1/notifications/claim", "worker-token", "1.2", "claim-key-001", map[string]any{"worker_id": "sender-a", "max_items": 1})
+	status, body := integrationRequest(t, mock.Handler(), http.MethodPost, "/internal/v1/notifications/claim", "worker-token", "1.3", "claim-key-001", map[string]any{"worker_id": "sender-a", "max_items": 1})
 	if status != http.StatusServiceUnavailable || integrationErrorCode(t, body) != "DATABASE_UNAVAILABLE" || len(mock.notificationClaims) != 0 {
 		t.Fatalf("failed claim acknowledged: %d", status)
 	}
@@ -124,7 +124,7 @@ func TestNotificationClaimRollbackAndV12Upgrade(t *testing.T) {
 		}
 	}
 	mock.saveSnapshot = save
-	status, body = integrationRequest(t, mock.Handler(), http.MethodPost, "/internal/v1/notifications/claim", "worker-token", "1.2", "claim-key-001", map[string]any{"worker_id": "sender-a", "max_items": 1})
+	status, body = integrationRequest(t, mock.Handler(), http.MethodPost, "/internal/v1/notifications/claim", "worker-token", "1.3", "claim-key-001", map[string]any{"worker_id": "sender-a", "max_items": 1})
 	if status != http.StatusOK || len(integrationData[dataapi.NotificationClaim](t, body).Items) != 1 {
 		t.Fatalf("claim after storage recovery: %d", status)
 	}
