@@ -22,8 +22,8 @@ func returnDraftCoordinates(value string) (float64, float64, bool) {
 	if len(parts) != 2 {
 		return 0, 0, false
 	}
-	lat, latErr := strconv.ParseFloat(parts[0], 64)
-	lon, lonErr := strconv.ParseFloat(parts[1], 64)
+	lat, latErr := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	lon, lonErr := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
 	return lat, lon, latErr == nil && lonErr == nil && !math.IsNaN(lat) && !math.IsNaN(lon) && !math.IsInf(lat, 0) && !math.IsInf(lon, 0) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180
 }
 

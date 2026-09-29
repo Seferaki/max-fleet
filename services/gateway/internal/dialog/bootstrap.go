@@ -144,7 +144,8 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	tripView := parseTripView(item.Event)
 	adminIssue := parseAdminIssueEvent(item.Event)
 	adminOdometer := parseAdminOdometerEvent(item.Event)
-	if !catalog && !card && !previous && !previousPhoto.recognized && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !returnOdometerConfirm && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !postReturnIssueOpen && !postReturnCategoryPrompt && !postReturnPhotoHelp && !postReturnReview && !postReturnSend && !returnIssuePrompt && !tripIssuePhotoHelp && !returnIssuePhotoHelp && !tripIssueReview && !tripIssueSend && !returnIssueReview && !returnIssueSend && !returnGeoConfirm && !returnSummary && !returnComplete && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !geoMessage && !tripView.recognized && !adminIssue.recognized && !adminOdometer.recognized && !isMenuEvent(item.Event) {
+	adminClose := parseAdminCloseEvent(item.Event)
+	if !catalog && !card && !previous && !previousPhoto.recognized && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !returnOdometerConfirm && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !postReturnIssueOpen && !postReturnCategoryPrompt && !postReturnPhotoHelp && !postReturnReview && !postReturnSend && !returnIssuePrompt && !tripIssuePhotoHelp && !returnIssuePhotoHelp && !tripIssueReview && !tripIssueSend && !returnIssueReview && !returnIssueSend && !returnGeoConfirm && !returnSummary && !returnComplete && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !geoMessage && !tripView.recognized && !adminIssue.recognized && !adminOdometer.recognized && !adminClose.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -177,6 +178,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	}
 	if adminOdometer.recognized {
 		return p.handleAdminOdometerRequest(ctx, item, actor, maxID, *me.Employee, state, adminOdometer)
+	}
+	if adminClose.recognized {
+		return p.handleAdminCloseRequest(ctx, item, actor, maxID, *me.Employee, state, adminClose)
 	}
 	if postReturnIssueOpen {
 		return p.startPostReturnIssue(ctx, actor, maxID, *me.Employee, postReturnIssueID, postReturnIssueVersion)
@@ -1155,6 +1159,15 @@ func adminMenuRows(rows [][]maxsdk.Button, employee dataapi.Employee, state data
 	}
 	if conversation := state.Conversation; conversation != nil && conversation.Flow == adminIssueResolutionFlow && conversation.Step != "done" && conversation.Step != "cancelled" && conversation.Context.IssueID != nil && conversation.Context.IssueVersion != nil {
 		rows = append(rows, []maxsdk.Button{{Text: "Продолжить решение замечания", Payload: fmt.Sprintf("admin-issue-resume:%s:%d", *conversation.Context.IssueID, *conversation.Context.IssueVersion)}})
+	}
+	if conversation := state.Conversation; adminCloseConversationActive(conversation) {
+		label := "Продолжить admin close"
+		if conversation.Step == "challenge" {
+			label = "Продолжить math подтверждение"
+		}
+		if payload := adminCloseResumePayload(conversation); payload != "" {
+			rows = append(rows, []maxsdk.Button{{Text: label, Payload: payload}})
+		}
 	}
 	return rows
 }
