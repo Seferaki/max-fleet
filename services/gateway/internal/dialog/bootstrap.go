@@ -134,13 +134,14 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	returnFuelID, returnFuelVersion, returnFuel := vehicleActionTarget(item.Event, "return-fuel:")
 	returnFuelSetID, returnFuelSetVersion, returnFuelLevel, returnFuelSet := returnFuelChoiceTarget(item.Event)
 	returnOdometerID, returnOdometerVersion, returnOdometerPrompt := vehicleActionTarget(item.Event, "return-odometer:")
+	returnOdometerConfirmID, returnOdometerConfirmVersion, returnOdometerConfirmValue, returnOdometerConfirm := returnOdometerConfirmTarget(item.Event)
 	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
 	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	geoMessage := returnGeoEvent(item.Event)
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !postReturnIssueOpen && !postReturnCategoryPrompt && !postReturnPhotoHelp && !postReturnReview && !postReturnSend && !returnIssuePrompt && !tripIssuePhotoHelp && !returnIssuePhotoHelp && !tripIssueReview && !tripIssueSend && !returnIssueReview && !returnIssueSend && !returnGeoConfirm && !returnSummary && !returnComplete && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !geoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !returnOdometerConfirm && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !postReturnIssueOpen && !postReturnCategoryPrompt && !postReturnPhotoHelp && !postReturnReview && !postReturnSend && !returnIssuePrompt && !tripIssuePhotoHelp && !returnIssuePhotoHelp && !tripIssueReview && !tripIssueSend && !returnIssueReview && !returnIssueSend && !returnGeoConfirm && !returnSummary && !returnComplete && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !geoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -263,8 +264,11 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		}
 		return p.returnFuel(ctx, item, actor, maxID, *me.Employee, state, inspectionID, version, returnFuelLevel, returnFuelSet)
 	}
+	if returnOdometerConfirm {
+		return p.confirmReturnOdometer(ctx, item, actor, maxID, *me.Employee, state, returnOdometerConfirmID, returnOdometerConfirmVersion, returnOdometerConfirmValue)
+	}
 	if returnOdometerPrompt || odometerCommand && state.Return != nil {
-		return p.returnOdometer(ctx, item, actor, maxID, *me.Employee, state, returnOdometerID, returnOdometerVersion, odometerText, odometerCommand)
+		return p.returnOdometer(ctx, item, actor, maxID, *me.Employee, state, returnOdometerID, returnOdometerVersion, odometerText, odometerCommand, false)
 	}
 	if intent || confirm {
 		vehicleID, version := actionVehicleID, actionVersion
