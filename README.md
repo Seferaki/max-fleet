@@ -2,7 +2,7 @@
 
 Чат-бот MAX для общего корпоративного автопарка: сотрудник выбирает машину, фиксирует состояние до и после поездки, возвращает её с точкой парковки; администратор управляет доступом и разбирает замечания.
 
-**Статус на 30.09.2026:** BE-12 и обязательный UI-01 закрыты как Go/mock gates; Actions [#292](https://github.com/Seferaki/max-fleet/actions/runs/36635818102) прошёл пять jobs. INT-01 опубликована в `codex/integration`: full Compose запускает Go, React-карту, Python, PostgreSQL и S3. Python v1.13 прошёл 43 локальных PostgreSQL-теста и live smoke с 8+8 фото и ручной парковкой. INT-02 локально прошла сквозной Go inbox/dialog → Python/PostgreSQL/S3 сценарий: 15-минутный hold, 8+8 фото, ручная карта с идемпотентным повтором, возврат/история/фото, issue ACL и admin assignment/resolution. Проверяемый код теста готовится к публикации. Gateway `/health/ready` сообщает `dialog flows incomplete`; это синтетический transport без настоящего MAX. QA пропускается по решению владельца и остаётся NOT RUN, не PASS; исходная `codex/data` сохранена на SHA `9eb2211b29e48fce8a6afc410bc986fa98a4988e`. Далее INT-03: сбои, рестарт и конкуренция. Реальный MAX требует H-01.
+**Статус на 30.09.2026:** BE-12 и обязательный UI-01 закрыты как Go/mock gates; Actions [#292](https://github.com/Seferaki/max-fleet/actions/runs/36635818102) прошёл пять jobs. INT-01 опубликована в `codex/integration`: full Compose запускает Go, React-карту, Python, PostgreSQL и S3. Python v1.13 прошёл 43 локальных PostgreSQL-теста и live smoke с 8+8 фото и ручной парковкой. INT-02 закрыта как синтетический integration gate: опубликованный Go inbox/dialog → Python/PostgreSQL/S3 тест `84ad9b51d732787a8e6057577ed7048f209a4015` проверяет 15-минутный hold, 8+8 фото, ручную карту с идемпотентным повтором, возврат/историю/S3-фото, issue ACL и admin assignment/resolution; Go test/vet/build прошли. Это синтетический transport, не настоящий MAX. Gateway `/health/ready` сообщает `dialog flows incomplete`. QA пропускается по решению владельца и остаётся NOT RUN, не PASS; исходная `codex/data` сохранена на SHA `9eb2211b29e48fce8a6afc410bc986fa98a4988e`. Продолжается INT-03: сбои, рестарт и конкуренция. Реальный MAX требует H-01.
 
 ## Начать работу
 
@@ -46,7 +46,7 @@ Mermaid-диаграммы встроены в документы и отобр�
 
 `S-01…S-03: подготовка и контракт → backend с mock / Python и БД / QA отдельно → INT-01…INT-06: соединение, проверка, демонстрация`.
 
-Текущая задача — INT-02: пройти полный синтетический диалог Go → Python → PostgreSQL/S3. Go не подключается к PostgreSQL напрямую. Проверки Go/mock и синтетический Compose не доказывают готовность реального MAX. Для локальной проверки используйте инструкции [OPERATIONS](docs/OPERATIONS.md); проверки Go/mock — `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` при наличии Go 1.27.1, Python 3.12, Node 22.22.2 и Docker Engine.
+Текущая задача — INT-03: восстановление после ошибок, рестарты и конкурентные команды на Go → Python → PostgreSQL/S3. Go не подключается к PostgreSQL напрямую. Синтетические проверки не доказывают готовность реального MAX. Для локальной проверки используйте инструкции [OPERATIONS](docs/OPERATIONS.md); проверки Go/mock — `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` при наличии Go 1.27.1, Python 3.12, Node 22.22.2 и Docker Engine.
 
 ## Секреты
 
