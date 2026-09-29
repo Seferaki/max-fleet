@@ -153,9 +153,8 @@ func (t *SDKTransport) send(ctx context.Context, userID int64, text string, keyb
 func safeSendFailureCode(err error) string {
 	var providerError *maxbot.Error
 	if errors.As(err, &providerError) {
-		code := strings.ToLower(strings.ReplaceAll(providerError.Code, ".", "_"))
-		providerCode := strings.ToLower(strings.ReplaceAll(providerError.Err, ".", "_"))
-		combined := code + "_" + providerCode
+		combined := strings.ToLower(strings.NewReplacer(".", "_", "-", "_").Replace(providerError.Code + " " + providerError.Err))
+		combined = strings.Join(strings.Fields(combined), "_")
 		if strings.Contains(combined, "rate") || strings.Contains(combined, "too_many") || strings.Contains(combined, "429") {
 			return "MAX_RATE_LIMIT"
 		}

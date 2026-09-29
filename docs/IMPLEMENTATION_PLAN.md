@@ -217,11 +217,11 @@
 
 Зависимости: BE-09. Покрытие: AC-12, AC-20, AC-24.
 
-1. Claim/ack/retry delivery; lease, backoff, 429, dead recipients.
+1. Claim/ack/retry delivery через отдельный WorkerBearer; стабильные ключи переходов привязаны к delivery и текущему lease. Для временных ошибок — exponential backoff; ошибку лимита MAX повторять, после 5 попыток переводить delivery в dead. Невалидный адресат и неподдерживаемый event сразу dead-letter.
 2. Уведомления начала/возврата/issue/блокировок/admin close/access grant/change только из outbox: все администраторы получают событие; при admin close дополнительно уведомляется водитель, при выдаче или изменении доступа — затронутый сотрудник.
-3. После restart worker продолжает pending; /menu восстанавливает flow по API.
-4. Проверить падение после domain commit и после MAX send до ack; честно ограничить гарантию доставки.
-5. Логи request_id/operation/error_code, метрики queue age/retries/ошибок, без PII/secret.
+3. После restart worker продолжает pending/retry из data service; /menu восстанавливает flow по API.
+4. Проверить падение после domain commit и после MAX send до ack; при неопределённом результате MAX повтор может дать дубль, поэтому фиксировать только гарантию at-least-once.
+5. Логи request_id/operation/error_code, метрики возраста очереди/retries/ошибок, без actor ID, текста причины, PII или secret.
 
 Готово: воспроизводимые fault-сценарии с mock transport; trip не откатывается при ошибке уведомления.
 

@@ -200,7 +200,7 @@ func TestSDKTransportResultAndError(t *testing.T) {
 }
 
 func TestSDKTransportMarksProviderRateLimitWithoutExposingResponseText(t *testing.T) {
-	sdk := &stubMessages{err: &maxbot.Error{Code: "too.many.requests", Err: "provider message", Message: "sensitive response detail"}}
+	sdk := &stubMessages{err: &maxbot.Error{Code: "too many requests", Err: "provider message", Message: "sensitive response detail"}}
 	transport := &SDKTransport{messages: sdk}
 	if _, err := transport.SendText(context.Background(), 123, "Уведомление"); err == nil {
 		t.Fatal("accepted provider error")

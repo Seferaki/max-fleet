@@ -21,6 +21,7 @@ import (
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxpoll"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxsdk"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxwebhook"
+	"github.com/Seferaki/max-fleet/services/gateway/internal/notificationworker"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/skeleton"
 )
 
@@ -58,25 +59,41 @@ func main() {
 	default:
 		log.Fatal("gateway: MAX_UPDATE_MODE must be disabled, webhook or polling")
 	}
-	inbox, enabled, err := inboxWorkerSetup()
+	inbox, inboxEnabled, err := inboxWorkerSetup()
+	if err != nil {
+		log.Fatal(err)
+	}
+	notifier, notificationsEnabled, err := notificationWorkerSetup()
 	if err != nil {
 		log.Fatal(err)
 	}
 	workerCtx, stopWorker := context.WithCancel(ctx)
-	var workerDone chan struct{}
-	if enabled {
-		workerDone = make(chan struct{})
+	var inboxDone, notificationsDone chan struct{}
+	if inboxEnabled {
+		inboxDone = make(chan struct{})
 		go func() {
-			defer close(workerDone)
+			defer close(inboxDone)
 			if err := inbox.Run(workerCtx, 5*time.Second, 10, observeInbox); err != nil {
 				log.Print("gateway: inbox worker stopped with configuration error")
 			}
 		}()
 	}
+	if notificationsEnabled {
+		notificationsDone = make(chan struct{})
+		go func() {
+			defer close(notificationsDone)
+			if err := notifier.Run(workerCtx, 5*time.Second, 10, observeNotifications); err != nil {
+				log.Print("gateway: notification worker stopped with configuration error")
+			}
+		}()
+	}
 	serveErr := skeleton.Serve(ctx, addr, "gateway", handler)
 	stopWorker()
-	if workerDone != nil {
-		<-workerDone
+	if inboxDone != nil {
+		<-inboxDone
+	}
+	if notificationsDone != nil {
+		<-notificationsDone
 	}
 	if serveErr != nil {
 		log.Fatal(serveErr)
@@ -326,6 +343,42 @@ func observeInbox(result inboxworker.Result, err error) {
 	}
 	if result.Claimed > 0 {
 		log.Printf("gateway: inbox claimed=%d acked=%d deferred=%d retried=%d dead=%d", result.Claimed, result.Acked, result.Deferred, result.Retried, result.Dead)
+	}
+}
+
+func notificationWorkerSetup() (notificationworker.Worker, bool, error) {
+	if os.Getenv("MAX_BOT_TOKEN_FILE") == "" {
+		if strings.EqualFold(os.Getenv("APP_ENV"), "production") {
+			return notificationworker.Worker{}, false, errors.New("gateway: MAX_BOT_TOKEN_FILE required in production")
+		}
+		return notificationworker.Worker{}, false, nil
+	}
+	token, err := readSecretFile("MAX_BOT_TOKEN_FILE")
+	if err != nil {
+		return notificationworker.Worker{}, false, err
+	}
+	store, err := workerClient()
+	if err != nil {
+		return notificationworker.Worker{}, false, err
+	}
+	api, err := maxsdk.New(token)
+	if err != nil {
+		return notificationworker.Worker{}, false, errors.New("gateway: invalid MAX SDK configuration")
+	}
+	sender, err := maxsdk.NewTransport(api)
+	if err != nil {
+		return notificationworker.Worker{}, false, err
+	}
+	return notificationworker.Worker{ID: "gateway-notification-worker", Store: store, Sender: sender, Now: time.Now}, true, nil
+}
+
+func observeNotifications(result notificationworker.Result, err error) {
+	if err != nil {
+		log.Print("gateway: notification worker cycle failed; retrying")
+		return
+	}
+	if result.Claimed > 0 {
+		log.Printf("gateway: notifications claimed=%d sent=%d retried=%d dead=%d", result.Claimed, result.Sent, result.Retried, result.Dead)
 	}
 }
 
