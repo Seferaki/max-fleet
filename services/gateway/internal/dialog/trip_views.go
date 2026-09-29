@@ -196,6 +196,7 @@ func (p Bootstrap) showTripList(ctx context.Context, actor string, maxID int64, 
 func (p Bootstrap) showTripDetail(ctx context.Context, actor string, maxID int64, employee dataapi.Employee, trip dataapi.Trip) error {
 	rows := [][]maxsdk.Button{}
 	if trip.EmployeeID == employee.ID && trip.Status == "active" {
+		rows = append(rows, []maxsdk.Button{{Text: "Сообщить проблему", Payload: fmt.Sprintf("trip-issue:%s:%d", trip.ID, trip.Version)}})
 		rows = append(rows, []maxsdk.Button{{Text: "Завершить поездку", Payload: fmt.Sprintf("return-intent:%s:%d", trip.ID, trip.Version)}})
 	}
 	if _, ok := visibleTripInspection(trip, "before"); ok {
