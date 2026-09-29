@@ -1,5 +1,23 @@
-:root { font-family: system-ui, sans-serif; color: #17212b; background: #f7f9fb; }
+:root { font-family: system-ui, sans-serif; color: #17212b; background: #f4f7fa; }
+* { box-sizing: border-box; }
 body { margin: 0; }
-main { max-width: 38rem; padding: 1.5rem; margin: 2rem auto; }
-h1 { font-size: 1.5rem; }
-p { line-height: 1.5; }
+.screen { max-width: 850px; margin: 0 auto; padding: 20px 16px 32px; }
+.heading { margin-bottom: 16px; }
+.eyebrow { color: #4b6580; font-size: 13px; font-weight: 600; }
+h1 { margin: 6px 0 8px; font-size: clamp(24px, 5vw, 34px); line-height: 1.2; }
+h2 { margin: 0 0 14px; font-size: 19px; }
+p { line-height: 1.45; }
+.heading p { margin: 0; color: #425466; }
+.notice { padding: 12px 14px; border-radius: 12px; background: #fff2d6; color: #5d4400; }
+.notice.success { background: #e4f6e9; color: #20542e; }
+.map-section { background: white; border: 1px solid #d9e2ea; border-radius: 16px; overflow: hidden; margin: 16px 0; }
+.map-canvas { width: 100%; height: min(52vh, 440px); min-height: 300px; }
+.tile-warning { margin: 0; padding: 10px 14px; background: #fff2d6; }
+.form-section { display: grid; gap: 14px; padding: 18px; background: white; border: 1px solid #d9e2ea; border-radius: 16px; }
+.coordinates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+label { display: grid; gap: 6px; font-weight: 600; font-size: 14px; }
+input { width: 100%; min-height: 44px; padding: 9px 11px; border: 1px solid #9aaebe; border-radius: 9px; font: inherit; background: #fff; color: #17212b; }
+input:focus-visible { outline: 3px solid #3188e5; outline-offset: 1px; }
+.landmark { margin-top: 3px; }
+footer { color: #556878; margin-top: 18px; font-size: 13px; line-height: 1.5; }
+@media (max-width: 540px) { .coordinates { grid-template-columns: 1fr; } .screen { padding: 16px 12px 28px; } }

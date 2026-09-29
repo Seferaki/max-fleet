@@ -48,6 +48,7 @@ HUMAN_REQUIRED: H-01
 - Webhook требует HTTPS с доверенным сертификатом. Зарегистрировать URL /webhooks/max и secret, проверять X-Max-Bot-Api-Secret. MAX ожидает HTTP 200 в течение 30 секунд; наш целевой ответ — после быстрой durable записи inbox, до тяжёлого скачивания фото. Неуспешная durable запись → 503. [Контракт webhook](https://dev.max.ru/docs-api/methods/POST/subscriptions).
 - Перед сменой режима прочитать текущие subscriptions. Не удалять подписки неизвестного назначения. Идемпотентно привести только конфигурацию этого проекта к выбранному режиму.
 - Polling marker переносит границу прочитанных событий; сохранить пачку в inbox до продвижения marker. При рестарте продолжить от сохранённого значения; один poller на token. [GET updates](https://dev.max.ru/docs-api/methods/GET/updates).
+- Кнопка карты использует `https://max.ru/<MAX_BOT_NAME>?startapp=<return_id>` для текущего возврата. После регистрации mini-app человек локально указывает имя одобренного бота без `@`; ID возврата в ссылке не даёт доступа без подписанного initData. Открытие deep link внутри настоящего MAX проверяется на INT-04. [Диплинки mini-app](https://dev.max.ru/docs/webapps/introduction).
 - Mini-app подключается к боту через HTTPS URL, например PUBLIC_BASE_URL/map. Агент подготавливает URL и показывает человеку, какое поле настроить, если UI аккаунта недоступен. [Подключение mini-app](https://dev.max.ru/docs/webapps/introduction).
 - MAX Bridge raw initData проверяется сервером; подпись, время и actor, никаких доверенных initDataUnsafe. [Валидация](https://dev.max.ru/docs/webapps/validation), [MAX Bridge](https://dev.max.ru/docs/webapps/bridge).
 - Настроить outbound rate limiter по актуальным ограничениям MAX; учитывать 429/Retry-After, backoff и bounded retries. Потеря отправки не откатывает trip.
@@ -60,7 +61,7 @@ HUMAN_REQUIRED: H-01
 |---|---|---|
 | APP_ENV, LOG_LEVEL, COMPANY_TIMEZONE | Go/Python | Агент; timezone подтверждает владелец |
 | DATA_API_BASE_URL, CONTRACT_VERSION | Go | Агент; mock до INT, data-api после |
-| MAX_BOT_TOKEN_FILE, MAX_WEBHOOK_SECRET_FILE | Только Go | Bot token — человек локально; secret — агент криптографически |
+| MAX_BOT_TOKEN_FILE, MAX_WEBHOOK_SECRET_FILE, MAX_BOT_NAME | Только Go | Bot token и имя одобренного бота — человек локально; secret — агент криптографически. Имя без `@` используется только для deep link карты |
 | MAX_PHOTO_HOSTS | Только Go | Агент после проверки доменов CDN MAX; точные HTTPS hostname через запятую, без URL, query и токенов |
 | DATA_API_TOKEN_FILE, WORKER_API_TOKEN_FILE | Go/Python | Агент; отдельные значения для ролей |
 | DATABASE_URL_FILE / MIGRATION_DATABASE_URL_FILE / POSTGRES_PASSWORD_FILE | Только Python/миграции/PostgreSQL | Агент; разные runtime/migration роли |

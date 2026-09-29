@@ -85,6 +85,7 @@ def main():
 
     for filename, schema_name in (
         ("state-empty.json", "CurrentStateResponse"),
+        ("issue-draft-state.json", "CurrentStateResponse"),
         ("hold-expired.json", "ErrorResponse"),
         ("previous-inspection.json", "InspectionResponse"),
         ("inbox-photo.json", "NormalizedEvent"),
@@ -118,6 +119,16 @@ def main():
     if scenarios["contract_version"] != data["info"]["version"]:
         raise RuntimeError("Версия сценариев не совпадает с OpenAPI")
     photo_read = load_json("examples/trip-photo-read.json")
+    post_return = load_json("examples/post-return-issue.json")
+    if post_return["contract_version"] != data["info"]["version"]:
+        raise RuntimeError("Версия post-return примера не совпадает с контрактом")
+    jsonschema.Draft202012Validator(schema_for(data, "IssueCreateCommand"),
+                                     format_checker=jsonschema.FormatChecker()).validate(post_return["request"])
+    if (post_return["request"]["payload"]["trip_id"] != post_return["completed_trip_id"]
+            or post_return["request"]["payload"]["inspection_id"] is not None
+            or not all(post_return["expected"].values())
+            or post_return["expected"]["issue_stage"] != "post_return"):
+        raise RuntimeError("Неверная семантика post-return примера")
     route = "/internal/v1/trips/{id}/inspection-photos/{phase}/{slot}"
     if route not in data["paths"] or photo_read["contract_version"] != data["info"]["version"]:
         raise RuntimeError("Пример чтения фото не совпадает с контрактом")
@@ -141,7 +152,7 @@ def main():
             raise RuntimeError(f"Неизвестный error code: {case['id']}")
 
     print(f"OK: 2 OpenAPI, {len(data['paths'])} data routes, "
-          f"{len(commands)} command examples, 7 other examples, {len(cases)} scenarios")
+          f"{len(commands)} command examples, 9 other examples, {len(cases)} scenarios")
 
 
 if __name__ == "__main__":

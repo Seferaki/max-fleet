@@ -22,6 +22,7 @@ type Reader interface {
 	Vehicles(context.Context, string, dataapi.VehicleFilter) (dataapi.Page[dataapi.Vehicle], error)
 	Vehicle(context.Context, string, string) (dataapi.Vehicle, error)
 	PreviousInspection(context.Context, string, string) (dataapi.Inspection, error)
+	Issue(context.Context, string, string) (dataapi.Issue, error)
 }
 
 type CheckoutCommander interface {
@@ -31,6 +32,16 @@ type CheckoutCommander interface {
 	ChallengeAnswer(context.Context, string, string, int64, int, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	CheckoutAcceptRules(context.Context, string, string, int64, string, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	InspectionConfirmPhotos(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	InspectionUpdate(context.Context, string, string, int64, dataapi.InspectionUpdateInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	CheckoutSetNoNewIssues(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	CheckoutStart(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	TripBeginReturn(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	ChallengeCreateReturn(context.Context, string, string, int64, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	ReturnCancel(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	ReturnSetLocation(context.Context, string, string, int64, string, *dataapi.InboxLease, dataapi.LocationInput) (dataapi.CommandResult, error)
+	ReturnComplete(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	ConversationSave(context.Context, string, string, int64, dataapi.ConversationSaveInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	IssueCreate(context.Context, string, string, int64, dataapi.IssueCreateInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 }
 
 type PhotoFetcher interface {
@@ -39,6 +50,7 @@ type PhotoFetcher interface {
 
 type PhotoStore interface {
 	UploadInspectionPhoto(context.Context, string, dataapi.InspectionPhotoInput) (dataapi.PhotoUploadResult, error)
+	StageIssueAsset(context.Context, string, dataapi.IssueStageInput) (dataapi.StagedAsset, error)
 }
 
 // Bootstrap handles implemented menu, catalog and checkout entry events. Other
@@ -50,9 +62,20 @@ type Bootstrap struct {
 	Photos     PhotoFetcher
 	PhotoStore PhotoStore
 	Location   *time.Location
+	MapBotName string
 }
 
 var vehicleIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var mapBotNamePattern = regexp.MustCompile(`^[A-Za-z0-9_]{3,80}$`)
+
+func ValidMapBotName(name string) bool { return mapBotNamePattern.MatchString(name) }
+
+func mapLaunchURL(botName, returnID string) string {
+	if !ValidMapBotName(botName) || !vehicleIDPattern.MatchString(returnID) {
+		return ""
+	}
+	return "https://max.ru/" + botName + "?startapp=" + returnID
+}
 
 func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) error {
 	pageNumber, catalog := catalogPage(item.Event)
@@ -67,12 +90,52 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	rulesID, rulesVersion, rules := vehicleActionTarget(item.Event, "rules:")
 	acceptCheckoutID, acceptVersion, acceptedRulesID, acceptRules := acceptRulesTarget(item.Event)
 	photoCheckoutID, photoVersion, photos := vehicleActionTarget(item.Event, "photos:")
+	fuelInspectionID, fuelVersion, fuel := vehicleActionTarget(item.Event, "fuel:")
+	setFuelID, setFuelVersion, fuelLevel, setFuel := fuelChoiceTarget(item.Event)
+	odometerInspectionID, odometerVersion, odometerPrompt := vehicleActionTarget(item.Event, "odometer:")
+	odometerText, odometerCommand := odometerInput(item.Event)
+	issueQuestionID, issueQuestionVersion, issueQuestion := vehicleActionTarget(item.Event, "new-issues:")
+	issueChoiceID, issueChoiceVersion, issueChoice, issueAnswer := issueAnswerTarget(item.Event)
+	issueDraftID, issueDraftVersion, issueDraftPrompt := vehicleActionTarget(item.Event, "issue-draft:")
+	issueKindID, issueKindVersion, issueKind, issueKindPrompt := issueCategoryTarget(item.Event)
+	issueDraftText, issueDraftCommand := issueDraftInput(item.Event)
+	tripIssueID, tripIssueVersion, tripIssueCategory, tripIssuePrompt := tripIssueTarget(item.Event)
+	returnIssueID, returnIssueVersion, returnIssueCategory, returnIssuePrompt := returnIssueTarget(item.Event)
+	returnIssuePhotoID, returnIssuePhotoVersion, returnIssuePhotoHelp := vehicleActionTarget(item.Event, "return-issue-photos:")
+	returnIssueReviewID, returnIssueReviewVersion, returnIssueReview := vehicleActionTarget(item.Event, "return-issue-review:")
+	returnIssueSubmitID, returnIssueSubmitVersion, returnIssueSend := vehicleActionTarget(item.Event, "return-issue-submit:")
+	returnGeoID, returnGeoVersion, returnGeoConfirm := vehicleActionTarget(item.Event, "return-geo-confirm:")
+	returnSummaryID, returnSummaryVersion, returnSummary := vehicleActionTarget(item.Event, "return-summary:")
+	returnCompleteID, returnCompleteVersion, returnComplete := vehicleActionTarget(item.Event, "return-complete:")
+	tripIssuePhotoID, tripIssuePhotoVersion, tripIssuePhotoHelp := vehicleActionTarget(item.Event, "trip-issue-photos:")
+	tripIssueReviewID, tripIssueReviewVersion, tripIssueReview := vehicleActionTarget(item.Event, "trip-issue-review:")
+	tripIssueSubmitID, tripIssueSubmitVersion, tripIssueSend := vehicleActionTarget(item.Event, "trip-issue-submit:")
+	issuePhotoID, issuePhotoVersion, issuePhotoHelp := vehicleActionTarget(item.Event, "issue-photos:")
+	issueReviewID, issueReviewVersion, issueReview := vehicleActionTarget(item.Event, "issue-review:")
+	issueSubmitID, issueSubmitVersion, issueSubmit := vehicleActionTarget(item.Event, "issue-submit:")
+	summaryID, summaryVersion, summary := vehicleActionTarget(item.Event, "checkout-summary:")
+	startID, startVersion, start := vehicleActionTarget(item.Event, "checkout-start:")
+	returnIntentID, returnIntentVersion, returnIntent := vehicleActionTarget(item.Event, "return-intent:")
+	returnConfirmID, returnConfirmVersion, returnConfirm := vehicleActionTarget(item.Event, "return-confirm:")
+	returnMathID, returnMathVersion, returnMath := vehicleActionTarget(item.Event, "return-math:")
+	returnCancelIntentID, returnCancelIntentVersion, returnCancelIntent := vehicleActionTarget(item.Event, "return-cancel-intent:")
+	returnCancelID, returnCancelVersion, returnCancel := vehicleActionTarget(item.Event, "return-cancel:")
+	returnCheckID, returnCheckVersion, returnCheck := vehicleActionTarget(item.Event, "return-check:")
+	returnSetID, returnSetVersion, returnField, returnValue, returnSet := returnCheckAnswerTarget(item.Event)
+	returnPhotosID, returnPhotosVersion, returnPhotos := vehicleActionTarget(item.Event, "return-photos:")
+	returnConfirmPhotosID, returnConfirmPhotosVersion, returnConfirmPhotos := vehicleActionTarget(item.Event, "return-confirm-photos:")
+	returnReplaceID, returnReplaceVersion, returnReplace := vehicleActionTarget(item.Event, "return-replace:")
+	returnReplaceSlotID, returnReplaceSlotVersion, returnReplaceSlotNumber, returnReplaceSlot := returnReplacementSlotTarget(item.Event)
+	returnFuelID, returnFuelVersion, returnFuel := vehicleActionTarget(item.Event, "return-fuel:")
+	returnFuelSetID, returnFuelSetVersion, returnFuelLevel, returnFuelSet := returnFuelChoiceTarget(item.Event)
+	returnOdometerID, returnOdometerVersion, returnOdometerPrompt := vehicleActionTarget(item.Event, "return-odometer:")
 	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
 	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
+	geoMessage := returnGeoEvent(item.Event)
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !returnIssuePrompt && !tripIssuePhotoHelp && !returnIssuePhotoHelp && !tripIssueReview && !tripIssueSend && !returnIssueReview && !returnIssueSend && !returnGeoConfirm && !returnSummary && !returnComplete && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !geoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -100,8 +163,84 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	if err != nil {
 		return err
 	}
+	if returnIssuePrompt || issueDraftCommand && state.Return != nil && state.Trip != nil && state.Trip.Status == "returning" {
+		return p.returnIssueDraft(ctx, item, actor, maxID, *me.Employee, state, returnIssueID, returnIssueVersion, returnIssueCategory, issueDraftText, issueDraftCommand)
+	}
+	if tripIssuePrompt || issueDraftCommand && state.Trip != nil && state.Trip.Status == "active" {
+		return p.tripIssueDraft(ctx, item, actor, maxID, *me.Employee, state, tripIssueID, tripIssueVersion, tripIssueCategory, issueDraftText, issueDraftCommand)
+	}
+	if tripIssueReview || tripIssueSend {
+		tripID, version := tripIssueReviewID, tripIssueReviewVersion
+		if tripIssueSend {
+			tripID, version = tripIssueSubmitID, tripIssueSubmitVersion
+		}
+		return p.tripIssueSubmit(ctx, item, actor, maxID, *me.Employee, state, tripID, version, tripIssueSend)
+	}
+	if returnIssueReview || returnIssueSend {
+		inspectionID, version := returnIssueReviewID, returnIssueReviewVersion
+		if returnIssueSend {
+			inspectionID, version = returnIssueSubmitID, returnIssueSubmitVersion
+		}
+		return p.returnIssueSubmit(ctx, item, actor, maxID, *me.Employee, state, inspectionID, version, returnIssueSend)
+	}
+	if geoMessage {
+		return p.returnGeoDraft(ctx, item, actor, maxID, *me.Employee, state)
+	}
+	if returnGeoConfirm {
+		return p.returnGeoConfirm(ctx, item, actor, maxID, *me.Employee, state, returnGeoID, returnGeoVersion)
+	}
+	if returnSummary || returnComplete {
+		returnID, version := returnSummaryID, returnSummaryVersion
+		if returnComplete {
+			returnID, version = returnCompleteID, returnCompleteVersion
+		}
+		return p.returnSummaryComplete(ctx, item, actor, maxID, *me.Employee, state, returnID, version, returnComplete)
+	}
 	if tripView.recognized {
 		return p.showTripView(ctx, actor, maxID, *me.Employee, tripView)
+	}
+	if returnIntent || returnConfirm {
+		tripID, version := returnIntentID, returnIntentVersion
+		if returnConfirm {
+			tripID, version = returnConfirmID, returnConfirmVersion
+		}
+		return p.beginReturn(ctx, item, actor, maxID, *me.Employee, state, tripID, version, returnConfirm)
+	}
+	if returnCancelIntent || returnCancel {
+		returnID, version := returnCancelIntentID, returnCancelIntentVersion
+		if returnCancel {
+			returnID, version = returnCancelID, returnCancelVersion
+		}
+		return p.cancelReturn(ctx, item, actor, maxID, *me.Employee, state, returnID, version, returnCancel)
+	}
+	if returnCheck || returnSet {
+		inspectionID, version := returnCheckID, returnCheckVersion
+		if returnSet {
+			inspectionID, version = returnSetID, returnSetVersion
+		}
+		return p.returnChecklist(ctx, item, actor, maxID, *me.Employee, state, inspectionID, version, returnField, returnValue, returnSet)
+	}
+	if returnPhotos {
+		return p.returnPhotos(ctx, maxID, *me.Employee, state, returnPhotosID, returnPhotosVersion)
+	}
+	if returnConfirmPhotos {
+		return p.confirmReturnPhotos(ctx, item, actor, maxID, *me.Employee, state, returnConfirmPhotosID, returnConfirmPhotosVersion)
+	}
+	if returnReplace {
+		return p.chooseReturnReplacement(ctx, maxID, *me.Employee, state, returnReplaceID, returnReplaceVersion)
+	}
+	if returnReplaceSlot {
+		return p.requestReturnReplacement(ctx, maxID, *me.Employee, state, returnReplaceSlotID, returnReplaceSlotVersion, returnReplaceSlotNumber)
+	}
+	if returnFuel || returnFuelSet {
+		inspectionID, version := returnFuelID, returnFuelVersion
+		if returnFuelSet {
+			inspectionID, version = returnFuelSetID, returnFuelSetVersion
+		}
+		return p.returnFuel(ctx, item, actor, maxID, *me.Employee, state, inspectionID, version, returnFuelLevel, returnFuelSet)
+	}
+	if returnOdometerPrompt || odometerCommand && state.Return != nil {
+		return p.returnOdometer(ctx, item, actor, maxID, *me.Employee, state, returnOdometerID, returnOdometerVersion, odometerText, odometerCommand)
 	}
 	if intent || confirm {
 		vehicleID, version := actionVehicleID, actionVersion
@@ -120,7 +259,13 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	if math {
 		return p.createMath(ctx, item, actor, maxID, state, mathCheckoutID, mathVersion)
 	}
+	if returnMath {
+		return p.createReturnMath(ctx, item, actor, maxID, *me.Employee, state, returnMathID, returnMathVersion)
+	}
 	if answer {
+		if state.Return != nil && state.Trip != nil {
+			return p.answerReturnMath(ctx, item, actor, maxID, *me.Employee, state, challengeID, challengeVersion, selectedOption)
+		}
 		return p.answerMath(ctx, item, actor, maxID, state, challengeID, challengeVersion, selectedOption)
 	}
 	if rules || acceptRules {
@@ -133,6 +278,53 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	if photos {
 		return p.checkoutPhotos(ctx, maxID, state, photoCheckoutID, photoVersion)
 	}
+	if fuel || setFuel {
+		inspectionID, version := fuelInspectionID, fuelVersion
+		if setFuel {
+			inspectionID, version = setFuelID, setFuelVersion
+		}
+		return p.checkoutFuel(ctx, item, actor, maxID, state, inspectionID, version, fuelLevel, setFuel)
+	}
+	if odometerPrompt || odometerCommand {
+		return p.checkoutOdometer(ctx, item, actor, maxID, state, odometerInspectionID, odometerVersion, odometerText, odometerCommand)
+	}
+	if issueQuestion || issueAnswer {
+		inspectionID, version := issueQuestionID, issueQuestionVersion
+		if issueAnswer {
+			inspectionID, version = issueChoiceID, issueChoiceVersion
+		}
+		return p.checkoutIssueAnswer(ctx, item, actor, maxID, state, inspectionID, version, issueChoice, issueAnswer)
+	}
+	if issueDraftPrompt || issueKindPrompt || issueDraftCommand {
+		inspectionID, version := issueDraftID, issueDraftVersion
+		if issueKindPrompt {
+			inspectionID, version = issueKindID, issueKindVersion
+		}
+		return p.checkoutIssueDraft(ctx, item, actor, maxID, *me.Employee, state, inspectionID, version, issueKind, issueDraftText, issueDraftCommand)
+	}
+	if issuePhotoHelp {
+		return p.issuePhotoHelp(ctx, maxID, state, issuePhotoID, issuePhotoVersion)
+	}
+	if tripIssuePhotoHelp {
+		return p.issuePhotoHelp(ctx, maxID, state, tripIssuePhotoID, tripIssuePhotoVersion)
+	}
+	if returnIssuePhotoHelp {
+		return p.issuePhotoHelp(ctx, maxID, state, returnIssuePhotoID, returnIssuePhotoVersion)
+	}
+	if issueReview || issueSubmit {
+		inspectionID, version := issueReviewID, issueReviewVersion
+		if issueSubmit {
+			inspectionID, version = issueSubmitID, issueSubmitVersion
+		}
+		return p.checkoutIssueSubmit(ctx, item, actor, maxID, *me.Employee, state, inspectionID, version, issueSubmit)
+	}
+	if summary || start {
+		checkoutID, version := summaryID, summaryVersion
+		if start {
+			checkoutID, version = startID, startVersion
+		}
+		return p.checkoutSummaryStart(ctx, item, actor, maxID, *me.Employee, state, checkoutID, version, start)
+	}
 	if confirmPhotos {
 		return p.confirmCheckoutPhotos(ctx, item, actor, maxID, state, confirmInspectionID, confirmInspectionVersion)
 	}
@@ -143,6 +335,12 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		return p.requestReplacement(ctx, maxID, state, replaceSlotCheckoutID, replaceSlotVersion, selectedSlot)
 	}
 	if photoMessage {
+		if state.Conversation != nil && (state.Conversation.Flow == "issue_before" || state.Conversation.Flow == "issue_during" || state.Conversation.Flow == "issue_after") && state.Conversation.Step == "collect_photos" {
+			return p.issuePhotoStage(ctx, item, actor, maxID, state)
+		}
+		if state.Return != nil && state.Trip != nil && state.Trip.Status == "returning" {
+			return p.returnPhotoUpload(ctx, item, actor, maxID, *me.Employee, state)
+		}
 		return p.checkoutPhotoUpload(ctx, item, actor, maxID, state)
 	}
 	if catalog {
@@ -204,9 +402,36 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		message += "\nHold до: " + formatMoment(state.Checkout.ExpiresAt, p.Location)
 		if state.Checkout.Status == "holding" && state.Checkout.Step == "inspection" {
 			message += "\n" + photoProgress(state.Checkout.Inspection)
+			if draft, ok := issuePhotoDraft(state); ok {
+				message += fmt.Sprintf("\nДополнительные фото замечания: %d/3 (черновик).", len(draft.Context.AssetIDs))
+			}
 		}
 	}
-	return p.sendView(ctx, maxID, message, menuRows(*me.Employee, state))
+	if state.Conversation != nil && state.Conversation.Flow == "issue_before" && state.Conversation.Step == "done" && state.Conversation.Context.IssueID != nil {
+		message += "\nЗамечание сохранено. Машина недоступна до проверки ответственного."
+	}
+	if state.Conversation != nil && state.Conversation.Flow == "issue_during" {
+		if state.Conversation.Step == "done" && state.Conversation.Context.IssueID != nil {
+			message += "\nПроблема во время поездки сохранена; следующая выдача заблокирована до проверки."
+		} else if draft, ok := issuePhotoDraft(state); ok {
+			message += fmt.Sprintf("\nПроблема во время поездки: черновик, %d/3 дополнительных фото; ещё не отправлена.", len(draft.Context.AssetIDs))
+		}
+	}
+	if state.Conversation != nil && state.Conversation.Flow == "issue_after" && state.Return != nil && state.Conversation.Context.ReturnID != nil && *state.Conversation.Context.ReturnID == state.Return.ID {
+		if state.Conversation.Step == "done" && state.Conversation.Context.IssueID != nil {
+			message += "\nЗамечание при возврате сохранено."
+		} else if state.Conversation.Step == "collect_photos" {
+			message += fmt.Sprintf("\nПроблема при возврате: черновик, %d/3 дополнительных фото; ещё не отправлена.", len(state.Conversation.Context.AssetIDs))
+		}
+	}
+	if state.Return != nil && state.Return.Step == "checklist" {
+		if draft, _, _, ok := returnLocationConversation(state); ok && draft.Step == "confirm" {
+			message += "\nГеопозиция получена, но место парковки ещё не подтверждено."
+		} else if state.Return.ParkingLocation == nil {
+			message += "\nОтправьте геопозицию для подтверждения места парковки."
+		}
+	}
+	return p.sendView(ctx, maxID, message, menuRows(*me.Employee, state, p.MapBotName))
 }
 
 func answerTarget(event dataapi.NormalizedEvent) (string, int64, int, bool) {
@@ -738,7 +963,7 @@ func isMenuEvent(event dataapi.NormalizedEvent) bool {
 	return command == "/start" || command == "/menu"
 }
 
-func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.Button {
+func menuRows(employee dataapi.Employee, state dataapi.CurrentState, mapBotName ...string) [][]maxsdk.Button {
 	if state.Checkout != nil && state.Checkout.Status == "holding" {
 		rows := [][]maxsdk.Button{}
 		if state.Checkout.Step == "math" {
@@ -757,15 +982,91 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 					rows = append(rows, []maxsdk.Button{{Text: "Заменить фотографию", Payload: fmt.Sprintf("replace-photos:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 				}
 			}
+			rows = append(rows, []maxsdk.Button{{Text: "Указать топливо", Payload: fmt.Sprintf("fuel:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)}})
+			rows = append(rows, []maxsdk.Button{{Text: "Указать пробег", Payload: fmt.Sprintf("odometer:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)}})
+			if inspectionReadyForIssueQuestion(state.Checkout.Inspection) {
+				if state.Checkout.Inspection.NewDamage != nil && *state.Checkout.Inspection.NewDamage {
+					rows = append(rows, []maxsdk.Button{{Text: "Описать замечание", Payload: fmt.Sprintf("issue-draft:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)}})
+				} else if state.Checkout.NoNewIssues == nil || !*state.Checkout.NoNewIssues {
+					rows = append(rows, []maxsdk.Button{{Text: "Новые замечания", Payload: fmt.Sprintf("new-issues:%s:%d", state.Checkout.Inspection.ID, state.Checkout.Inspection.Version)}})
+				}
+			}
+			if draft, ok := issuePhotoDraft(state); ok {
+				rows = append(rows, []maxsdk.Button{{Text: "Фото замечания", Payload: fmt.Sprintf("issue-photos:%s:%d", state.Checkout.Inspection.ID, draft.Version)}})
+				rows = append(rows, []maxsdk.Button{{Text: "Проверить замечание", Payload: fmt.Sprintf("issue-review:%s:%d", state.Checkout.Inspection.ID, draft.Version)}})
+			}
+			if readyForCheckoutStart(*state.Checkout) {
+				rows = append(rows, []maxsdk.Button{{Text: "Проверить итог перед выездом", Payload: fmt.Sprintf("checkout-summary:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
+			}
 		}
 		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 	}
 	rows := [][]maxsdk.Button{{{Text: "Мои поездки", Payload: "trip-list:mine:1"}}}
+	if state.Return != nil && state.Trip != nil && state.Trip.Status == "returning" {
+		if state.Return.Step == "math" {
+			rows = append([][]maxsdk.Button{{{Text: "Продолжить возврат · проверка", Payload: fmt.Sprintf("return-math:%s:%d", state.Return.ID, state.Return.Version)}}}, rows...)
+		}
+		if state.Return.Step == "checklist" && nextReturnCheckField(state.Return.Inspection) != "" {
+			rows = append([][]maxsdk.Button{{{Text: "Продолжить анкету возврата", Payload: fmt.Sprintf("return-check:%s:%d", state.Return.Inspection.ID, state.Return.Inspection.Version)}}}, rows...)
+		}
+		if state.Return.Step == "checklist" {
+			inspection := state.Return.Inspection
+			if nextReturnCheckField(inspection) == "" && len(inspection.OccupiedSlots) == 8 && inspection.PhotosConfirmedAt != nil && inspection.FuelLevel != nil && inspection.OdometerKM != nil {
+				rows = append(rows, []maxsdk.Button{{Text: "Проверить итог возврата", Payload: fmt.Sprintf("return-summary:%s:%d", state.Return.ID, state.Return.Version)}})
+			}
+			if draft, _, _, ok := returnLocationConversation(state); ok && draft.Step == "confirm" {
+				rows = append(rows, []maxsdk.Button{{Text: "Подтвердить геопозицию", Payload: fmt.Sprintf("return-geo-confirm:%s:%d", state.Return.ID, draft.Version)}})
+			}
+			draft, issueOpen := issuePhotoDraft(state)
+			if !issueOpen || draft.Flow != "issue_after" {
+				rows = append(rows, []maxsdk.Button{{Text: "Сообщить проблему при возврате", Payload: fmt.Sprintf("return-issue:%s:%d", state.Return.ID, state.Return.Version)}})
+			}
+			if issueOpen && draft.Flow == "issue_after" {
+				rows = append(rows, []maxsdk.Button{{Text: "Фото проблемы при возврате", Payload: fmt.Sprintf("return-issue-photos:%s:%d", state.Return.Inspection.ID, draft.Version)}})
+				rows = append(rows, []maxsdk.Button{{Text: "Проверить проблему при возврате", Payload: fmt.Sprintf("return-issue-review:%s:%d", state.Return.Inspection.ID, draft.Version)}})
+			}
+			rows = append(rows, []maxsdk.Button{{Text: "Фото после поездки", Payload: fmt.Sprintf("return-photos:%s:%d", state.Return.ID, state.Return.Version)}})
+			rows = append(rows, []maxsdk.Button{{Text: "Топливо при возврате", Payload: fmt.Sprintf("return-fuel:%s:%d", state.Return.Inspection.ID, state.Return.Inspection.Version)}})
+			rows = append(rows, []maxsdk.Button{{Text: "Пробег при возврате", Payload: fmt.Sprintf("return-odometer:%s:%d", state.Return.Inspection.ID, state.Return.Inspection.Version)}})
+			if len(state.Return.Inspection.OccupiedSlots) > 0 {
+				rows = append(rows, []maxsdk.Button{{Text: "Заменить фото после", Payload: fmt.Sprintf("return-replace:%s:%d", state.Return.ID, state.Return.Version)}})
+			}
+			if slot, _, ok := photoSlotPhase(state.Return.Inspection, "after"); ok && slot == 0 && state.Return.Inspection.PhotosConfirmedAt == nil {
+				rows = append(rows, []maxsdk.Button{{Text: "Подтвердить фото после", Payload: fmt.Sprintf("return-confirm-photos:%s:%d", state.Return.Inspection.ID, state.Return.Inspection.Version)}})
+			}
+		}
+		tripRow := []maxsdk.Button{{Text: "Текущая поездка", Payload: "trip:" + state.Trip.ID}}
+		if state.Return.Step == "checklist" && state.Return.Status == "draft" && state.Return.IntentConfirmedAt != nil &&
+			state.Return.TripID == state.Trip.ID && state.Trip.EmployeeID == employee.ID && state.Trip.ReturnID != nil && *state.Trip.ReturnID == state.Return.ID && len(mapBotName) > 0 {
+			if mapURL := mapLaunchURL(mapBotName[0], state.Return.ID); mapURL != "" {
+				tripRow = append(tripRow, maxsdk.Button{Text: "Выбрать на карте", URL: mapURL})
+			}
+		}
+		rows = append(rows, tripRow)
+		rows = append(rows, []maxsdk.Button{{Text: "Вернуться к поездке", Payload: fmt.Sprintf("return-cancel-intent:%s:%d", state.Return.ID, state.Return.Version)}})
+	}
+	if state.Trip != nil && state.Trip.Status == "active" {
+		rows = append([][]maxsdk.Button{{{Text: "Текущая поездка", Payload: "trip:" + state.Trip.ID}}}, rows...)
+		if draft, ok := issuePhotoDraft(state); ok && draft.Flow == "issue_during" {
+			rows = append(rows, []maxsdk.Button{{Text: "Фото проблемы", Payload: fmt.Sprintf("trip-issue-photos:%s:%d", state.Trip.ID, draft.Version)}})
+			rows = append(rows, []maxsdk.Button{{Text: "Проверить проблему", Payload: fmt.Sprintf("trip-issue-review:%s:%d", state.Trip.ID, draft.Version)}})
+		}
+	}
 	if employee.CanStartTrip && state.Trip == nil && state.Checkout == nil {
 		rows = append([][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}}, rows...)
 	}
 	if employee.Role == "admin" {
-		rows = append(rows, []maxsdk.Button{{Text: "Поездки автопарка", Payload: "trip-list:admin:1"}})
+		adminButton := maxsdk.Button{Text: "Поездки автопарка", Payload: "trip-list:admin:1"}
+		if len(rows) >= 10 {
+			for index := range rows {
+				if len(rows[index]) == 1 && rows[index][0].Payload == "trip-list:mine:1" {
+					rows[index] = append(rows[index], adminButton)
+					break
+				}
+			}
+		} else {
+			rows = append(rows, []maxsdk.Button{adminButton})
+		}
 	}
 	return rows
 }
@@ -773,7 +1074,11 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 func menuText(employee dataapi.Employee, state dataapi.CurrentState) string {
 	lines := []string{"MAX Fleet"}
 	if state.Trip != nil {
-		lines = append(lines, "Текущая поездка")
+		if state.Return != nil {
+			lines = append(lines, "Продолжить возврат")
+		} else {
+			lines = append(lines, "Текущая поездка")
+		}
 	} else {
 		if state.Checkout != nil {
 			lines = append(lines, "Продолжить оформление")

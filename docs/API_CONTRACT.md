@@ -1,13 +1,13 @@
 # Контракт Go ↔ mock ↔ Python
 
-Контракт v1.1, 28.09.2026. Машинная схема и JSON fixtures: [contracts/data-api.openapi.yaml](../contracts/data-api.openapi.yaml), [внешний API карты](../contracts/map-api.openapi.yaml), [CHANGELOG](../contracts/CHANGELOG.md). Go mock реализуется отдельно от Python; проверка схем и mock не означает проверку Python/MAX. Поведение определяется [PRODUCT_SPEC](../PRODUCT_SPEC.md), модель — [DATABASE](DATABASE.md).
+Контракт v1.3, 29.09.2026. Машинная схема и JSON fixtures: [contracts/data-api.openapi.yaml](../contracts/data-api.openapi.yaml), [внешний API карты](../contracts/map-api.openapi.yaml), [CHANGELOG](../contracts/CHANGELOG.md). Go mock реализуется отдельно от Python; проверка схем и mock не означает проверку Python/MAX. Поведение определяется [PRODUCT_SPEC](../PRODUCT_SPEC.md), модель — [DATABASE](DATABASE.md).
 
 ## 1. Транспорт и доверие
 
 - Внутренняя база URL: `http://data-api:8000/internal/v1`; mock: `http://data-mock:8000/internal/v1`. Go использует один HTTP-клиент; переключается только URL.
 - Authorization: Bearer DATA_API_TOKEN подтверждает сервис Go. Python не публикуется наружу. Между разными хостами нужен TLS; plaintext допустим только в изолированной Docker-сети одного хоста.
 - X-Actor-Max-ID — десятичная строка проверенного MAX ID. Go формирует её после валидации источника; не копирует клиентский заголовок. Python проверяет роль и владение по БД.
-- X-Request-ID — UUID трассировки. X-Contract-Version: 1.1 — версия контракта. Несовместимую версию явно отклонять.
+- X-Request-ID — UUID трассировки. X-Contract-Version: 1.3 — версия контракта. Несовместимую версию явно отклонять.
 - Worker-маршруты требуют отдельный WORKER_API_TOKEN, не пользовательскую авторизацию.
 - Каждая мутация принимает Idempotency-Key; существующий агрегат — expected_version. Тот же логический запрос после timeout получает тот же ключ; изменённый body — новый ключ.
 - Команды из inbox дополнительно передают X-Inbox-Event-ID и X-Inbox-Lease. Python под блокировкой actor проверяет актуальный fencing token до изменения домена; просроченный worker не выполняет новую команду. Запрос карты проходит собственную авторизацию и version check, не притворяется inbox worker.
@@ -81,7 +81,7 @@ Envelope: {"operation":"checkout.create","target_id":"uuid","expected_version":1
 | return.cancel | return / {} | cancelled; trip.active; следующий возврат — новый пустой черновик |
 | return.set_location | return / latitude, longitude, source, landmark?, confirmed=true | Сохранить только draft; source max_geo/manual_map из доверенного канала |
 | return.complete | return / attestation=true | Атомарный trip.completed + snapshot; ключи/закрытие/парковка/8 фото/точка обязательны |
-| issue.create | vehicle / category, description, trip_id?, inspection_id?, asset_ids[0..3] | Проверить один контекст; до выезда отменить hold, в поездке её сохранить; запретить новую выдачу |
+| issue.create | vehicle / category, description, trip_id?, inspection_id?, asset_ids[0..3] | Проверить один контекст; до выезда отменить hold, в поездке её сохранить; после возврата создать отдельное `post_return` замечание; запретить новую выдачу |
 | vehicle.block | vehicle / reason, challenge_id | manual_blocked; отменить hold, сохранить active trip |
 | vehicle.unblock | vehicle / reason, review_completed, challenge_id | Нет нерешённых blocking issues; needs_review снимается явно |
 | vehicle.edit | vehicle / description?, key_instructions?, confirmation=true | Только перечисленные поля и audit |
@@ -95,7 +95,7 @@ Envelope: {"operation":"checkout.create","target_id":"uuid","expected_version":1
 
 После math take/return Python одноразово записывает intent_confirmed_at в оформление; второй пример на итоговой кнопке не требуется. Для admin challenge.answer не выполняет административное действие: итоговая команда потребляет challenge_id в своей транзакции. Hash покрывает операцию, объект, версию и критический payload без самого challenge_id. Изменились причина/ID/права — новый proof.
 
-У photo/inspection/return отдельные версии; сохранение фото не должно ломать оформление из-за собственной промежуточной записи. Перед итоговым start/complete получить актуальный агрегат и показать сводку. Семантику version bump по каждой операции закрепить в OpenAPI fixtures.
+У photo/inspection/return отдельные версии; запись фото увеличивает версию inspection и родительского checkout/return. Перед итоговым start/complete получить актуальный агрегат и показать сводку. `return.complete` возвращает Return; завершённый Trip доступен по GET. Post-return `issue.create` принимает только собственную completed trip с `inspection_id=null`, создаёт отдельное замечание `post_return`, поднимает версию машины, ставит `needs_review` и уведомляет admin. Trip и finalized after-inspection, включая их версии, неизменны. Чужая trip даёт 404. История может показывать связанное замечание отдельной проекцией без автоматического обвинения предыдущего водителя.
 
 ## 5. Фотографии: multipart
 

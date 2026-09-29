@@ -46,7 +46,7 @@ func (s *Server) myTrips(w http.ResponseWriter, r *http.Request, requestID strin
 	items := make([]dataapi.Trip, 0)
 	for _, trip := range s.trips {
 		if trip.EmployeeID == owner {
-			items = append(items, trip)
+			items = append(items, s.projectTrip(trip))
 		}
 	}
 	sort.Slice(items, func(i, j int) bool {

@@ -2,8 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,6 +85,7 @@ func TestPollingModeIsSeparateAndDevelopmentOnly(t *testing.T) {
 	t.Setenv("MAX_INTEGRATION_KEY", "demo-bot")
 	t.Setenv("WORKER_API_TOKEN_FILE", secretFile(t, "worker", "synthetic-worker-token"))
 	t.Setenv("MAX_BOT_TOKEN_FILE", secretFile(t, "bot", "synthetic-bot-token"))
+	t.Setenv("DATA_API_TOKEN_FILE", secretFile(t, "actor", "synthetic-service-token"))
 	handler, runner, err := pollingSetup()
 	if err != nil || runner.Source == nil || runner.Store == nil || runner.Reject == nil {
 		t.Fatalf("polling setup = %+v, %v", runner, err)
@@ -129,6 +135,16 @@ func TestInboxWorkerSetupUsesPrivateFilesAndKeepsPartialMode(t *testing.T) {
 	if !ok || bootstrap.Location == nil {
 		t.Fatal("gateway dialog timezone was not configured")
 	}
+	t.Setenv("MAX_BOT_NAME", "demo_bot")
+	configured, enabled, err := inboxWorkerSetup()
+	if err != nil || !enabled || configured.Processor.(dialog.Bootstrap).MapBotName != "demo_bot" {
+		t.Fatalf("map launch bot name was not configured: enabled=%v err=%v", enabled, err)
+	}
+	t.Setenv("MAX_BOT_NAME", "bad/name")
+	if _, enabled, err := inboxWorkerSetup(); err == nil || enabled {
+		t.Fatal("invalid MAX_BOT_NAME accepted")
+	}
+	t.Setenv("MAX_BOT_NAME", "")
 	result, err := worker.RunOnce(context.Background(), 1)
 	if err != nil || result.Claimed != 0 {
 		t.Fatalf("empty durable inbox cycle = %+v, %v", result, err)
@@ -141,5 +157,59 @@ func TestInboxWorkerSetupUsesPrivateFilesAndKeepsPartialMode(t *testing.T) {
 	t.Setenv("COMPANY_TIMEZONE", "invalid/timezone")
 	if _, enabled, err := inboxWorkerSetup(); err == nil || enabled {
 		t.Fatalf("invalid company timezone accepted: enabled=%v err=%v", enabled, err)
+	}
+}
+
+func TestMapRoutesRequireTokenAndUseMockActorAPI(t *testing.T) {
+	mock, err := datamock.New("synthetic-service-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(mock.Handler())
+	defer server.Close()
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("DATA_API_BASE_URL", server.URL+"/internal/v1")
+	t.Setenv("DATA_API_TOKEN_FILE", secretFile(t, "actor", "synthetic-service-token"))
+	t.Setenv("MAX_BOT_TOKEN_FILE", "")
+	t.Setenv("COMPANY_MAP_LAT", "55.75")
+	t.Setenv("COMPANY_MAP_LON", "37.62")
+	path := "/api/v1/returns/10000000-0000-4000-8000-000000000001/context"
+	mux := diagnosticsHandler()
+	if err := registerMapAPI(mux); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("map route enabled without bot token: %d", w.Code)
+	}
+	const botToken = "synthetic-map-test-token"
+	t.Setenv("MAX_BOT_TOKEN_FILE", secretFile(t, "bot", botToken))
+	mux = diagnosticsHandler()
+	if err := registerMapAPI(mux); err != nil {
+		t.Fatal(err)
+	}
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("map route did not check auth: %d", w.Code)
+	}
+	fields := url.Values{"auth_date": {fmt.Sprint(time.Now().Unix())}, "user": {`{"id":8000000000000000001}`}}
+	check := "auth_date=" + fields.Get("auth_date") + "\nuser=" + fields.Get("user")
+	secret := hmac.New(sha256.New, []byte("WebAppData"))
+	_, _ = secret.Write([]byte(botToken))
+	signature := hmac.New(sha256.New, secret.Sum(nil))
+	_, _ = signature.Write([]byte(check))
+	fields.Set("hash", hex.EncodeToString(signature.Sum(nil)))
+	r := httptest.NewRequest(http.MethodGet, path, nil)
+	r.Header.Set("Authorization", "MaxInitData "+fields.Encode())
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), `"code":"NOT_FOUND"`) {
+		t.Fatalf("signed actor did not reach current-return check: %d %s", w.Code, w.Body.String())
+	}
+	t.Setenv("COMPANY_MAP_LAT", "91")
+	if err := registerMapAPI(diagnosticsHandler()); err == nil {
+		t.Fatal("invalid map center accepted")
 	}
 }

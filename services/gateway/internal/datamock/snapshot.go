@@ -24,6 +24,7 @@ type stateSnapshot struct {
 	Trips                   map[string]dataapi.Trip                 `json:"trips"`
 	Returns                 map[string]dataapi.Return               `json:"returns"`
 	Issues                  map[string]dataapi.Issue                `json:"issues"`
+	Conversations           map[string]dataapi.Conversation         `json:"conversations"`
 	IssueAssets             map[string]stagedIssueAsset             `json:"issue_assets"`
 	StageResults            map[string]stageAttempt                 `json:"stage_results"`
 	Commands                map[string]commandRecord                `json:"commands"`
@@ -46,7 +47,7 @@ type stateSnapshot struct {
 
 func (s *Server) snapshot() stateSnapshot {
 	state := stateSnapshot{
-		Version:                 14,
+		Version:                 15,
 		SeedSHA:                 fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)),
 		Vehicles:                append([]dataapi.Vehicle(nil), s.vehicles...),
 		Employees:               make(map[string]dataapi.Employee, len(s.employees)),
@@ -54,6 +55,7 @@ func (s *Server) snapshot() stateSnapshot {
 		Trips:                   make(map[string]dataapi.Trip, len(s.trips)),
 		Returns:                 make(map[string]dataapi.Return, len(s.returns)),
 		Issues:                  make(map[string]dataapi.Issue, len(s.issues)),
+		Conversations:           make(map[string]dataapi.Conversation, len(s.conversations)),
 		IssueAssets:             make(map[string]stagedIssueAsset, len(s.issueAssets)),
 		StageResults:            make(map[string]stageAttempt, len(s.stageResults)),
 		Commands:                make(map[string]commandRecord, len(s.commands)),
@@ -90,6 +92,10 @@ func (s *Server) snapshot() stateSnapshot {
 	}
 	for key, value := range s.issues {
 		state.Issues[key] = value
+	}
+	for key, value := range s.conversations {
+		value.Context.AssetIDs = append([]string(nil), value.Context.AssetIDs...)
+		state.Conversations[key] = value
 	}
 	for key, value := range s.issueAssets {
 		state.IssueAssets[key] = value
@@ -161,6 +167,9 @@ func (s *Server) restore(state stateSnapshot) {
 	if state.Issues != nil {
 		s.issues = state.Issues
 	}
+	if state.Conversations != nil {
+		s.conversations = state.Conversations
+	}
 	if state.IssueAssets != nil {
 		s.issueAssets = state.IssueAssets
 	}
@@ -207,7 +216,7 @@ func (s *Server) loadSnapshot(path string) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var state stateSnapshot
-	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 14) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version >= 7 && (state.IssueAssets == nil || state.StageResults == nil)) || (state.Version >= 8 && (state.Inbox == nil || state.InboxKeys == nil)) || (state.Version >= 9 && state.InboxClaims == nil) || (state.Version >= 10 && state.InboxTransitions == nil) || (state.Version >= 11 && (state.Integrations == nil || state.IntegrationLeases == nil)) || (state.Version >= 12 && state.IntegrationCheckpoints == nil) || (state.Version >= 13 && (state.Notifications == nil || state.NotificationClaims == nil)) || (state.Version >= 14 && state.NotificationTransitions == nil) {
+	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 15) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version >= 7 && (state.IssueAssets == nil || state.StageResults == nil)) || (state.Version >= 8 && (state.Inbox == nil || state.InboxKeys == nil)) || (state.Version >= 9 && state.InboxClaims == nil) || (state.Version >= 10 && state.InboxTransitions == nil) || (state.Version >= 11 && (state.Integrations == nil || state.IntegrationLeases == nil)) || (state.Version >= 12 && state.IntegrationCheckpoints == nil) || (state.Version >= 13 && (state.Notifications == nil || state.NotificationClaims == nil)) || (state.Version >= 14 && state.NotificationTransitions == nil) || (state.Version >= 15 && state.Conversations == nil) {
 		return errors.New("data-mock: invalid snapshot; refusing to reset")
 	}
 	if state.Challenges == nil {
@@ -221,6 +230,9 @@ func (s *Server) loadSnapshot(path string) error {
 	}
 	if state.Issues == nil {
 		state.Issues = make(map[string]dataapi.Issue)
+	}
+	if state.Conversations == nil {
+		state.Conversations = make(map[string]dataapi.Conversation)
 	}
 	if state.IssueAssets == nil {
 		state.IssueAssets = make(map[string]stagedIssueAsset)

@@ -1,15 +1,15 @@
 openapi: 3.1.0
 info:
   title: MAX Fleet Data API
-  version: '1.1'
+  version: '1.3'
   description: 'Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID
     и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом
-    запросе. Версия 1.1 добавляет приватное чтение фото поездки по фазе и ракурсу. Версии: vehicle растёт при смене
-    доступности, блокировке, issue и коррекции; checkout при изменении оформления; inspection при ответе, фото и
-    подтверждении; return при месте/отмене/завершении; trip при начале возврата, отмене, завершении и admin close;
-    conversation только при save. Фото не повышает checkout/return version. Перед start/complete Go читает актуальный
-    агрегат. Hold равен 15 минутам серверного времени. Finalized inspection неизменяем, admin close не подставляет
-    отсутствующие данные.'
+    запросе. Версия 1.3 разрешает отдельное замечание владельца после завершения поездки без изменения завершённого
+    снимка. Версии: vehicle растёт при смене доступности, блокировке, issue и коррекции; checkout при изменении
+    оформления; inspection при ответе, фото и подтверждении; return при месте/отмене/завершении; trip при начале
+    возврата, отмене, завершении и admin close; conversation только при save. Фото повышает inspection и его родительский
+    checkout/return version. Перед start/complete Go читает актуальный агрегат. Hold равен 15 минутам серверного
+    времени. Finalized inspection неизменяем, admin close не подставляет отсутствующие данные.'
 servers:
 - url: http://data-api:8000
 - url: http://data-mock:8000
@@ -44,7 +44,7 @@ components:
       in: header
       required: true
       schema:
-        const: '1.1'
+        const: '1.3'
     RequestID:
       name: X-Request-ID
       in: header
@@ -618,6 +618,7 @@ components:
           - during
           - return
           - after
+          - post_return
         category:
           $ref: '#/components/schemas/IssueCategory'
         description:
@@ -749,6 +750,10 @@ components:
           - type: string
             maxLength: 80
           - type: 'null'
+        conversation:
+          oneOf:
+          - $ref: '#/components/schemas/Conversation'
+          - type: 'null'
         conversation_version:
           $ref: '#/components/schemas/Version'
       required:
@@ -756,13 +761,14 @@ components:
       - trip
       - return
       - next_step
+      - conversation
       - conversation_version
     Meta:
       type: object
       additionalProperties: false
       properties:
         contract_version:
-          const: '1.1'
+          const: '1.3'
         build_sha:
           type: string
           maxLength: 64
@@ -1149,6 +1155,26 @@ components:
               oneOf:
               - type: string
                 maxLength: 1000
+              - type: 'null'
+            issue_category:
+              oneOf:
+              - type: string
+                enum:
+                - body_damage
+                - mechanical
+                - cleanliness
+                - keys
+                - other
+              - type: 'null'
+            asset_ids:
+              type: array
+              items:
+                $ref: '#/components/schemas/UUID'
+              maxItems: 3
+              uniqueItems: true
+            vehicle_version:
+              oneOf:
+              - $ref: '#/components/schemas/Version'
               - type: 'null'
         pending_input_kind:
           oneOf:
@@ -1605,6 +1631,10 @@ components:
       - target_id
       - expected_version
       - payload
+      description: При trip_id завершённой собственной поездки и inspection_id=null создаётся отдельное замечание
+        stage=post_return. target_id — vehicle_id; expected_version — текущая версия машины. Владение поездкой проверяет
+        сервер. Завершённый trip, after-inspection и их версии не меняются; машина получает needs_review и блокируется
+        для новой выдачи.
     VehicleBlockCommand:
       type: object
       additionalProperties: false

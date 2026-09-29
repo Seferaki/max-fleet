@@ -169,7 +169,7 @@ schemas = {
         "after_inspection", "parking_location", "issues", "version", "updated_at")),
     "Issue": obj({
         "id": ref("UUID"), "vehicle_id": ref("UUID"), "author_id": ref("UUID"),
-        "stage": string(enum=["before", "during", "return", "after"]),
+        "stage": string(enum=["before", "during", "return", "after", "post_return"]),
         "category": ref("IssueCategory"),
         "description": string(1000),
         "status": string(enum=["open", "in_progress", "resolved", "known_nonblocking"]),
@@ -198,10 +198,11 @@ schemas = {
     "CurrentState": obj({
         "checkout": nullable(ref("Checkout")), "trip": nullable(ref("Trip")),
         "return": nullable(ref("Return")), "next_step": nullable(string(80)),
+        "conversation": nullable(ref("Conversation")),
         "conversation_version": ref("Version"),
-    }, ("checkout", "trip", "return", "next_step", "conversation_version")),
+    }, ("checkout", "trip", "return", "next_step", "conversation", "conversation_version")),
     "Meta": obj({
-        "contract_version": {"const": "1.1"}, "build_sha": string(64),
+        "contract_version": {"const": "1.3"}, "build_sha": string(64),
         "mode": string(enum=["mock", "real"]), "capabilities": array(string(80)),
     }, ("contract_version", "build_sha", "mode", "capabilities")),
     "AdminSummary": obj({
@@ -242,8 +243,8 @@ for name in ("Vehicle", "Trip", "Issue", "Employee"):
 
 spec = {
     "openapi": "3.1.0",
-    "info": {"title": "MAX Fleet Data API", "version": "1.1",
-             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.1 добавляет приватное чтение фото поездки по фазе и ракурсу."},
+    "info": {"title": "MAX Fleet Data API", "version": "1.3",
+             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.3 разрешает отдельное замечание владельца после завершения поездки без изменения завершённого снимка."},
     "servers": [{"url": "http://data-api:8000"}, {"url": "http://data-mock:8000"}],
     "tags": [{"name": name, "description": description} for name, description in (
         ("read", "Чтение доменных данных с проверкой actor и прав"),
@@ -261,7 +262,7 @@ spec = {
         },
         "parameters": {
             "ContractVersion": {"name": "X-Contract-Version", "in": "header", "required": True,
-                                "schema": {"const": "1.1"}},
+                                "schema": {"const": "1.3"}},
             "RequestID": {"name": "X-Request-ID", "in": "header", "required": True,
                           "schema": ref("UUID")},
             "ActorMaxID": {"name": "X-Actor-Max-ID", "in": "header", "required": True,
@@ -375,7 +376,10 @@ schemas["Conversation"] = obj({
                     "return_id": nullable(ref("UUID")),
                     "issue_id": nullable(ref("UUID")),
                     "cursor": nullable(string(2048)),
-                    "draft_text": nullable(string(1000))}),
+                    "draft_text": nullable(string(1000)),
+                    "issue_category": nullable(string(enum=["body_damage", "mechanical", "cleanliness", "keys", "other"])),
+                    "asset_ids": {**array(ref("UUID"), 3), "uniqueItems": True},
+                    "vehicle_version": nullable(ref("Version"))}),
     "pending_input_kind": nullable(string(enum=["text", "photo", "geo", "none"])),
     "version": ref("Version"), "updated_at": ref("Timestamp"),
 }, ("flow", "step", "context", "pending_input_kind", "version", "updated_at"))
@@ -444,7 +448,7 @@ command_specs = [
     ("return.set_location", "existing", ref("LocationInput"), "Return"),
     ("return.complete", "existing", payload({
         "attestation": {"const": True},
-    }, ("attestation",)), "Trip"),
+    }, ("attestation",)), "Return"),
     ("issue.create", "existing", payload({
         "category": ref("IssueCategory"), "description": string(1000),
         "trip_id": nullable(ref("UUID")),
@@ -512,6 +516,13 @@ for operation, target_kind, body, result_name in command_specs:
         "expected_version": version_schema, "payload": payload_schema,
     }, ("operation", "target_id", "expected_version", "payload"))
     command_refs.append(ref(name))
+
+schemas["IssueCreateCommand"]["description"] = (
+    "При trip_id завершённой собственной поездки и inspection_id=null создаётся отдельное "
+    "замечание stage=post_return. target_id — vehicle_id; expected_version — текущая версия "
+    "машины. Владение поездкой проверяет сервер. Завершённый trip, after-inspection "
+    "и их версии не меняются; машина получает needs_review и блокируется для новой выдачи."
+)
 
 schemas["Command"] = {
     "oneOf": command_refs,
@@ -618,7 +629,7 @@ spec["info"]["description"] += (
     " Версии: vehicle растёт при смене доступности, блокировке, issue и коррекции; "
     "checkout при изменении оформления; inspection при ответе, фото и подтверждении; "
     "return при месте/отмене/завершении; trip при начале возврата, отмене, завершении и admin close; "
-    "conversation только при save. Фото не повышает checkout/return version. "
+    "conversation только при save. Фото повышает inspection и его родительский checkout/return version. "
     "Перед start/complete Go читает актуальный агрегат. Hold равен 15 минутам серверного времени. "
     "Finalized inspection неизменяем, admin close не подставляет отсутствующие данные."
 )

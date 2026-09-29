@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.1",
+  "contract_version": "1.3",
   "fake_clock_utc": "2026-09-27T09:00:00Z",
   "seed": "../examples/synthetic-seed.json",
   "cases": [
@@ -21,6 +21,8 @@
     {"id":"checkout.race-loser","area":"checkout","given":"два actor одновременно берут DEMO-001","when":"checkout.create проигравшего","expect":{"http":409,"error":"VEHICLE_UNAVAILABLE","facts":["только один assignment"]}},
     {"id":"checkout.cancel","area":"checkout","given":"driver-1 держит hold","when":"checkout.cancel","expect":{"http":200,"error":null,"facts":["assignment освобождён","история попытки сохранена"]}},
     {"id":"checkout.issue-before","area":"checkout","given":"driver-1 заметил проблему до поездки","when":"issue.create","expect":{"http":200,"error":null,"facts":["hold отменён","issue блокирует выдачу"]}},
+    {"id":"checkout.issue-draft-restart","area":"checkout","given":"черновик issue-before с двумя staged asset IDs сохранён","when":"GET /state после restart","expect":{"http":200,"error":null,"facts":["conversation содержит категорию, описание и оба asset IDs","actor чужого сотрудника не видит черновик"]}},
+    {"id":"checkout.issue-draft-stale","area":"checkout","given":"conversation.version изменился после добавления фото","when":"conversation.save со старой expected_version","expect":{"http":409,"error":"STALE_VERSION","facts":["сохранённые asset IDs не потеряны"]}},
 
     {"id":"inspection.zero","area":"inspection","given":"осмотр без фото","when":"inspection.confirm_photos","expect":{"http":422,"error":"PHOTO_SET_INCOMPLETE","facts":["missing_slots=1..8"]}},
     {"id":"inspection.seven","area":"inspection","given":"сохранено 7 разных фото","when":"inspection.confirm_photos","expect":{"http":422,"error":"PHOTO_SET_INCOMPLETE","facts":["отсутствует ровно один slot","7 фото сохранены"]}},
@@ -43,6 +45,8 @@
     {"id":"return.map-failure","area":"return","given":"точка выбрана вручную, data-api временно недоступен","when":"POST /api/v1/returns/{id}/location","expect":{"http":503,"error":"TEMPORARY_FAILURE","facts":["UI удерживает маркер","центр карты не подставляется"]}},
     {"id":"return.map-forged","area":"return","given":"initData с неверной подписью либо старше 1 часа","when":"GET /api/v1/returns/{id}/context","expect":{"http":401,"error":"INVALID_INIT_DATA","facts":["данные не раскрыты"]}},
     {"id":"return.admin-close","area":"return","given":"admin причина и math proof, обычный возврат невозможен","when":"trip.admin_close","expect":{"http":200,"error":null,"facts":["closed_by_admin","missing_data без фиктивных значений","needs_review=true"]}},
+    {"id":"return.post-return-issue","area":"return","given":"владелец завершил поездку и сообщил замечание позднее","when":"issue.create с trip_id завершённой поездки и inspection_id=null","expect":{"http":200,"error":null,"facts":["stage=post_return","trip и after-inspection неизменны","needs_review=true","admin уведомлён без обвинения предыдущего водителя"]}},
+    {"id":"return.post-return-foreign","area":"return","given":"сотрудник указал чужую завершённую поездку","when":"issue.create с чужим trip_id","expect":{"http":404,"error":"NOT_FOUND","facts":["замечание и уведомление не созданы","чужая поездка не раскрыта"]}},
 
     {"id":"delivery.db-before-ack","area":"delivery","given":"inbox недоступен","when":"webhook MAX","expect":{"http":503,"error":"DATABASE_UNAVAILABLE","facts":["MAX 200 не отправлен"]}},
     {"id":"delivery.timeout-after-commit","area":"delivery","given":"команда зафиксирована, HTTP ответ потерян","when":"retry с тем же Idempotency-Key","expect":{"http":200,"error":null,"facts":["прежний результат","второй trip не создан"]}},

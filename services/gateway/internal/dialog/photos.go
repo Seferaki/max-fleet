@@ -26,7 +26,11 @@ var photoAngles = [8]string{
 // The projection from Python is the only source of photo progress. An invalid
 // projection must not lead to a guessed slot or a successful photo claim.
 func photoSlot(inspection dataapi.Inspection) (int, int, bool) {
-	if inspection.ID == "" || inspection.Phase != "before" || inspection.Status != "draft" {
+	return photoSlotPhase(inspection, "before")
+}
+
+func photoSlotPhase(inspection dataapi.Inspection, phase string) (int, int, bool) {
+	if inspection.ID == "" || inspection.Phase != phase || inspection.Status != "draft" {
 		return 0, 0, false
 	}
 	var occupied [8]bool
@@ -45,7 +49,11 @@ func photoSlot(inspection dataapi.Inspection) (int, int, bool) {
 }
 
 func photoProgress(inspection dataapi.Inspection) string {
-	slot, count, ok := photoSlot(inspection)
+	return photoProgressPhase(inspection, "before")
+}
+
+func photoProgressPhase(inspection dataapi.Inspection, phase string) string {
+	slot, count, ok := photoSlotPhase(inspection, phase)
 	if !ok {
 		return "Состояние осмотра недоступно. Обновите /menu."
 	}

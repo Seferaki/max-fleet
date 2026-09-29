@@ -40,6 +40,14 @@ func (s *failOnePhotoReply) SendText(ctx context.Context, userID int64, message 
 	return s.RecordingTransport.SendText(ctx, userID, message)
 }
 
+func (s *failOnePhotoReply) SendButtons(ctx context.Context, userID int64, message string, rows [][]maxsdk.Button) (string, error) {
+	if s.fail {
+		s.fail = false
+		return "", errors.New("synthetic send interruption")
+	}
+	return s.RecordingTransport.SendButtons(ctx, userID, message, rows)
+}
+
 func (f *syntheticPhotoFetcher) Download(context.Context, string) (maxsdk.DownloadedPhoto, error) {
 	if f.err != nil {
 		return maxsdk.DownloadedPhoto{}, f.err
@@ -201,7 +209,7 @@ func TestPhotoUploadCountsOnlyStoredImageAndStopsAtEight(t *testing.T) {
 		t.Fatal(err)
 	}
 	menu := sender.Messages()[len(sender.Messages())-1]
-	if len(menu.Buttons) != 4 || !strings.HasPrefix(menu.Buttons[1][0].Payload, "confirm-photos:") {
+	if len(menu.Buttons) != 6 || !strings.HasPrefix(menu.Buttons[1][0].Payload, "confirm-photos:") {
 		t.Fatalf("full photo menu: %+v", menu)
 	}
 	if err := processor.Handle(context.Background(), callbackItem(driver, "photo-confirm-no-lease", menu.Buttons[1][0].Payload, now)); err == nil || !strings.Contains(err.Error(), "durable inbox lease") {
@@ -230,7 +238,7 @@ func TestPhotoUploadCountsOnlyStoredImageAndStopsAtEight(t *testing.T) {
 		t.Fatal(err)
 	}
 	menu = sender.Messages()[len(sender.Messages())-1]
-	if len(menu.Buttons) != 3 || !strings.HasPrefix(menu.Buttons[1][0].Payload, "replace-photos:") {
+	if len(menu.Buttons) != 5 || !strings.HasPrefix(menu.Buttons[1][0].Payload, "replace-photos:") {
 		t.Fatalf("replacement menu: %+v", menu)
 	}
 	if err := processor.Handle(context.Background(), callbackItem(driver, "photo-replace-choose", menu.Buttons[1][0].Payload, now)); err != nil {

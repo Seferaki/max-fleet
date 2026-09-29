@@ -4,6 +4,7 @@
     "trip": null,
     "return": null,
     "next_step": null,
+    "conversation": null,
     "conversation_version": 1
   },
   "request_id": "a0000000-0000-4000-8000-000000000001"

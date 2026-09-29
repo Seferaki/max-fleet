@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxsdk"
@@ -61,6 +62,14 @@ func parseTripView(event dataapi.NormalizedEvent) tripViewRequest {
 			request.kind, request.id = "detail", parts[1]
 		}
 		return request
+	case "trip-issues":
+		request := tripViewRequest{recognized: true}
+		if len(parts) == 4 {
+			request.kind, request.id = "issues", parts[1]
+			request.version, _ = strconv.ParseInt(parts[2], 10, 64)
+			request.page = parsePositiveInt(parts[3])
+		}
+		return request
 	case "photo-phase", "photo-view":
 		request := tripViewRequest{recognized: true}
 		if len(parts) == 4 || len(parts) == 5 && parts[0] == "photo-view" {
@@ -102,11 +111,17 @@ func (p Bootstrap) showTripView(ctx context.Context, actor string, maxID int64, 
 		}
 		return err
 	}
+	if trip.ID != request.id || trip.EmployeeID != employee.ID && employee.Role != "admin" {
+		return p.sendView(ctx, maxID, "Поездка недоступна. Обновите /trips.", nil)
+	}
 	if request.kind == "detail" {
-		return p.showTripDetail(ctx, maxID, trip)
+		return p.showTripDetail(ctx, actor, maxID, employee, trip)
 	}
 	if request.version < 1 || trip.Version != request.version {
 		return p.sendView(ctx, maxID, "Данные поездки изменились. Откройте её снова через /trips.", nil)
+	}
+	if request.kind == "issues" {
+		return p.showTripIssues(ctx, maxID, trip, request.page)
 	}
 	inspection, available := visibleTripInspection(trip, request.phase)
 	if !available {
@@ -153,7 +168,7 @@ func (p Bootstrap) showTripList(ctx context.Context, actor string, maxID int64, 
 		if scope == "admin" {
 			trips, err = reader.AdminTrips(ctx, actor, dataapi.AdminTripFilter{Limit: 8, Cursor: cursor})
 		} else {
-			trips, err = reader.MyTrips(ctx, actor, 8, cursor)
+			trips, err = reader.MyTrips(ctx, actor, 5, cursor)
 		}
 		if err != nil {
 			return err
@@ -174,6 +189,9 @@ func (p Bootstrap) showTripList(ctx context.Context, actor string, maxID int64, 
 		if !vehicleIDPattern.MatchString(trip.ID) {
 			return errors.New("data-api: invalid trip list projection")
 		}
+		if scope == "mine" && trip.EmployeeID != employee.ID {
+			return errors.New("data-api: invalid owned trip list projection")
+		}
 		rows = append(rows, []maxsdk.Button{{Text: fmt.Sprintf("%s · %s", shortLabel(trip.ID[:8]), shortLabel(trip.Status)), Payload: "trip:" + trip.ID}})
 	}
 	controls := []maxsdk.Button{}
@@ -192,16 +210,67 @@ func (p Bootstrap) showTripList(ctx context.Context, actor string, maxID int64, 
 	return p.sendView(ctx, maxID, fmt.Sprintf("%s · страница %d", title, page), rows)
 }
 
-func (p Bootstrap) showTripDetail(ctx context.Context, maxID int64, trip dataapi.Trip) error {
+func (p Bootstrap) showTripDetail(ctx context.Context, actor string, maxID int64, employee dataapi.Employee, trip dataapi.Trip) error {
 	rows := [][]maxsdk.Button{}
+	if trip.EmployeeID == employee.ID && trip.Status == "active" {
+		rows = append(rows, []maxsdk.Button{{Text: "Сообщить проблему", Payload: fmt.Sprintf("trip-issue:%s:%d", trip.ID, trip.Version)}})
+		rows = append(rows, []maxsdk.Button{{Text: "Завершить поездку", Payload: fmt.Sprintf("return-intent:%s:%d", trip.ID, trip.Version)}})
+	}
 	if _, ok := visibleTripInspection(trip, "before"); ok {
 		rows = append(rows, []maxsdk.Button{{Text: "Фото до", Payload: fmt.Sprintf("photo-phase:%s:%d:before", trip.ID, trip.Version)}})
 	}
 	if _, ok := visibleTripInspection(trip, "after"); ok {
 		rows = append(rows, []maxsdk.Button{{Text: "Фото после", Payload: fmt.Sprintf("photo-phase:%s:%d:after", trip.ID, trip.Version)}})
 	}
+	if len(trip.Issues) > 0 {
+		rows = append(rows, []maxsdk.Button{{Text: fmt.Sprintf("Замечания (%d)", len(trip.Issues)), Payload: fmt.Sprintf("trip-issues:%s:%d:1", trip.ID, trip.Version)}})
+	}
 	rows = append(rows, []maxsdk.Button{{Text: "Мои поездки", Payload: "trip-list:mine:1"}})
-	return p.sendView(ctx, maxID, fmt.Sprintf("Поездка %s\nСтатус: %s\nАвтомобиль: %s", trip.ID, oneLine(trip.Status), trip.VehicleID), rows)
+	vehicleLabel := trip.VehicleID
+	if vehicleIDPattern.MatchString(trip.VehicleID) {
+		vehicle, err := p.Data.Vehicle(ctx, actor, trip.VehicleID)
+		if err != nil {
+			return err
+		}
+		vehicleLabel = oneLine(vehicle.Plate)
+	}
+	message := fmt.Sprintf("Поездка %s\nСтатус: %s\nАвтомобиль: %s", trip.ID, oneLine(trip.Status), vehicleLabel)
+	if trip.Status == "closed_by_admin" {
+		message += "\nЗакрыто администратором; часть данных возврата может отсутствовать."
+		if len(trip.MissingData) > 0 {
+			message += " Не хватает: " + shortLabel(oneLine(strings.Join(trip.MissingData, ", "))) + "."
+		}
+	}
+	if !trip.StartedAt.IsZero() {
+		elapsed := max(0, int(time.Since(trip.StartedAt).Minutes()))
+		message += fmt.Sprintf("\nНачало: %s\nДлительность: %d ч %d мин", formatMoment(trip.StartedAt, p.Location), elapsed/60, elapsed%60)
+	}
+	return p.sendView(ctx, maxID, message, rows)
+}
+
+func (p Bootstrap) showTripIssues(ctx context.Context, maxID int64, trip dataapi.Trip, page int) error {
+	if page < 1 || page > 20 || (page-1)*5 >= len(trip.Issues) {
+		return p.sendView(ctx, maxID, "Страница замечаний недоступна. Откройте поездку снова через /trips.", nil)
+	}
+	start := (page - 1) * 5
+	end := min(start+5, len(trip.Issues))
+	lines := []string{fmt.Sprintf("Замечания поездки %s · страница %d", trip.ID, page)}
+	for index, issue := range trip.Issues[start:end] {
+		lines = append(lines, fmt.Sprintf("%d. %s · %s: %s", start+index+1, shortLabel(oneLine(issue.Category)), shortLabel(oneLine(issue.Status)), shortLabel(oneLine(issue.Description))))
+	}
+	controls := []maxsdk.Button{}
+	if page > 1 {
+		controls = append(controls, maxsdk.Button{Text: "Назад", Payload: fmt.Sprintf("trip-issues:%s:%d:%d", trip.ID, trip.Version, page-1)})
+	}
+	if end < len(trip.Issues) && page < 20 {
+		controls = append(controls, maxsdk.Button{Text: "Далее", Payload: fmt.Sprintf("trip-issues:%s:%d:%d", trip.ID, trip.Version, page+1)})
+	}
+	rows := [][]maxsdk.Button{}
+	if len(controls) > 0 {
+		rows = append(rows, controls)
+	}
+	rows = append(rows, []maxsdk.Button{{Text: "К поездке", Payload: "trip:" + trip.ID}})
+	return p.sendView(ctx, maxID, strings.Join(lines, "\n"), rows)
 }
 
 func visibleTripInspection(trip dataapi.Trip, phase string) (dataapi.Inspection, bool) {

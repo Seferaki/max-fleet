@@ -48,7 +48,7 @@ func (s *Server) adminTrips(w http.ResponseWriter, r *http.Request, requestID st
 		if state != "" && trip.Status != state || employeeID != "" && trip.EmployeeID != employeeID || vehicleID != "" && trip.VehicleID != vehicleID {
 			continue
 		}
-		items = append(items, trip)
+		items = append(items, s.projectTrip(trip))
 	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].StartedAt.Equal(items[j].StartedAt) {

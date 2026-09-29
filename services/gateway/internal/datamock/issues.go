@@ -88,7 +88,8 @@ func (s *Server) createIssue(w http.ResponseWriter, requestID, actor string, com
 		s.failVersion(w, requestID, http.StatusConflict, "STALE_VERSION", vehicle.Version)
 		return dataapi.CommandResult{}, false
 	}
-	if checkoutID != "" && (checkout.Status != "holding" || checkout.Inspection.Status != "draft" || vehicle.Status != "holding") || tripID != "" && (trip.Status != "active" && trip.Status != "returning" || vehicle.Status != "in_trip") || returnID != "" && (draft.Status != "draft" || draft.Inspection.Status != "draft" || draft.IntentConfirmedAt == nil || trip.ReturnID == nil || *trip.ReturnID != draft.ID) {
+	postReturn := tripID != "" && input.InspectionID == nil && trip.Status == "completed"
+	if checkoutID != "" && (checkout.Status != "holding" || checkout.Inspection.Status != "draft" || vehicle.Status != "holding") || tripID != "" && !postReturn && (trip.Status != "active" && trip.Status != "returning" || vehicle.Status != "in_trip") || returnID != "" && (draft.Status != "draft" || draft.Inspection.Status != "draft" || draft.IntentConfirmedAt == nil || trip.ReturnID == nil || *trip.ReturnID != draft.ID) {
 		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
 		return dataapi.CommandResult{}, false
 	}
@@ -109,6 +110,9 @@ func (s *Server) createIssue(w http.ResponseWriter, requestID, actor string, com
 	stage := "before"
 	if tripID != "" {
 		stage = "during"
+		if postReturn {
+			stage = "post_return"
+		}
 		if trip.Status == "returning" {
 			stage = "return"
 		}
@@ -136,7 +140,7 @@ func (s *Server) createIssue(w http.ResponseWriter, requestID, actor string, com
 		checkout.UpdatedAt = now
 		s.checkouts[checkoutID] = checkout
 		vehicle.Status = "unavailable"
-	} else {
+	} else if !postReturn {
 		trip.Issues = append(trip.Issues, issue)
 		trip.Version++
 		trip.UpdatedAt = now
@@ -145,6 +149,24 @@ func (s *Server) createIssue(w http.ResponseWriter, requestID, actor string, com
 			draft.Version++
 			draft.UpdatedAt = now
 			s.returns[returnID] = draft
+		}
+	}
+	if postReturn {
+		for id, held := range s.checkouts {
+			if held.VehicleID != vehicle.ID || held.Status != "holding" {
+				continue
+			}
+			held.Status = "rejected"
+			held.Step = "issue_reported"
+			held.Inspection.Status = "abandoned"
+			held.Inspection.Version++
+			held.Inspection.UpdatedAt = now
+			held.Version++
+			held.UpdatedAt = now
+			s.checkouts[id] = held
+		}
+		if vehicle.Status != "in_trip" {
+			vehicle.Status = "unavailable"
 		}
 	}
 	vehicle.NeedsReview = true
