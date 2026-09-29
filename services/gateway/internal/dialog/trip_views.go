@@ -111,6 +111,9 @@ func (p Bootstrap) showTripView(ctx context.Context, actor string, maxID int64, 
 		}
 		return err
 	}
+	if trip.ID != request.id || trip.EmployeeID != employee.ID && employee.Role != "admin" {
+		return p.sendView(ctx, maxID, "Поездка недоступна. Обновите /trips.", nil)
+	}
 	if request.kind == "detail" {
 		return p.showTripDetail(ctx, actor, maxID, employee, trip)
 	}

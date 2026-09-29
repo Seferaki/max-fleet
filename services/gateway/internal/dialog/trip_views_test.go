@@ -64,12 +64,16 @@ func TestTripHistoryShowsAdminCloseAndOwnedIssuesByVersion(t *testing.T) {
 	now := time.Date(2026, 9, 29, 5, 0, 0, 0, time.UTC)
 	actor, _, closeServer := mockClients(t, now)
 	defer closeServer()
+	me, err := actor.Me(context.Background(), "8000000000000000001")
+	if err != nil || me.Employee == nil {
+		t.Fatal(err)
+	}
 	const tripID = "40000000-0000-4000-8000-000000000001"
 	issues := make([]dataapi.Issue, 6)
 	for index := range issues {
 		issues[index] = dataapi.Issue{Category: "mechanical", Status: "open", Description: fmt.Sprintf("Замечание %d", index+1)}
 	}
-	data := &tripViewData{Client: actor, trip: dataapi.Trip{ID: tripID, Status: "closed_by_admin", Version: 3, MissingData: []string{"after_photos"}, Issues: issues}}
+	data := &tripViewData{Client: actor, trip: dataapi.Trip{ID: tripID, EmployeeID: me.Employee.ID, Status: "closed_by_admin", Version: 3, MissingData: []string{"after_photos"}, Issues: issues}}
 	sender := &maxsdk.RecordingTransport{}
 	processor := Bootstrap{Data: data, MAX: sender}
 	owner := "8000000000000000001"
@@ -101,6 +105,13 @@ func TestTripHistoryShowsAdminCloseAndOwnedIssuesByVersion(t *testing.T) {
 	data.trip.Version = 4
 	if err := processor.Handle(ctx, callbackItem(owner, "history-stale-issues", detail.Buttons[0][0].Payload, now)); err != nil || !strings.Contains(sender.Messages()[4].Text, "изменились") {
 		t.Fatalf("stale issue read: %v %+v", err, sender.Messages()[4])
+	}
+	data.trip.EmployeeID = "another-employee"
+	if err := processor.Handle(ctx, callbackItem(owner, "history-mismatched-owner", "trip:"+tripID, now)); err != nil || !strings.Contains(sender.Messages()[5].Text, "недоступна") || strings.Contains(sender.Messages()[5].Text, "Замечание") {
+		t.Fatalf("mismatched owner leaked trip: %v %+v", err, sender.Messages()[5])
+	}
+	if err := processor.Handle(ctx, callbackItem("8000000000000000003", "history-admin", "trip:"+tripID, now)); err != nil || !strings.Contains(sender.Messages()[6].Text, "Закрыто администратором") {
+		t.Fatalf("admin trip access: %v %+v", err, sender.Messages()[6])
 	}
 }
 
@@ -155,10 +166,14 @@ func TestTripPhotoDialogOwnerAdminPhaseAndVersion(t *testing.T) {
 	now := time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC)
 	actor, _, closeServer := mockClients(t, now)
 	defer closeServer()
+	me, err := actor.Me(context.Background(), "8000000000000000001")
+	if err != nil || me.Employee == nil {
+		t.Fatal(err)
+	}
 	const tripID = "40000000-0000-4000-8000-000000000001"
 	before := dataapi.Inspection{ID: "50000000-0000-4000-8000-000000000001", Phase: "before", Status: "finalized", OccupiedSlots: []int{3}}
 	after := dataapi.Inspection{ID: "50000000-0000-4000-8000-000000000002", Phase: "after", Status: "finalized", OccupiedSlots: []int{3}}
-	data := &tripViewData{Client: actor, trip: dataapi.Trip{ID: tripID, Status: "active", Version: 2, BeforeInspection: before, AfterInspection: &after}}
+	data := &tripViewData{Client: actor, trip: dataapi.Trip{ID: tripID, EmployeeID: me.Employee.ID, Status: "active", Version: 2, BeforeInspection: before, AfterInspection: &after}}
 	sender := &recordedTripImage{RecordingTransport: &maxsdk.RecordingTransport{}}
 	processor := Bootstrap{Data: data, MAX: sender}
 	ctx := context.Background()
@@ -175,7 +190,7 @@ func TestTripPhotoDialogOwnerAdminPhaseAndVersion(t *testing.T) {
 	if err := processor.Handle(ctx, callbackItem(owner, "detail", "trip:"+tripID, now)); err != nil {
 		t.Fatal(err)
 	}
-	if buttons := sender.Messages()[1].Buttons; len(buttons) != 2 || buttons[0][0].Payload != "photo-phase:"+tripID+":2:before" {
+	if buttons := sender.Messages()[1].Buttons; len(buttons) != 4 || buttons[2][0].Payload != "photo-phase:"+tripID+":2:before" {
 		t.Fatalf("active trip exposed after: %+v", buttons)
 	}
 	if err := processor.Handle(ctx, callbackItem(owner, "phase", "photo-phase:"+tripID+":2:before", now)); err != nil {
