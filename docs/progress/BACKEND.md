@@ -5,19 +5,19 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: ACTIVE
+lock_state: HANDOFF
 owner: B
 session_id: "2a3026c7-1c0f-4258-9d7c-020601272841"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T02:39:09Z"
+heartbeat_utc: "2026-09-29T02:40:40Z"
 current_task: BE-07
-current_substep: "BE-07: пробег после проверен; далее issue и безопасное завершение"
+current_substep: "BE-07 WIP: after-чеклист, фото, топливо и пробег проверены; очередь передана после checkpoint"
 last_verified_code_commit: "01ca6e133a4901c502493c63deb8832aa7fdb931"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-07: issue по проблемам во время/после поездки и контакт ответственного; затем подтверждённая точка парковки и безопасное завершение. UI-01 React карта остаётся P0"
+next_step: "После claim: BE-07 issue во время поездки и по проблемам after (категория/описание/до 3 фото, CAS/idempotency, admin notification), затем подтверждённая точка парковки и безопасный return.complete. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- HANDOFF 2026-09-29 02:40:40 UTC, ноутбук B/session `2a3026c7-1c0f-4258-9d7c-020601272841`. Последний проверенный код `01ca6e133a4901c502493c63deb8832aa7fdb931` и его статусный checkpoint `6604d1fcd6d5897214e47ca2c62176eeb080a165` опубликованы обычным push; локальный HEAD равен remote, worktree чист. BE-06 DONE только на Go/mock; BE-07 WIP, issue во время/после, точка и complete ещё не реализованы. Реальный MAX/Python не проверены. `scripts/enter-max-token.ps1 -Check` → MAX_BOT_TOKEN_FILE отсутствует, значение не читалось. `Get-Process -Name gateway,data-mock` → локальных процессов нет; Docker Engine недоступен, поэтому контейнеры проверить не удалось и состояние общего webhook неизвестно. Синтетического seed достаточно, приватный backup не нужен. Следующий исполнитель сначала перечитывает remote/lock и публикует claim, затем выполняет next_step. UI-01 React карта остаётся P0.
 
 - BE-07 return-odometer code commit `01ca6e133a4901c502493c63deb8832aa7fdb931` опубликован обычным push. `/odometer N` при активном return сохраняет after-показание через `inspection.update`: Go проверяет формат и before-baseline, домен повторно контролирует rollback. Перед повтором того же inbox-события Go читает `OwnCommandResult` по actor/key и подтверждает исходный результат без второго изменения версии. Синтетический тест проверил отрицательное/меньшее показание, отсутствие lease, потерю MAX-ответа и восстановление. `go test ./internal/dialog -run '^TestReturnOdometerBaselineFormatAndLostReply$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Issue, место и complete ещё не реализованы; BE-07 WIP.
 
