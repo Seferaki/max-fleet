@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dialog"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/inboxworker"
+	"github.com/Seferaki/max-fleet/services/gateway/internal/mapapi"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxpoll"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxsdk"
 	"github.com/Seferaki/max-fleet/services/gateway/internal/maxwebhook"
@@ -132,6 +134,9 @@ func webhookHandler(ctx context.Context) (http.Handler, error) {
 		return nil, err
 	}
 	mux := diagnosticsHandler()
+	if err := registerMapAPI(mux); err != nil {
+		return nil, err
+	}
 	mux.Handle("POST /max/webhook", webhook)
 	mux.HandleFunc("GET /health/max-events", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -169,7 +174,57 @@ func pollingSetup() (http.Handler, maxpoll.Runner, error) {
 	if err != nil {
 		return nil, maxpoll.Runner{}, err
 	}
-	return diagnosticsHandler(), maxpoll.Runner{IntegrationKey: key, WorkerID: "gateway-dev-poller", Source: source, Store: worker, Reject: transport}, nil
+	mux := diagnosticsHandler()
+	if err := registerMapAPI(mux); err != nil {
+		return nil, maxpoll.Runner{}, err
+	}
+	return mux, maxpoll.Runner{IntegrationKey: key, WorkerID: "gateway-dev-poller", Source: source, Store: worker, Reject: transport}, nil
+}
+
+func registerMapAPI(mux *http.ServeMux) error {
+	if os.Getenv("MAX_BOT_TOKEN_FILE") == "" {
+		return nil
+	}
+	botToken, err := readSecretFile("MAX_BOT_TOKEN_FILE")
+	if err != nil {
+		return err
+	}
+	actorToken, err := readSecretFile("DATA_API_TOKEN_FILE")
+	if err != nil {
+		return err
+	}
+	client, err := dataapi.New(dataapi.Config{BaseURL: os.Getenv("DATA_API_BASE_URL"), Token: actorToken})
+	if err != nil {
+		return errors.New("gateway: invalid map DataAPI configuration")
+	}
+	city := mapapi.Point{Latitude: 55.751244, Longitude: 37.618423}
+	lat, lon := os.Getenv("COMPANY_MAP_LAT"), os.Getenv("COMPANY_MAP_LON")
+	if lat != "" || lon != "" {
+		if lat == "" || lon == "" {
+			return errors.New("gateway: COMPANY_MAP_LAT and COMPANY_MAP_LON must be set together")
+		}
+		city.Latitude, err = strconv.ParseFloat(lat, 64)
+		if err != nil {
+			return errors.New("gateway: COMPANY_MAP_LAT is invalid")
+		}
+		city.Longitude, err = strconv.ParseFloat(lon, 64)
+		if err != nil {
+			return errors.New("gateway: COMPANY_MAP_LON is invalid")
+		}
+	} else if strings.EqualFold(os.Getenv("APP_ENV"), "production") {
+		return errors.New("gateway: company map center required in production")
+	}
+	verifier, err := mapapi.NewVerifier(botToken, time.Now)
+	if err != nil {
+		return errors.New("gateway: invalid map verifier configuration")
+	}
+	handler, err := mapapi.NewHandler(verifier, client, city)
+	if err != nil {
+		return errors.New("gateway: invalid map center")
+	}
+	mux.HandleFunc("GET /api/v1/returns/{id}/context", handler.Context)
+	mux.HandleFunc("POST /api/v1/returns/{id}/location", handler.Location)
+	return nil
 }
 
 func pollingLoop(ctx context.Context, runner maxpoll.Runner) {

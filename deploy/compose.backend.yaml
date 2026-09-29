@@ -42,6 +42,8 @@ services:
       DATA_API_TOKEN_FILE: /run/secrets/data_api_token
       WORKER_API_TOKEN_FILE: /run/secrets/worker_api_token
       MAX_PHOTO_HOSTS: ${MAX_PHOTO_HOSTS:-}
+      COMPANY_MAP_LAT: ${COMPANY_MAP_LAT:-}
+      COMPANY_MAP_LON: ${COMPANY_MAP_LON:-}
     secrets: [data_api_token, worker_api_token]
     ports:
       - 127.0.0.1:8080:8080
