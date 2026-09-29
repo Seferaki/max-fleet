@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03 и BE-01…BE-06 выполнены на Go mock; BE-07 следующий. Контракт v1.2 и Go client/mock для сохранения черновика опубликованы; Python v1.2 не реализован. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03, BE-01…BE-07 и UI-01 выполнены на Go mock; BE-08 следующий. Контракт v1.2 и Go client/mock для сохранения черновика опубликованы; Python v1.2 не реализован. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "27659325-800e-4ea6-99ac-3d8edec02849"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T08:24:52Z"
-current_task: BE-07
-current_substep: "BE-07: финальная регрессия полного возврата на mock и контакт ответственного"
-last_verified_code_commit: "bff0469dcf092fdc08565f0bcff0edc47ea33387"
+heartbeat_utc: "2026-09-29T08:27:34Z"
+current_task: BE-08
+current_substep: "BE-08: проверить опубликованные списки/детали поездок и выбрать первый пробел истории"
+last_verified_code_commit: "d8247983d7be77b6b71c8f7e778990fec3286bb2"
 checkpoint_state: VERIFIED
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-07: проверить полный return на mock, права, повторы, ошибки фото; Docker/Nginx smoke после доступного Engine"
+next_step: "BE-08: история по 5, детали и замечания, IDOR; Docker/Nginx smoke после доступного Engine"
 human_required: [H-01]
 ```
 
@@ -34,7 +34,7 @@ human_required: [H-01]
 | BE-04 | DONE | `d4b39da40e99c6be07512f634b370b9603818673` — hold/math/rules/cancel, mock tests, Go test/vet/build, Docker build; [CI a08bcf6](https://github.com/Seferaki/max-fleet/actions/runs/36441995320) success | BE-05; реальный MAX остаётся INT-04 |
 | BE-05 | DONE | `856785401024a28f7b0ba4a92c65219a6774ad27` — 8 ракурсов, upload/replace/view/media/recovery; [CI c2a39a5](https://github.com/Seferaki/max-fleet/actions/runs/36476231053) success и локальный gateway verify | Реальный MAX/Python остаются INT; BE-06 |
 | BE-06 | DONE | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ; `da3931879aeb663dd529c8c5af8cdb1e744d9cdd` — контракт v1.2; `d3a54dc7cfa6a0b93253527751671f6cf3c81ebc` — Go conversation; `f73ccbec636c39309202cc68716b087622d96e3c` — описание; `79e98ba3b09f26997d6867a60650c9367b0a27a2` — до 3 фото; `ccb4eedf036efbf3432f440d8f60bec907398132` — issue.create/recovery; `626086e96668660c87430fb1e73a2d355c4c86fc` — summary/start/recovery; `0eb2fc5e8a82a367b4f0377783bbd8a7bf81f90f` — полный mock take/hold expiry и README | Реальный MAX и Python — отдельные INT; BE-07 |
-| BE-07 | IN_PROGRESS | `4dd7ad33419cf10d8e5b7e4b6eb924d52a458c6f` — активная карточка и begin return/recovery; `9fb0703c4e94304384a6ec6b44c6aee3c803434f` — return math/recovery; `a69c51a182bc0e19655cc4e74a1cfa12f75f70c8` — cancel/fresh draft; `ba605b0e8d5420943b18344cce4a2e50c784c4e3` — safety checklist/recovery; `5be149e482bd79c761d68e9f6170e562b72c0dd1` — after 8 фото/confirm; `d52b3bb8c187b5e6eaa0dbf1959b786288d41dc0` — replace after; `2e4aed14faf7614b54b6ae78c111585074ad4649` — fuel after/retry; `01ca6e133a4901c502493c63deb8832aa7fdb931` — odometer after/retry | Issue, карта и complete ещё не реализованы |
+| BE-07 | DONE (mock) | `4dd7ad33419cf10d8e5b7e4b6eb924d52a458c6f` — begin; `a69c51a182bc0e19655cc4e74a1cfa12f75f70c8` — cancel/fresh draft; `5be149e482bd79c761d68e9f6170e562b72c0dd1` — 8 фото после; `18a01ebb695ea2a05a45f91c35be43b5dad8cb0f` — issue при возврате и уведомление; `fd340988305cfcbb269f505b457bb0d0a2dacd9b` — MAX geo; `033161eced999a40508a07df9af9069ba33bf2d7` — complete/recovery; `d8247983d7be77b6b71c8f7e778990fec3286bb2` — полный mock return; остальные подшаги ниже | Реальная доставка MAX и Python — INT; прямой контакт ответственного требует H-03 |
 | UI-01 | DONE (mock) | `0bc3b2152264d61b89bd5324c9a630077134fda2` — initData; `46e898e326672f07e266a9b59e81a0e6035b9d90` — context; `f07e73314a313b6b774550ab987c9953e815664f` — location; `855ed0cbfe19e9592cb8d80c8951f170c3079f34` — gateway; `dd518f3960c30cba29793d74d6b4971e4acc3b54` — web API client; `12bbdf320bfc8e516f00979507a8d9ddd3f3808a` — React карта; `f92eb6a00e1bdc599d6c04f8fbcafa33fbd03925` — MAX start_param; `f7e2dfd9cc53e978dd10fefbc33f72af11b6eed5` — web proxy; `9908f32c6bdc8849ee3b963d37e223e1849485b0` — MAX кнопка; `bff0469dcf092fdc08565f0bcff0edc47ea33387` — Go HTTP/mock регрессия | Реальный Bridge — INT-04; Docker/Nginx smoke не выполнен из-за недоступного Engine |
 | BE-08 | TODO | — | См. план |
 | BE-09 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-07 code `d8247983d7be77b6b71c8f7e778990fec3286bb2`: сквозной возврат на Go/mock проходит через диалог: пять ответов анкеты, 8 отдельных after-фото и подтверждение, топливо, пробег, подтверждённая ручная точка, итог и complete. Проверены 8+8 фото в завершённой поездке, отсутствие активного возврата и освобождение машины только после подтверждённого complete. `go test ./internal/dialog -run '^TestFullReturnThroughDialogOnMock$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS. Предыдущие BE-07 проверки покрывают чужого actor, CAS/lease, ошибку загрузки фото, отмену с новым draft, небезопасный возврат, отдельные issue и восстановление после потери ответа. Связь с ответственным через issue создаёт mock outbox; реальная доставка MAX не проверена. BE-07 DONE только для Go/mock, прямые контактные данные ожидают H-03.
 
 - UI-01 code `bff0469dcf092fdc08565f0bcff0edc47ea33387`: сквозной Go HTTP → mock DataAPI тест карты проходит авторизацию signed actor, отклонение чужого и поддельного actor, начальный несохранённый центр, stale version, явное сохранение, идемпотентный повтор с тем же ключом, восстановление точки после повторного открытия и недоступность отменённого возврата. Повторная проверка 2026-09-29: `npm test -- --run` → 6 PASS; `npm run build` → TypeScript/Vite PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS. Критерий UI-01 для React + Go endpoint на mock выполнен. Docker Desktop Engine не запустился (служба недоступна без системных прав), поэтому Nginx/Compose контейнерный smoke не выполнен; реальный MAX/Bridge и Python — INT. UI-01 DONE только для mock.
 
