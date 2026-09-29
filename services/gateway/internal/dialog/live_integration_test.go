@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -56,6 +58,12 @@ func TestLivePythonReturnDialog(t *testing.T) {
 	workerStore, err := dataapi.NewWorker(dataapi.WorkerConfig{BaseURL: baseURL, Token: workerToken, HTTPClient: &http.Client{Timeout: 15 * time.Second}})
 	if err != nil {
 		t.Fatalf("create inbox worker client: %v", err)
+	}
+	lostCompleteResponse := &lostResponseAfterCommitTransport{next: http.DefaultTransport}
+	retryingClient, err := dataapi.New(dataapi.Config{BaseURL: baseURL, Token: actorToken,
+		HTTPClient: &http.Client{Timeout: 15 * time.Second, Transport: lostCompleteResponse}})
+	if err != nil {
+		t.Fatalf("create retrying Data API client: %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
@@ -386,9 +394,14 @@ func TestLivePythonReturnDialog(t *testing.T) {
 	if !strings.Contains(latest().Text, "Фото после: 8/8") || !strings.Contains(latest().Text, "manual_map") {
 		t.Fatalf("return summary does not include photos and manual map: %+v", latest())
 	}
+	processor = Bootstrap{Data: client, Commands: retryingClient, MAX: sender, Photos: fetcher, PhotoStore: client, Location: time.UTC}
 	deliverCallback(button("return-complete:"))
 	if !strings.Contains(latest().Text, "Возврат подтверждён") {
 		t.Fatalf("Go dialog did not confirm completion: %+v", latest())
+	}
+	attempts, injected, sameRequest := lostCompleteResponse.stats()
+	if attempts != 2 || injected != 1 || !sameRequest {
+		t.Fatalf("lost-response retry did not replay the same complete request: attempts=%d injected=%d same_request=%t", attempts, injected, sameRequest)
 	}
 	completed, err := client.Trip(ctx, actorID, trip.ID)
 	if err != nil || completed.Status != "completed" || completed.AfterInspection == nil ||
@@ -590,4 +603,69 @@ func readPrivateToken(t *testing.T, path string) string {
 		t.Fatal("private Data API credential file is empty")
 	}
 	return token
+}
+
+// lostResponseAfterCommit forwards return.complete to Python, discards its
+// committed 200 response, and returns one synthetic 503 to exercise Go retry.
+type lostResponseAfterCommitTransport struct {
+	next       http.RoundTripper
+	mu         sync.Mutex
+	injected   bool
+	requestIDs []string
+	keys       []string
+	bodies     [][]byte
+}
+
+func (r *lostResponseAfterCommitTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method != http.MethodPost || !strings.HasSuffix(req.URL.Path, "/commands") {
+		return r.next.RoundTrip(req)
+	}
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	var command struct {
+		Operation string `json:"operation"`
+	}
+	if err := json.Unmarshal(body, &command); err != nil || command.Operation != "return.complete" {
+		return r.next.RoundTrip(req)
+	}
+
+	r.mu.Lock()
+	r.requestIDs = append(r.requestIDs, req.Header.Get("X-Request-ID"))
+	r.keys = append(r.keys, req.Header.Get("Idempotency-Key"))
+	r.bodies = append(r.bodies, append([]byte(nil), body...))
+	shouldInject := !r.injected
+	r.mu.Unlock()
+	response, err := r.next.RoundTrip(req)
+	if err != nil || response.StatusCode != http.StatusOK || !shouldInject {
+		return response, err
+	}
+	r.mu.Lock()
+	r.injected = true
+	r.mu.Unlock()
+	_ = response.Body.Close()
+	requestID := req.Header.Get("X-Request-ID")
+	errorBody := fmt.Sprintf(`{"error":{"code":"SYNTHETIC_RESPONSE_LOST","message":"synthetic test dropped committed response","retryable":true,"details":{}},"request_id":%q}`, requestID)
+	return &http.Response{
+		StatusCode:    http.StatusServiceUnavailable,
+		Status:        "503 Service Unavailable",
+		Header:        http.Header{"Content-Type": []string{"application/json"}, "Retry-After": []string{"0"}},
+		Body:          io.NopCloser(strings.NewReader(errorBody)),
+		ContentLength: int64(len(errorBody)),
+		Request:       req,
+	}, nil
+}
+
+func (r *lostResponseAfterCommitTransport) stats() (attempts, injected int, sameRequest bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.injected {
+		injected = 1
+	}
+	attempts = len(r.requestIDs)
+	sameRequest = attempts == 2 && r.requestIDs[0] != "" && r.requestIDs[0] == r.requestIDs[1] &&
+		r.keys[0] != "" && r.keys[0] == r.keys[1] && bytes.Equal(r.bodies[0], r.bodies[1])
+	return attempts, injected, sameRequest
 }
