@@ -29,6 +29,19 @@ export function returnIdFromURL(search: string): string | null {
   return ids.length === 1 && uuid.test(ids[0]) ? ids[0] : null
 }
 
+// start_param is only a routing hint. Go authenticates raw initData and verifies
+// that the signed actor owns this exact current return before exposing data.
+export function returnIdFromLaunch(search: string, rawInitData: string): string | null {
+  const query = new URLSearchParams(search)
+  const explicit = query.getAll('return_id')
+  const bridge = new URLSearchParams(rawInitData).getAll('start_param')
+  const launch = query.getAll('WebAppStartParam')
+  if (explicit.length > 1 || bridge.length > 1 || launch.length > 1) return null
+  const candidates = [explicit[0], bridge[0], launch[0]].filter((value): value is string => Boolean(value))
+  if (candidates.length === 0 || candidates.some(value => !uuid.test(value) || value !== candidates[0])) return null
+  return candidates[0]
+}
+
 export function validPoint(value: Point): boolean {
   return Number.isFinite(value.latitude) && Number.isFinite(value.longitude) &&
     value.latitude >= -90 && value.latitude <= 90 && value.longitude >= -180 && value.longitude <= 180

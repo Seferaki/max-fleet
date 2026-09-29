@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@maxhub/max-ui'
 import { MapView } from './MapView'
-import { getMapContext, initialSelection, returnIdFromURL, saveMapLocation, validPoint, MapApiError, type MapContext, type Point } from './mapApi'
+import { getMapContext, initialSelection, returnIdFromLaunch, saveMapLocation, validPoint, MapApiError, type MapContext, type Point } from './mapApi'
 
 declare global {
   interface Window {
@@ -19,8 +19,8 @@ function errorMessage(error: unknown): string {
 }
 
 export function App() {
-  const returnId = returnIdFromURL(window.location.search)
   const initData = window.WebApp?.initData || ''
+  const returnId = returnIdFromLaunch(window.location.search, initData)
   const [context, setContext] = useState<MapContext | null>(null)
   const [selected, setSelected] = useState<Point | null>(null)
   const [landmark, setLandmark] = useState('')

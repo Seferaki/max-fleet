@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getMapContext, initialSelection, returnIdFromURL, saveMapLocation, type MapContext } from './mapApi'
+import { getMapContext, initialSelection, returnIdFromLaunch, returnIdFromURL, saveMapLocation, type MapContext } from './mapApi'
 
 const id = '10000000-0000-4000-8000-000000000001'
 const context: MapContext = {
@@ -15,6 +15,9 @@ describe('manual map data', () => {
     expect(initialSelection({ ...context, selected: true, selected_point: { latitude: 55.8, longitude: 37.8 } })).toEqual({ latitude: 55.8, longitude: 37.8 })
     expect(returnIdFromURL(`?return_id=${id}`)).toBe(id)
     expect(returnIdFromURL(`?return_id=${id}&return_id=${id}`)).toBeNull()
+    expect(returnIdFromLaunch('', `auth_date=1&start_param=${id}&hash=synthetic`)).toBe(id)
+    expect(returnIdFromLaunch(`?WebAppStartParam=${id}`, '')).toBe(id)
+    expect(returnIdFromLaunch(`?return_id=${id}`, `start_param=10000000-0000-4000-8000-000000000002`)).toBeNull()
   })
 
   it('sends raw initData only in the header and retains the caller key on retry', async () => {

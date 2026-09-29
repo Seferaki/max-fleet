@@ -59,8 +59,8 @@ it('keeps manual point and key after timeout; works when tiles and GPS fail', as
 })
 
 it('restores a saved marker on reopen without resubmitting', async () => {
-  window.history.replaceState(null, '', `/?return_id=${id}`)
-  window.WebApp = { initData: 'synthetic-signed-data' }
+  window.history.replaceState(null, '', '/')
+  window.WebApp = { initData: `auth_date=1&start_param=${id}&hash=synthetic` }
   const fetcher = vi.fn(async () => new Response(JSON.stringify({ data: {
     return_id: id, return_version: 3, selected: true, selected_point: { latitude: 55.8, longitude: 37.8 },
     initial_center: { latitude: 55.8, longitude: 37.8 },
