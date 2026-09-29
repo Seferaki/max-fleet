@@ -154,7 +154,7 @@ func (p Bootstrap) showTripList(ctx context.Context, actor string, maxID int64, 
 		if scope == "admin" {
 			trips, err = reader.AdminTrips(ctx, actor, dataapi.AdminTripFilter{Limit: 8, Cursor: cursor})
 		} else {
-			trips, err = reader.MyTrips(ctx, actor, 8, cursor)
+			trips, err = reader.MyTrips(ctx, actor, 5, cursor)
 		}
 		if err != nil {
 			return err

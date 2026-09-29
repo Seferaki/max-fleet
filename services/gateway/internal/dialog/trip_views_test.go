@@ -2,6 +2,7 @@ package dialog
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -13,9 +14,50 @@ import (
 
 type tripViewData struct {
 	*dataapi.Client
-	trip       dataapi.Trip
-	photoCalls int
-	photoErr   error
+	trip          dataapi.Trip
+	myTripLimits  []int
+	myTripCursors []string
+	myTripPages   map[string]dataapi.Page[dataapi.Trip]
+	photoCalls    int
+	photoErr      error
+}
+
+func TestMyTripsShowFivePerPageAndKeepCursorPrivate(t *testing.T) {
+	now := time.Date(2026, 9, 29, 5, 0, 0, 0, time.UTC)
+	actor, _, closeServer := mockClients(t, now)
+	defer closeServer()
+	items := make([]dataapi.Trip, 6)
+	for index := range items {
+		items[index] = dataapi.Trip{ID: fmt.Sprintf("40000000-0000-4000-8000-%012d", index+1), Status: "completed"}
+	}
+	next := "opaque-private-cursor"
+	data := &tripViewData{Client: actor, myTripPages: map[string]dataapi.Page[dataapi.Trip]{
+		"":   {Items: items[:5], NextCursor: &next},
+		next: {Items: items[5:]},
+	}}
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: data, MAX: sender}
+	owner := "8000000000000000001"
+	list := menuItem(owner, "history-first", now)
+	command := "/trips"
+	list.Event.Payload.Text = &command
+	if err := processor.Handle(context.Background(), list); err != nil {
+		t.Fatal(err)
+	}
+	first := sender.Messages()[0]
+	if len(first.Buttons) != 6 || first.Buttons[5][0].Payload != "trip-list:mine:2" || strings.Contains(fmt.Sprint(first.Buttons), next) || data.myTripLimits[0] != 5 || data.myTripCursors[0] != "" {
+		t.Fatalf("first history page: %+v, limits=%v cursors=%v", first, data.myTripLimits, data.myTripCursors)
+	}
+	if err := processor.Handle(context.Background(), callbackItem(owner, "history-second", "trip-list:mine:2", now)); err != nil {
+		t.Fatal(err)
+	}
+	second := sender.Messages()[1]
+	if len(second.Buttons) != 2 || second.Buttons[0][0].Payload != "trip:"+items[5].ID || second.Buttons[1][0].Payload != "trip-list:mine:1" || len(data.myTripLimits) != 3 || data.myTripLimits[1] != 5 || data.myTripLimits[2] != 5 || data.myTripCursors[2] != next {
+		t.Fatalf("second history page: %+v, limits=%v cursors=%v", second, data.myTripLimits, data.myTripCursors)
+	}
+	if err := processor.Handle(context.Background(), callbackItem(owner, "history-invalid", "trip-list:mine:21", now)); err != nil || len(data.myTripLimits) != 3 || !strings.Contains(sender.Messages()[2].Text, "недоступен") {
+		t.Fatalf("invalid history page: %v %+v", err, sender.Messages()[2])
+	}
 }
 
 func (d *tripViewData) Trip(_ context.Context, actor, id string) (dataapi.Trip, error) {
@@ -25,9 +67,14 @@ func (d *tripViewData) Trip(_ context.Context, actor, id string) (dataapi.Trip, 
 	return d.trip, nil
 }
 
-func (d *tripViewData) MyTrips(_ context.Context, actor string, _ int, _ string) (dataapi.Page[dataapi.Trip], error) {
+func (d *tripViewData) MyTrips(_ context.Context, actor string, limit int, cursor string) (dataapi.Page[dataapi.Trip], error) {
+	d.myTripLimits = append(d.myTripLimits, limit)
+	d.myTripCursors = append(d.myTripCursors, cursor)
 	if actor != "8000000000000000001" {
 		return dataapi.Page[dataapi.Trip]{}, nil
+	}
+	if d.myTripPages != nil {
+		return d.myTripPages[cursor], nil
 	}
 	return dataapi.Page[dataapi.Trip]{Items: []dataapi.Trip{d.trip}}, nil
 }
