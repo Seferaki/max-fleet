@@ -46,10 +46,6 @@ func (s *Server) completeReturn(w http.ResponseWriter, requestID, actor string, 
 		s.fail(w, requestID, http.StatusUnprocessableEntity, "UNSAFE_RETURN")
 		return dataapi.CommandResult{}, false
 	}
-	if trip.BeforeInspection.OdometerKM != nil && *inspection.OdometerKM < *trip.BeforeInspection.OdometerKM {
-		s.fail(w, requestID, http.StatusUnprocessableEntity, "ODOMETER_ROLLBACK")
-		return dataapi.CommandResult{}, false
-	}
 	if *inspection.NewDamage || !*inspection.CabinClean {
 		damageReported, dirtyReported := false, false
 		for _, issue := range trip.Issues {
@@ -77,6 +73,10 @@ func (s *Server) completeReturn(w http.ResponseWriter, requestID, actor string, 
 	}
 	if vehicleIndex < 0 || s.vehicles[vehicleIndex].Status != "in_trip" {
 		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
+		return dataapi.CommandResult{}, false
+	}
+	if s.vehicles[vehicleIndex].CurrentOdometerKM != nil && *inspection.OdometerKM < *s.vehicles[vehicleIndex].CurrentOdometerKM {
+		s.fail(w, requestID, http.StatusUnprocessableEntity, "ODOMETER_ROLLBACK")
 		return dataapi.CommandResult{}, false
 	}
 	now := s.now().UTC()

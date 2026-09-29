@@ -59,23 +59,27 @@ func TestReturnChecklistAcceptsProblemsWithoutFalseAttestation(t *testing.T) {
 	}
 	for index, tc := range []struct {
 		field      string
-		choice     int
+		choice     string
+		button     int
 		wantNotice string
 	}{
-		{"damage", 0, "Замечание нужно описать"},
-		{"clean", 1, "Замечание нужно описать"},
-		{"parking", 1, "Самостоятельное завершение"},
-		{"keys", 1, "Самостоятельное завершение"},
-		{"locked", 1, "Самостоятельное завершение"},
+		{"damage", "yes", 0, "Замечание нужно описать"},
+		{"clean", "no", 1, "Замечание нужно описать"},
+		{"parking", "no", 1, "Самостоятельное завершение"},
+		{"keys_lock", "both_no", 3, "Самостоятельное завершение"},
 	} {
 		if err := processor.Handle(context.Background(), callbackItem(driver, fmt.Sprintf("checklist-question-%d", index), next, now)); err != nil {
 			t.Fatal(err)
 		}
 		question := sender.Messages()[len(sender.Messages())-1]
-		if len(question.Buttons) != 2 || !strings.Contains(question.Buttons[tc.choice][0].Payload, ":"+tc.field+":") {
+		wantButtons := 2
+		if tc.field == "keys_lock" {
+			wantButtons = 4
+		}
+		if len(question.Buttons) != wantButtons || !strings.Contains(question.Text, "Машина закрыта, ключи возвращены") && tc.field == "keys_lock" || !strings.Contains(question.Buttons[tc.button][0].Payload, ":"+tc.field+":"+tc.choice) {
 			t.Fatalf("question %s: %+v", tc.field, question)
 		}
-		answer := question.Buttons[tc.choice][0].Payload
+		answer := question.Buttons[tc.button][0].Payload
 		if index == 0 {
 			if err := processor.Handle(context.Background(), callbackItem("8000000000000000002", "checklist-foreign", answer, now)); err != nil || !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, "изменилась") {
 				t.Fatalf("foreign checklist: %v %+v", err, sender.Messages())
@@ -95,7 +99,7 @@ func TestReturnChecklistAcceptsProblemsWithoutFalseAttestation(t *testing.T) {
 		if !strings.Contains(response.Text, tc.wantNotice) {
 			t.Fatalf("problem %s was hidden: %+v", tc.field, response)
 		}
-		if index < 4 {
+		if index < 3 {
 			next = response.Buttons[0][0].Payload
 			if !strings.HasPrefix(next, "return-check:") {
 				t.Fatalf("next question %s: %+v", tc.field, response)
@@ -105,6 +109,31 @@ func TestReturnChecklistAcceptsProblemsWithoutFalseAttestation(t *testing.T) {
 	state, err = actor.State(context.Background(), driver)
 	if err != nil || state.Return == nil || state.Trip == nil || state.Trip.Status != "returning" || state.Return.Inspection.NewDamage == nil || !*state.Return.Inspection.NewDamage || state.Return.Inspection.CabinClean == nil || *state.Return.Inspection.CabinClean || state.Return.Inspection.ParkingAllowed == nil || *state.Return.Inspection.ParkingAllowed || state.Return.Inspection.KeysReturned == nil || *state.Return.Inspection.KeysReturned || state.Return.Inspection.CarLocked == nil || *state.Return.Inspection.CarLocked || nextReturnCheckField(state.Return.Inspection) != "" {
 		t.Fatalf("problem answers changed or missing: %+v %v", state, err)
+	}
+}
+
+func TestReturnChecklistCombinedChoiceMapsAllTruthCombinations(t *testing.T) {
+	for _, tc := range []struct {
+		choice string
+		keys   bool
+		locked bool
+	}{
+		{"both_yes", true, true},
+		{"keys_no", false, true},
+		{"lock_no", true, false},
+		{"both_no", false, false},
+	} {
+		input, ok := returnCheckInput("keys_lock", tc.choice)
+		if !ok || input.KeysReturned == nil || input.CarLocked == nil || *input.KeysReturned != tc.keys || *input.CarLocked != tc.locked {
+			t.Fatalf("choice %s mapped to %+v", tc.choice, input)
+		}
+		inspection := dataapi.Inspection{KeysReturned: input.KeysReturned, CarLocked: input.CarLocked}
+		if !returnCheckMatches(inspection, "keys_lock", tc.choice) {
+			t.Fatalf("choice %s did not match saved fields: %+v", tc.choice, inspection)
+		}
+	}
+	if _, ok := returnCheckInput("keys_lock", "yes"); ok {
+		t.Fatal("ambiguous combined yes answer was accepted")
 	}
 }
 
@@ -143,8 +172,20 @@ func TestReturnChecklistReplyRecoveryKeepsSavedAnswer(t *testing.T) {
 	if err != nil || state.Return == nil {
 		t.Fatalf("checklist state: %+v %v", state, err)
 	}
-	payload := fmt.Sprintf("return-check-set:%s:%d:damage:yes", state.Return.Inspection.ID, state.Return.Inspection.Version)
-	event := callbackItem(driver, "checklist-retry-damage", payload, now).Event
+	noDamage, clean, parkingAllowed := false, true, true
+	if _, err := actor.InspectionUpdate(context.Background(), driver, state.Return.Inspection.ID, state.Return.Inspection.Version, dataapi.InspectionUpdateInput{
+		NewDamage:      &noDamage,
+		CabinClean:     &clean,
+		ParkingAllowed: &parkingAllowed,
+	}, "checklist-retry-setup-prior-answers", nil); err != nil {
+		t.Fatal(err)
+	}
+	state, err = actor.State(context.Background(), driver)
+	if err != nil || state.Return == nil || nextReturnCheckField(state.Return.Inspection) != "keys_lock" {
+		t.Fatalf("composite question was not next: %+v %v", state, err)
+	}
+	payload := fmt.Sprintf("return-check-set:%s:%d:keys_lock:keys_no", state.Return.Inspection.ID, state.Return.Inspection.Version)
+	event := callbackItem(driver, "checklist-retry-keys-lock", payload, now).Event
 	if _, err := store.StoreInbox(context.Background(), event, maxsdk.InboxIdempotencyKey(event)); err != nil {
 		t.Fatal(err)
 	}
@@ -154,8 +195,8 @@ func TestReturnChecklistReplyRecoveryKeepsSavedAnswer(t *testing.T) {
 		t.Fatalf("lost checklist reply: %+v %v", result, err)
 	}
 	state, err = actor.State(context.Background(), driver)
-	if err != nil || state.Return == nil || state.Return.Inspection.NewDamage == nil || !*state.Return.Inspection.NewDamage {
-		t.Fatalf("saved damage lost: %+v %v", state, err)
+	if err != nil || state.Return == nil || state.Return.Inspection.KeysReturned == nil || *state.Return.Inspection.KeysReturned || state.Return.Inspection.CarLocked == nil || !*state.Return.Inspection.CarLocked {
+		t.Fatalf("saved combined answer lost: %+v %v", state, err)
 	}
 	version := state.Return.Inspection.Version
 	current = now.Add(time.Minute)

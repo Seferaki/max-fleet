@@ -18,10 +18,12 @@ type commandRecord struct {
 }
 
 type mockCommand struct {
-	Operation string
-	TargetID  string
-	Version   int64
-	Payload   json.RawMessage
+	Operation   string
+	TargetID    string
+	Version     int64
+	NullTarget  bool
+	NullVersion bool
+	Payload     json.RawMessage
 }
 
 func parseCommand(body []byte) (mockCommand, bool) {
@@ -35,11 +37,34 @@ func parseCommand(body []byte) (mockCommand, bool) {
 		}
 	}
 	var command mockCommand
-	if json.Unmarshal(fields["operation"], &command.Operation) != nil || json.Unmarshal(fields["target_id"], &command.TargetID) != nil || json.Unmarshal(fields["expected_version"], &command.Version) != nil || !validUUID(command.TargetID) || command.Version < 1 {
+	if json.Unmarshal(fields["operation"], &command.Operation) != nil {
+		return mockCommand{}, false
+	}
+	if strings.TrimSpace(string(fields["target_id"])) == "null" {
+		command.NullTarget = true
+	} else if json.Unmarshal(fields["target_id"], &command.TargetID) != nil {
+		return mockCommand{}, false
+	}
+	if strings.TrimSpace(string(fields["expected_version"])) == "null" {
+		command.NullVersion = true
+	} else if json.Unmarshal(fields["expected_version"], &command.Version) != nil {
 		return mockCommand{}, false
 	}
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(fields["payload"], &payload); err != nil || payload == nil {
+		return mockCommand{}, false
+	}
+	if command.NullTarget != command.NullVersion {
+		return mockCommand{}, false
+	}
+	if command.NullTarget {
+		var purpose string
+		if command.Operation == "employee.grant" {
+			// Employee grants have no existing aggregate to target.
+		} else if command.Operation != "challenge.create" || json.Unmarshal(payload["purpose"], &purpose) != nil || purpose != "employee_grant" {
+			return mockCommand{}, false
+		}
+	} else if !validUUID(command.TargetID) || command.Version < 1 {
 		return mockCommand{}, false
 	}
 	command.Payload = fields["payload"]
@@ -62,7 +87,7 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		return
 	}
 	command, ok := parseCommand(body)
-	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos" && command.Operation != "challenge.create" && command.Operation != "challenge.answer" && command.Operation != "checkout.accept_rules" && command.Operation != "inspection.update" && command.Operation != "checkout.set_no_new_issues" && command.Operation != "checkout.start" && command.Operation != "trip.begin_return" && command.Operation != "return.cancel" && command.Operation != "return.set_location" && command.Operation != "return.complete" && command.Operation != "issue.create" && command.Operation != "conversation.save") {
+	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos" && command.Operation != "challenge.create" && command.Operation != "challenge.answer" && command.Operation != "checkout.accept_rules" && command.Operation != "inspection.update" && command.Operation != "checkout.set_no_new_issues" && command.Operation != "checkout.start" && command.Operation != "trip.begin_return" && command.Operation != "return.cancel" && command.Operation != "return.set_location" && command.Operation != "return.complete" && command.Operation != "issue.create" && command.Operation != "issue.resolve" && command.Operation != "vehicle.block" && command.Operation != "vehicle.unblock" && command.Operation != "employee.grant" && command.Operation != "employee.access" && command.Operation != "trip.admin_close" && command.Operation != "vehicle.correct_snapshot" && command.Operation != "conversation.save") {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
@@ -119,6 +144,10 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		result, ok = s.completeReturn(w, requestID, actor, command)
 	} else if command.Operation == "conversation.save" {
 		result, ok = s.saveConversation(w, requestID, actor, command)
+	} else if command.Operation == "issue.resolve" {
+		result, ok = s.resolveIssue(w, requestID, actor, command)
+	} else if command.Operation == "vehicle.block" || command.Operation == "vehicle.unblock" || command.Operation == "employee.grant" || command.Operation == "employee.access" || command.Operation == "trip.admin_close" || command.Operation == "vehicle.correct_snapshot" {
+		result, ok = s.adminCommand(w, requestID, actor, command)
 	} else {
 		result, ok = s.createIssue(w, requestID, actor, command)
 	}

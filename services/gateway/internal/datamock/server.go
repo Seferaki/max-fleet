@@ -50,10 +50,12 @@ type Server struct {
 	workerToken             string
 	employees               map[string]dataapi.Employee
 	vehicles                []dataapi.Vehicle
+	vehicleCorrections      []vehicleSnapshotCorrectionAudit
 	checkouts               map[string]dataapi.Checkout
 	trips                   map[string]dataapi.Trip
 	returns                 map[string]dataapi.Return
 	issues                  map[string]dataapi.Issue
+	issueActions            []issueActionAudit
 	conversations           map[string]dataapi.Conversation
 	issueAssets             map[string]stagedIssueAsset
 	stageResults            map[string]stageAttempt
@@ -196,6 +198,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /internal/v1/vehicles", s.authorize(true, s.requireEmployee(s.listVehicles)))
 	mux.HandleFunc("GET /internal/v1/vehicles/{id}", s.authorize(true, s.requireEmployee(s.vehicle)))
 	mux.HandleFunc("GET /internal/v1/vehicles/{id}/previous-inspection", s.authorize(true, s.requireEmployee(s.previousInspection)))
+	mux.HandleFunc("GET /internal/v1/vehicles/{id}/previous-inspection/photos/{slot}", s.authorize(true, s.requireEmployee(s.previousInspectionPhoto)))
 	mux.HandleFunc("POST /internal/v1/commands", s.authorize(true, s.requireEmployee(s.execute)))
 	mux.HandleFunc("GET /internal/v1/commands/{key}", s.authorize(true, s.requireEmployee(s.commandResult)))
 	return mux

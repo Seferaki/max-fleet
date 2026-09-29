@@ -1,0 +1,26 @@
+{
+  "flow": "trip_admin_close",
+  "step": "challenge",
+  "context": {
+    "trip_id": "50000000-0000-4000-8000-000000000001",
+    "trip_version": 3,
+    "draft_text": "Водитель потерял доступ к MAX, автомобиль осмотрен ответственным",
+    "admin_close_data": {
+      "fuel_level": 50,
+      "odometer_km": 42150,
+      "latitude": 55.751244,
+      "longitude": 37.618423,
+      "landmark": "Въезд со стороны улицы",
+      "keys_returned": true,
+      "car_locked": true
+    },
+    "challenge_id": "90000000-0000-4000-8000-000000000001",
+    "challenge_version": 1,
+    "challenge_question": "Сколько будет 7 + 5?",
+    "challenge_options": [10, 11, 12, 13],
+    "challenge_expires_at": "2026-09-29T18:50:00Z"
+  },
+  "pending_input_kind": "none",
+  "version": 5,
+  "updated_at": "2026-09-29T18:45:00Z"
+}

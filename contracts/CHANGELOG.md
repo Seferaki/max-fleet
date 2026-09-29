@@ -1,5 +1,64 @@
 # Изменения контракта
 
+## 1.12 — BE-09, 29.09.2026
+
+- Причина: администратору нужен безопасный способ вручную закрыть активную/возвращающуюся поездку, когда сотрудник не может завершить возврат. До явного подтверждения Go должен восстановить точную причину, доступные факты и math challenge после перезапуска.
+- Добавлен flow `trip_admin_close`: `context.trip_id`/`trip_version` фиксируют поездку и CAS; `draft_text` хранит обязательную причину; `admin_close_data` содержит только предоставленные сведения. Координаты задаются парой, landmark требует координаты; отсутствующие свойства остаются неизвестными. Challenge ID, версия, вопрос, варианты и expiry сохраняются в Conversation для возобновления.
+- `TripAdminCloseIntent.available_data` теперь явно обязателен; пустой объект означает, что администратор не сообщил дополнительных сведений. Mock/client отклоняют null и частичные координаты. Изменены OpenAPI, заголовок версии, примеры и сценарии.
+- `origin/codex/data` должен синхронизировать v1.12 до INT. Python и `services/data/` не менялись; успешная валидация контракта не доказывает совместимость Python или MAX.
+
+## 1.11 — BE-09, 29.09.2026
+
+- Причина: аудитируемая коррекция одометра активной машины уже разрешена v1.7, но ввод значения и причины нельзя было восстановить после перезапуска Go до явного подтверждения. Это создавало риск потерять объяснение или применить не ту коррекцию.
+- Добавлены flow `vehicle_odometer_correction` и nullable неотрицательное целое `context.correction_odometer_km`. Диалог сохраняет vehicle ID/version и введённое значение с причиной до подтверждения; mock и Python перед INT должны принимать только admin actor, активную машину с ровно одним соответствующим assignment и текущую vehicle.version. Сама команда `vehicle.correct_snapshot` остаётся с reason, odometer_km и confirmation=true; CAS выполняется по vehicle.version, assignment/inspection/photos не меняются. Math challenge не требуется; больший на 1000+ км ввод сотрудника уже отдельно подтверждается в BE-06.
+- Обновлены OpenAPI, `X-Contract-Version`, пример и scenario. Python-ветка пока не синхронизирована с v1.11; `services/data/` не менялся.
+
+## 1.10 — BE-09, 29.09.2026
+
+- Добавлен `issue_admin_resolution` в Conversation flow и `context.issue_version`. Mock принимает это состояние только от администратора, если issue существует и версия совпадает; шаги фиксации комментария, подтверждения, завершения и отмены имеют явные ограничения по полям и статусу.
+- Состояние позволяет Go возобновить admin-разбор после restart и связывает сохранённый комментарий с тем issue/version, которые администратор видел. `issue.resolve` остаётся единственной доменной мутацией и использует прежние правила v1.9: status-only take-work, comment+confirmation для terminal.
+- Python ветка не изменялась и остаётся на v1.0; до INT data engineer должен синхронизировать этот контракт и его проверки.
+
+## 1.9 — BE-09, 29.09.2026
+
+- Уточнён поток из PRODUCT_SPEC §13.7: переход `open → in_progress` фиксирует actor в audit и назначает `assigned_to`, но принимает только `status`; комментарий и подтверждение не требуются. Терминальные статусы `resolved`/`known_nonblocking` по-прежнему требуют непустой комментарий и явное подтверждение.
+- OpenAPI использует раздельные payload-схемы для взятия в работу и терминальных решений; добавлен пример команды и негативная проверка лишних/недостающих полей. Go client/mock отклоняют смешанный payload и сохраняют actor в audit.
+- Это исправление уже опубликованного v1.8 до синхронизации с Python. Data engineer должен использовать v1.9; ветка `services/data/` этим изменением не затрагивается.
+
+## 1.8 — BE-09, 29.09.2026
+
+- Причина: среди нескольких администраторов не сохранялось, кто взял замечание в работу; Issue projection также не возвращала уже хранимые resolution_comment/resolved_by/resolved_at.
+- Issue v1.8 возвращает nullable `assigned_to`, `resolution_comment`, `resolved_by`, `resolved_at`. При `issue.resolve` с переходом open→in_progress `assigned_to` назначает сервер из аутентифицированного admin actor; payload не принимает assignee. Терминальное решение сохраняет назначение и отдельно фиксирует resolver/comment/time.
+- Go client/mock реализуют issue.resolve с admin ACL, issue.version CAS, строго заданным payload, one-use idempotency result, audit и восстановлением snapshot; терминальное решение создаёт одно уведомление `issue_resolved` каждому администратору. В Python требуется добавить nullable `assigned_to` FK, DTO-поля и назначение actor в транзакции до INT; `services/data/` этим checkpoint не менялся.
+
+## 1.7 — BE-09, 29.09.2026
+
+- Причина: одометр snapshot мог быть ошибочным, но прежний vehicle.correct_snapshot разрешал изменения только свободной машины. Проверка возврата при этом опиралась на immutable пробег before-inspection, поэтому правка snapshot не устраняла ODOMETER_ROLLBACK.
+- vehicle.correct_snapshot теперь требует admin, reason, confirmation и CAS vehicle.version. При точной active holding/in_trip assignment допускается только odometer_km; операция не освобождает назначение, не переписывает checkout/trip/inspection и фото, а audit записывается атомарно с командой. Для свободной машины остаются прежние перечисленные поля.
+- inspection.update и return.complete сравнивают ввод с текущим подтверждённым vehicle snapshot. Пока коррекции нет, он совпадает с показанием выезда; после коррекции сохраняется новое основание без изменения исторического inspection.
+- Обновлены OpenAPI/meta/header, Go/mock и сценарии до 1.7. Python в codex/data не менялся; перед INT он должен синхронизировать active correction, транзакционные блокировки, audit, версии и проверки возврата с этим commit.
+
+## 1.6 — BE-09, 29.09.2026
+
+- Причина: v1.5 связывал admin close с поездкой, версией и причиной, но не связывал proof с `available_data`, хотя эти значения меняют возврат, состояние машины и её snapshot. Администратор мог подтвердить один набор пробега, топлива и координат, а сервер записал бы другой.
+- `TripAdminCloseIntent` получает необязательный объект `available_data`; если он передан, JSON-команда `trip.admin_close` должна содержать тот же объект в canonical JSON. Его вложенные поля сортируются и входят в intent SHA-256. Отсутствие объекта отличается от объекта с данными; null запрещён. Несовпадение возвращает `422 CHALLENGE_INVALID`, не поглощая proof и не меняя доменные записи.
+- Обновлены contract version, заголовок, meta, examples и сценарий tampered admin-close data до 1.6. Python в `codex/data` не изменён; перед INT он должен получить этот contract commit и включить `available_data` в challenge schema, intent hash и проверку итоговой команды.
+
+## 1.5 — BE-09, 29.09.2026
+
+- Причина: в v1.4 `ChallengeIntent` перечислял поля админских операций как необязательные. Python уже требует точный набор ключей, связывает решение с SHA-256 намерения, возвращает `challenge_proof_id=challenge.id` и допускает одно потребление proof; OpenAPI не гарантировал ту же границу.
+- `ChallengeIntent` теперь `oneOf` operation-specific схем: block — `operation,target_id,expected_version,reason`; unblock добавляет только `review_completed=true`; grant требует `target_id=null`, `expected_version=null`, `max_user_id,display_name`; access требует `can_start_trip,reason`; admin close требует `reason`. Purpose и operation должны совпадать, лишние поля запрещены.
+- Зафиксирована canonical JSON сериализация для SHA-256: UTF-8, сортировка ключей, компактные разделители, Unicode не экранируется. Успешный challenge answer возвращает его UUID как `challenge_proof_id`; итоговая административная команда несёт этот UUID в `challenge_id`, а сервер сверяет intent hash и поглощает proof однократно.
+- Обновлены examples, сценарии, contract header/meta и Go client/mock version до 1.5. Это контрактный/mock шаг; Python в отдельной ветке не изменён и требует получить тот же contract SHA до INT.
+
+## 1.4 — BE-08, 29.09.2026
+
+- Причина: post-return диалог уже реализован на Go/mock, но восстановление после рестарта не было зафиксировано схемой; в выборе категорий отсутствовали случаи парковки и неисправного замка.
+- Зафиксированы значения `Conversation.flow`, включая `issue_post_return`, и контекст отдельного разговора по собственной завершённой поездке: `target_id=trip_id`, vehicle snapshot version, категория, описание и до трёх trip-scoped фото. Отправка остаётся отдельным идемпотентным `issue.create` с `inspection_id=null`; завершённые Trip и after-inspection неизменны.
+- Добавлены категории замечаний `parking` и `car_lock`. Mock и Go-клиент принимают их вместе с прежними категориями.
+- HTTP/error semantics согласованы с реализацией Python: `RULES_REQUIRED` и `CHALLENGE_EXPIRED` — 422; read `/admin/*` для не-admin — `ACCESS_DENIED`, административные команды — `ADMIN_REQUIRED`; занятый MAX ID при `employee.grant` — `409 INVALID_STATE`. Возврат по-прежнему отдаёт Return, а фото/inspection update повышают родительскую версию по правилам v1.3.
+- OpenAPI, fixtures, сценарии, contract version header/meta и Go mock переходят на 1.4. Python ветка требует получить этот же contract commit до INT; данный коммит не является доказательством её соответствия.
+
 ## 1.3 — BE-08, 29.09.2026
 
 - Причина: сотрудник должен сообщить о замеченной после возврата проблеме, не меняя завершённый снимок поездки. У `issue.create` добавлен контекст собственной `completed` поездки: `trip_id` задан, `inspection_id=null`, отдельный Issue получает `stage=post_return`; машина блокируется для новой выдачи до разбора и admin получает уведомление. Версии Trip и finalized after-inspection не меняются. Чужой trip скрывается через 404. В сообщении не утверждается вина предыдущего водителя.

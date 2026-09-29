@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"testing"
 	"time"
@@ -88,6 +89,8 @@ func TestTakeChallengePersistsAndRulesRequireAnswer(t *testing.T) {
 	if err != nil || current.IntentConfirmedAt == nil || current.Step != "rules" {
 		t.Fatalf("intent state: %+v %v", current, err)
 	}
+	_, err = client.CheckoutStart(ctx, driverID, hold.ID, current.Version, "rules-required-start-1", nil)
+	expectAPIErrorStatus(t, err, "RULES_REQUIRED", http.StatusUnprocessableEntity)
 	_, err = client.CheckoutAcceptRules(ctx, driverID, hold.ID, current.Version, "90000000-0000-4000-8000-000000000099", "wrong-rules-1", nil)
 	expectAPIError(t, err, "STALE_VERSION")
 	accepted, err := client.CheckoutAcceptRules(ctx, driverID, hold.ID, current.Version, restarted.rules.ID, "accept-rules-1", nil)
@@ -468,7 +471,7 @@ func TestTakeChallengeThreeErrorsAndTTL(t *testing.T) {
 	fresh, _ := dataapi.DecodeAggregate[dataapi.Challenge](created)
 	now = now.Add(5 * time.Minute)
 	_, err = client.ChallengeAnswer(ctx, driverID, fresh.ID, fresh.Version, 0, "expired-answer-1", nil)
-	expectAPIError(t, err, "CHALLENGE_EXPIRED")
+	expectAPIErrorStatus(t, err, "CHALLENGE_EXPIRED", http.StatusUnprocessableEntity)
 	state, err := client.Checkout(ctx, driverID, hold.ID)
 	if err != nil || state.IntentConfirmedAt != nil || state.Status != "holding" {
 		t.Fatalf("expired challenge changed hold: %+v %v", state, err)

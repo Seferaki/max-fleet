@@ -2,7 +2,7 @@
 
 Чат-бот MAX для общего корпоративного автопарка: сотрудник выбирает машину, фиксирует состояние до и после поездки, возвращает её с точкой парковки; администратор управляет доступом и разбирает замечания.
 
-**Статус на 29.09.2026:** в ветке `codex/backend` завершены S-01…S-03, BE-01…BE-07 и UI-01 только на HTTP mock; BE-08 в работе. Опубликованы контракт Data API v1.3, Go-клиент и persistent mock, gateway с webhook/dev polling, диалоги взятия и возврата с 8+8 фото, а также React-карта ручного выбора парковки. Результаты проверок и незавершённые шаги перечислены в [прогрессе backend](docs/progress/BACKEND.md). Python находится в отдельной ветке `codex/data`, интеграция и реальный MAX не проверены; для MAX всё ещё нужен H-01.
+**Статус на 29.09.2026:** S-01…S-03, BE-01…BE-08 и обязательный UI-01 готовы только на HTTP mock; BE-09 в работе. Data API v1.12 добавляет durable-состояние административного закрытия поездки с trip version, известными сведениями и math challenge; MAX-поток admin close ещё в работе. Go/mock MAX flows для issue и коррекции одометра подключены; коррекция требует явного подтверждения старого и нового значения и восстанавливается после потерянного ответа. Результаты проверок перечислены в [прогрессе backend](docs/progress/BACKEND.md). Python находится в отдельной ветке `codex/data` на OpenAPI v1.0: DE-01…DE-08 готовы, DE-09 ждёт согласования и синхронизации API. Совместная интеграция и реальный MAX не проверены. Для MAX всё ещё нужен H-01.
 
 ## Начать работу
 
@@ -46,7 +46,7 @@ Mermaid-диаграммы встроены в документы и отобр�
 
 `S-01…S-03: подготовка и контракт → backend с mock / Python и БД / QA отдельно → INT-01…INT-06: соединение, проверка, демонстрация`.
 
-Текущая backend-задача — BE-08: история и замечания. Доступные диалоговые команды на mock: `/menu`, `/cars`, `/odometer N`, `/issue <категория> <описание>`, `/trips`, `/trip UUID`; admin может открыть `/admintrips`. Проверка репозитория: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` при наличии Go 1.27.1, Python 3.12 с зависимостями из `contracts/requirements-dev.txt`, Node 22 и Docker Engine. Подготовка приватных локальных секретов: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap.ps1`. Подробности — в [OPERATIONS](docs/OPERATIONS.md). Работа mock не доказывает готовность реального MAX или Python-сервиса.
+Текущая backend-задача — BE-09: административные challenge/proof и проверка согласованности намерения. Доступные диалоговые команды на mock: `/menu`, `/cars`, `/odometer N`, `/issue <категория> <описание>`, `/trips`, `/trip UUID`; admin может открыть `/admintrips`, `/adminissues` и `/adminodo` (активная машина → `/adminodo <км> | <причина>` → отдельное подтверждение). Проверка репозитория: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` при наличии Go 1.27.1, Python 3.12 с зависимостями из `contracts/requirements-dev.txt`, Node 22 и Docker Engine. Подготовка приватных локальных секретов: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap.ps1`. Подробности — в [OPERATIONS](docs/OPERATIONS.md). Работа mock не доказывает готовность реального MAX или Python-сервиса.
 
 ## Секреты
 

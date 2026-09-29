@@ -46,7 +46,7 @@ func TestReturnIssueDraftOwnedReturnAndDurableSave(t *testing.T) {
 	if err := processor.Handle(ctx, callbackItem(driver, "after-issue-stale", stale, now)); err != nil || !strings.Contains(sender.Messages()[2].Text, "изменился") {
 		t.Fatalf("stale return issue: %v %+v", err, sender.Messages())
 	}
-	if err := processor.Handle(ctx, callbackItem(driver, "after-issue-categories", button, now)); err != nil || len(sender.Messages()[3].Buttons) != 5 {
+	if err := processor.Handle(ctx, callbackItem(driver, "after-issue-categories", button, now)); err != nil || len(sender.Messages()[3].Buttons) != 7 {
 		t.Fatalf("categories: %v %+v", err, sender.Messages())
 	}
 	if err := processor.Handle(ctx, callbackItem(driver, "after-issue-kind", sender.Messages()[3].Buttons[2][0].Payload, now)); err != nil || !strings.Contains(sender.Messages()[4].Text, "/issue чистота") {

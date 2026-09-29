@@ -10,7 +10,7 @@ import (
 
 func validIssueCategory(category string) bool {
 	switch category {
-	case "body_damage", "mechanical", "cleanliness", "keys", "other":
+	case "body_damage", "mechanical", "cleanliness", "keys", "parking", "car_lock", "other":
 		return true
 	}
 	return false

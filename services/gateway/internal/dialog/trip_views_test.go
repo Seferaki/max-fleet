@@ -127,6 +127,52 @@ func TestTripHistoryShowsAdminCloseAndOwnedIssuesByVersion(t *testing.T) {
 	}
 }
 
+func TestAdminCloseActionOnlyAppearsForAdminOnOpenTrip(t *testing.T) {
+	now := time.Date(2026, 9, 29, 5, 0, 0, 0, time.UTC)
+	actor, _, closeServer := mockClients(t, now)
+	defer closeServer()
+	owner, err := actor.Me(context.Background(), "8000000000000000001")
+	if err != nil || owner.Employee == nil {
+		t.Fatal(err)
+	}
+	const tripID = "40000000-0000-4000-8000-000000000001"
+	data := &tripViewData{Client: actor, trip: dataapi.Trip{ID: tripID, VehicleID: "10000000-0000-4000-8000-000000000001", EmployeeID: owner.Employee.ID, Status: "active", Version: 7}}
+	sender := &maxsdk.RecordingTransport{}
+	processor := Bootstrap{Data: data, MAX: sender}
+	adminID := "8000000000000000003"
+	startPayload := "admin-close:start:" + tripID + ":7"
+
+	if err := processor.Handle(context.Background(), callbackItem(adminID, "admin-close-active", "trip:"+tripID, now)); err != nil {
+		t.Fatal(err)
+	}
+	if !hasButton(sender.Messages()[0].Buttons, startPayload) {
+		t.Fatalf("active trip detail did not expose admin close: %+v", sender.Messages()[0])
+	}
+
+	if err := processor.Handle(context.Background(), callbackItem("8000000000000000001", "employee-close-active", "trip:"+tripID, now)); err != nil {
+		t.Fatal(err)
+	}
+	if hasButton(sender.Messages()[1].Buttons, startPayload) {
+		t.Fatalf("employee trip detail exposed admin close: %+v", sender.Messages()[1])
+	}
+
+	data.trip.Status, data.trip.Version = "returning", 8
+	if err := processor.Handle(context.Background(), callbackItem(adminID, "admin-close-returning", "trip:"+tripID, now)); err != nil {
+		t.Fatal(err)
+	}
+	if !hasButton(sender.Messages()[2].Buttons, "admin-close:start:"+tripID+":8") {
+		t.Fatalf("returning trip detail did not expose admin close: %+v", sender.Messages()[2])
+	}
+
+	data.trip.Status, data.trip.Version = "completed", 9
+	if err := processor.Handle(context.Background(), callbackItem(adminID, "admin-close-completed", "trip:"+tripID, now)); err != nil {
+		t.Fatal(err)
+	}
+	if hasButton(sender.Messages()[3].Buttons, "admin-close:start:"+tripID+":9") {
+		t.Fatalf("completed trip detail exposed admin close: %+v", sender.Messages()[3])
+	}
+}
+
 func (d *tripViewData) Trip(_ context.Context, actor, id string) (dataapi.Trip, error) {
 	if id != d.trip.ID || actor != "8000000000000000001" && actor != "8000000000000000003" {
 		return dataapi.Trip{}, &dataapi.APIError{Status: http.StatusNotFound, Code: "NOT_FOUND"}

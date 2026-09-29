@@ -1,0 +1,13 @@
+{
+  "flow": "vehicle_odometer_correction",
+  "step": "confirm",
+  "context": {
+    "vehicle_id": "10000000-0000-4000-8000-000000000001",
+    "vehicle_version": 7,
+    "correction_odometer_km": 42150,
+    "draft_text": "Исправить ошибочную запись после сверки с фотографией панели приборов"
+  },
+  "pending_input_kind": "none",
+  "version": 3,
+  "updated_at": "2026-09-29T18:00:00Z"
+}

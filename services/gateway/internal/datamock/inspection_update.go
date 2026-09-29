@@ -62,7 +62,13 @@ func (s *Server) updateInspection(w http.ResponseWriter, requestID, actor string
 	}
 	baseline := (*int64)(nil)
 	if returnID != "" {
-		baseline = s.trips[draft.TripID].BeforeInspection.OdometerKM
+		trip := s.trips[draft.TripID]
+		vehicleIndex := s.vehicleIndex(trip.VehicleID)
+		if vehicleIndex < 0 || s.vehicles[vehicleIndex].Status != "in_trip" {
+			s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
+			return dataapi.CommandResult{}, false
+		}
+		baseline = s.vehicles[vehicleIndex].CurrentOdometerKM
 	} else {
 		for _, vehicle := range s.vehicles {
 			if vehicle.ID == checkout.VehicleID {

@@ -1,15 +1,23 @@
 openapi: 3.1.0
 info:
   title: MAX Fleet Data API
-  version: '1.3'
+  version: '1.12'
   description: 'Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID
     и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом
-    запросе. Версия 1.3 разрешает отдельное замечание владельца после завершения поездки без изменения завершённого
-    снимка. Версии: vehicle растёт при смене доступности, блокировке, issue и коррекции; checkout при изменении
-    оформления; inspection при ответе, фото и подтверждении; return при месте/отмене/завершении; trip при начале
-    возврата, отмене, завершении и admin close; conversation только при save. Фото повышает inspection и его родительский
-    checkout/return version. Перед start/complete Go читает актуальный агрегат. Hold равен 15 минутам серверного
-    времени. Finalized inspection неизменяем, admin close не подставляет отсутствующие данные.'
+    запросе. Версия 1.6 связывает доступные данные admin close с SHA-256 намерения. Версия 1.7 разрешает аудитируемую
+    коррекцию только одометра snapshot активной брони или поездки без изменения inspection и assignment. Версия
+    1.8 публикует в Issue назначение assigned_to, комментарий и автора/время терминального решения; issue.resolve
+    при первом переходе в in_progress устанавливает employee ID из проверенного admin actor, а последующие терминальные
+    переходы сохраняют назначение. Версия 1.9 уточняет, что in_progress принимает только status, а терминальные
+    решения требуют комментарий и подтверждение. Версия 1.10 добавляет проверяемый и восстанавливаемый issue_admin_resolution
+    conversation с CAS по Issue.version. Версия 1.11 добавляет vehicle_odometer_correction conversation с CAS по
+    Vehicle.version и явным подтверждением до аудируемого изменения snapshot. Версия 1.12 добавляет durable trip_admin_close
+    conversation с CAS по Trip.version, причиной, только явно известными available_data и полным состоянием math
+    challenge для восстановления после перезапуска. Версии: vehicle растёт при смене доступности, блокировке, issue
+    и коррекции; checkout при изменении оформления; inspection при ответе, фото и подтверждении; return при месте/отмене/завершении;
+    trip при начале возврата, отмене, завершении и admin close; conversation только при save. Фото повышает inspection
+    и его родительский checkout/return version. Перед start/complete Go читает актуальный агрегат. Hold равен 15
+    минутам серверного времени. Finalized inspection неизменяем, admin close не подставляет отсутствующие данные.'
 servers:
 - url: http://data-api:8000
 - url: http://data-mock:8000
@@ -44,7 +52,7 @@ components:
       in: header
       required: true
       schema:
-        const: '1.3'
+        const: '1.12'
     RequestID:
       name: X-Request-ID
       in: header
@@ -115,6 +123,27 @@ components:
       type: integer
       minimum: 1
       maximum: 8
+    IssueCategory:
+      type: string
+      enum:
+      - body_damage
+      - mechanical
+      - cleanliness
+      - keys
+      - parking
+      - car_lock
+      - other
+    ConversationFlow:
+      type: string
+      enum:
+      - issue_before
+      - issue_during
+      - issue_after
+      - return_location
+      - issue_post_return
+      - issue_admin_resolution
+      - vehicle_odometer_correction
+      - trip_admin_close
     ErrorCode:
       type: string
       enum:
@@ -611,6 +640,10 @@ components:
           $ref: '#/components/schemas/UUID'
         author_id:
           $ref: '#/components/schemas/UUID'
+        assigned_to:
+          oneOf:
+          - $ref: '#/components/schemas/UUID'
+          - type: 'null'
         stage:
           type: string
           enum:
@@ -633,6 +666,19 @@ components:
           - known_nonblocking
         blocks_issuance:
           type: boolean
+        resolution_comment:
+          oneOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+        resolved_by:
+          oneOf:
+          - $ref: '#/components/schemas/UUID'
+          - type: 'null'
+        resolved_at:
+          oneOf:
+          - $ref: '#/components/schemas/Timestamp'
+          - type: 'null'
         trip_id:
           oneOf:
           - $ref: '#/components/schemas/UUID'
@@ -654,16 +700,51 @@ components:
       - id
       - vehicle_id
       - author_id
+      - assigned_to
       - stage
       - category
       - description
       - status
       - blocks_issuance
+      - resolution_comment
+      - resolved_by
+      - resolved_at
       - trip_id
       - inspection_id
       - asset_ids
       - version
       - updated_at
+    IssueResolvePayload:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        properties:
+          status:
+            const: in_progress
+        required:
+        - status
+        description: 'Взять issue в работу: actor и audit фиксируются без комментария и подтверждения.'
+      - type: object
+        additionalProperties: false
+        properties:
+          status:
+            type: string
+            enum:
+            - resolved
+            - known_nonblocking
+          comment:
+            type: string
+            maxLength: 1000
+            pattern: \S
+          confirmation:
+            const: true
+        required:
+        - status
+        - comment
+        - confirmation
+        description: Терминальное решение требует непустой комментарий и подтверждение.
+      description: Назначение assignee происходит только по проверенному admin actor. Комментарий и подтверждение
+        обязательны для терминальных решений, но не для перехода в in_progress.
     Challenge:
       type: object
       additionalProperties: false
@@ -768,7 +849,7 @@ components:
       additionalProperties: false
       properties:
         contract_version:
-          const: '1.3'
+          const: '1.12'
         build_sha:
           type: string
           maxLength: 64
@@ -1109,8 +1190,7 @@ components:
       additionalProperties: false
       properties:
         flow:
-          type: string
-          maxLength: 80
+          $ref: '#/components/schemas/ConversationFlow'
         step:
           type: string
           maxLength: 80
@@ -1146,6 +1226,14 @@ components:
               oneOf:
               - $ref: '#/components/schemas/UUID'
               - type: 'null'
+            issue_version:
+              oneOf:
+              - $ref: '#/components/schemas/Version'
+              - type: 'null'
+            trip_version:
+              oneOf:
+              - $ref: '#/components/schemas/Version'
+              - type: 'null'
             cursor:
               oneOf:
               - type: string
@@ -1158,13 +1246,7 @@ components:
               - type: 'null'
             issue_category:
               oneOf:
-              - type: string
-                enum:
-                - body_damage
-                - mechanical
-                - cleanliness
-                - keys
-                - other
+              - $ref: '#/components/schemas/IssueCategory'
               - type: 'null'
             asset_ids:
               type: array
@@ -1175,6 +1257,35 @@ components:
             vehicle_version:
               oneOf:
               - $ref: '#/components/schemas/Version'
+              - type: 'null'
+            correction_odometer_km:
+              oneOf:
+              - type: integer
+                minimum: 0
+              - type: 'null'
+            admin_close_data:
+              oneOf:
+              - $ref: '#/components/schemas/AdminCloseData'
+              - type: 'null'
+            challenge_version:
+              oneOf:
+              - $ref: '#/components/schemas/Version'
+              - type: 'null'
+            challenge_question:
+              oneOf:
+              - type: string
+                maxLength: 200
+              - type: 'null'
+            challenge_options:
+              type: array
+              items:
+                type: integer
+                minimum: 0
+                maximum: 18
+              maxItems: 4
+            challenge_expires_at:
+              oneOf:
+              - $ref: '#/components/schemas/Timestamp'
               - type: 'null'
         pending_input_kind:
           oneOf:
@@ -1196,6 +1307,18 @@ components:
       - pending_input_kind
       - version
       - updated_at
+      description: issue_post_return belongs to the actor's own completed trip. target_id and trip_id are that trip
+        ID; vehicle_id and vehicle_version bind the draft to its vehicle snapshot. draft_text, issue_category and
+        up to three trip-scoped asset_ids survive restart. Saving the issue uses issue.create with trip_id and inspection_id=null;
+        it must not update the completed trip or finalized after-inspection. issue_admin_resolution is admin-only
+        and binds issue_id plus issue_version to the current issue. It stores the resolution comment before confirmation
+        so restart can resume safely; take-work itself remains status-only. vehicle_odometer_correction is admin-only
+        and binds vehicle_id plus vehicle_version to one active holding/in_trip vehicle. It stores correction_odometer_km
+        and the reason in draft_text before explicit confirmation; restart resumes the same proposed value and reason.
+        trip_admin_close is admin-only and binds trip_id plus trip_version to one active or returning trip. It stores
+        the required reason and only explicitly known admin_close_data before confirmation; omitted values remain
+        missing. The math challenge ID, version, question, options and expiry are saved so the same confirmation
+        can resume after restart.
     LocationInput:
       type: object
       additionalProperties: false
@@ -1226,44 +1349,249 @@ components:
       - longitude
       - source
       - confirmed
-    ChallengeIntent:
+    CheckoutCreateIntent:
       type: object
       additionalProperties: false
       properties:
         operation:
-          type: string
-          enum:
-          - checkout.create
-          - trip.begin_return
-          - vehicle.block
-          - vehicle.unblock
-          - employee.grant
-          - employee.access
-          - trip.admin_close
+          const: checkout.create
         target_id:
-          oneOf:
-          - $ref: '#/components/schemas/UUID'
-          - type: 'null'
+          $ref: '#/components/schemas/UUID'
         expected_version:
-          oneOf:
-          - $ref: '#/components/schemas/Version'
-          - type: 'null'
+          $ref: '#/components/schemas/Version'
+      required:
+      - operation
+      - target_id
+      - expected_version
+    TripBeginReturnIntent:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          const: trip.begin_return
+        target_id:
+          $ref: '#/components/schemas/UUID'
+        expected_version:
+          $ref: '#/components/schemas/Version'
+      required:
+      - operation
+      - target_id
+      - expected_version
+    VehicleBlockIntent:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          const: vehicle.block
+        target_id:
+          $ref: '#/components/schemas/UUID'
+        expected_version:
+          $ref: '#/components/schemas/Version'
         reason:
           type: string
           maxLength: 1000
+      required:
+      - operation
+      - target_id
+      - expected_version
+      - reason
+    VehicleUnblockIntent:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          const: vehicle.unblock
+        target_id:
+          $ref: '#/components/schemas/UUID'
+        expected_version:
+          $ref: '#/components/schemas/Version'
+        reason:
+          type: string
+          maxLength: 1000
+        review_completed:
+          const: true
+      required:
+      - operation
+      - target_id
+      - expected_version
+      - reason
+      - review_completed
+    EmployeeGrantIntent:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          const: employee.grant
+        target_id:
+          type: 'null'
+        expected_version:
+          type: 'null'
         max_user_id:
           $ref: '#/components/schemas/MaxID'
         display_name:
           type: string
           maxLength: 200
-        can_start_trip:
-          type: boolean
-        review_completed:
-          type: boolean
       required:
       - operation
       - target_id
       - expected_version
+      - max_user_id
+      - display_name
+    EmployeeAccessIntent:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          const: employee.access
+        target_id:
+          $ref: '#/components/schemas/UUID'
+        expected_version:
+          $ref: '#/components/schemas/Version'
+        can_start_trip:
+          type: boolean
+        reason:
+          type: string
+          maxLength: 1000
+      required:
+      - operation
+      - target_id
+      - expected_version
+      - can_start_trip
+      - reason
+    TripAdminCloseIntent:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          const: trip.admin_close
+        target_id:
+          $ref: '#/components/schemas/UUID'
+        expected_version:
+          $ref: '#/components/schemas/Version'
+        reason:
+          type: string
+          maxLength: 1000
+        available_data:
+          $ref: '#/components/schemas/AdminCloseData'
+      required:
+      - operation
+      - target_id
+      - expected_version
+      - reason
+      - available_data
+    ChallengeIntent:
+      oneOf:
+      - $ref: '#/components/schemas/CheckoutCreateIntent'
+      - $ref: '#/components/schemas/TripBeginReturnIntent'
+      - $ref: '#/components/schemas/VehicleBlockIntent'
+      - $ref: '#/components/schemas/VehicleUnblockIntent'
+      - $ref: '#/components/schemas/EmployeeGrantIntent'
+      - $ref: '#/components/schemas/EmployeeAccessIntent'
+      - $ref: '#/components/schemas/TripAdminCloseIntent'
+      description: Ровно один operation-specific набор полей; его SHA-256 считается от UTF-8 JSON с сортировкой
+        ключей, компактными разделителями ',' и ':' и неэкранированными Unicode (эквивалент json.dumps(sort_keys=True,
+        separators=(',', ':'), ensure_ascii=False)).
+    TakeChallengePayload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          const: take
+        intent_payload:
+          allOf:
+          - $ref: '#/components/schemas/ChallengeIntent'
+          - $ref: '#/components/schemas/CheckoutCreateIntent'
+      required:
+      - purpose
+      - intent_payload
+    ReturnChallengePayload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          const: return
+        intent_payload:
+          allOf:
+          - $ref: '#/components/schemas/ChallengeIntent'
+          - $ref: '#/components/schemas/TripBeginReturnIntent'
+      required:
+      - purpose
+      - intent_payload
+    VehicleBlockChallengePayload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          const: vehicle_block
+        intent_payload:
+          allOf:
+          - $ref: '#/components/schemas/ChallengeIntent'
+          - $ref: '#/components/schemas/VehicleBlockIntent'
+      required:
+      - purpose
+      - intent_payload
+    VehicleUnblockChallengePayload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          const: vehicle_unblock
+        intent_payload:
+          allOf:
+          - $ref: '#/components/schemas/ChallengeIntent'
+          - $ref: '#/components/schemas/VehicleUnblockIntent'
+      required:
+      - purpose
+      - intent_payload
+    EmployeeGrantChallengePayload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          const: employee_grant
+        intent_payload:
+          allOf:
+          - $ref: '#/components/schemas/ChallengeIntent'
+          - $ref: '#/components/schemas/EmployeeGrantIntent'
+      required:
+      - purpose
+      - intent_payload
+    EmployeeAccessChallengePayload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          const: employee_access
+        intent_payload:
+          allOf:
+          - $ref: '#/components/schemas/ChallengeIntent'
+          - $ref: '#/components/schemas/EmployeeAccessIntent'
+      required:
+      - purpose
+      - intent_payload
+    AdminCloseChallengePayload:
+      type: object
+      additionalProperties: false
+      properties:
+        purpose:
+          const: admin_close
+        intent_payload:
+          allOf:
+          - $ref: '#/components/schemas/ChallengeIntent'
+          - $ref: '#/components/schemas/TripAdminCloseIntent'
+      required:
+      - purpose
+      - intent_payload
+    ChallengeCreatePayload:
+      oneOf:
+      - $ref: '#/components/schemas/TakeChallengePayload'
+      - $ref: '#/components/schemas/ReturnChallengePayload'
+      - $ref: '#/components/schemas/VehicleBlockChallengePayload'
+      - $ref: '#/components/schemas/VehicleUnblockChallengePayload'
+      - $ref: '#/components/schemas/EmployeeGrantChallengePayload'
+      - $ref: '#/components/schemas/EmployeeAccessChallengePayload'
+      - $ref: '#/components/schemas/AdminCloseChallengePayload'
+      description: Purpose и operation intent обязаны соответствовать друг другу.
     AdminCloseData:
       type: object
       additionalProperties: false
@@ -1288,14 +1616,44 @@ components:
           type: boolean
         car_locked:
           type: boolean
-    IssueCategory:
-      type: string
-      enum:
-      - body_damage
-      - mechanical
-      - cleanliness
-      - keys
-      - other
+      description: Only facts explicitly supplied by an administrator. Omitted properties remain unknown. latitude
+        and longitude must be supplied together; landmark requires coordinates.
+      allOf:
+      - if:
+          required:
+          - latitude
+          properties:
+            latitude: {}
+        then:
+          required:
+          - longitude
+          properties:
+            longitude: {}
+      - if:
+          required:
+          - longitude
+          properties:
+            longitude: {}
+        then:
+          required:
+          - latitude
+          properties:
+            latitude: {}
+      - if:
+          required:
+          - landmark
+          properties:
+            landmark: {}
+        then:
+          anyOf:
+          - required:
+            - latitude
+            properties:
+              latitude: {}
+          - required:
+            - longitude
+            properties:
+              longitude: {}
     CheckoutCreateCommand:
       type: object
       additionalProperties: false
@@ -1349,16 +1707,7 @@ components:
           - $ref: '#/components/schemas/Version'
           - type: 'null'
         payload:
-          type: object
-          additionalProperties: false
-          properties:
-            purpose:
-              $ref: '#/components/schemas/ChallengePurpose'
-            intent_payload:
-              $ref: '#/components/schemas/ChallengeIntent'
-          required:
-          - purpose
-          - intent_payload
+          $ref: '#/components/schemas/ChallengeCreatePayload'
       required:
       - operation
       - target_id
@@ -1857,24 +2206,7 @@ components:
         expected_version:
           $ref: '#/components/schemas/Version'
         payload:
-          type: object
-          additionalProperties: false
-          properties:
-            status:
-              type: string
-              enum:
-              - in_progress
-              - resolved
-              - known_nonblocking
-            comment:
-              type: string
-              maxLength: 1000
-            confirmation:
-              const: true
-          required:
-          - status
-          - comment
-          - confirmation
+          $ref: '#/components/schemas/IssueResolvePayload'
       required:
       - operation
       - target_id
@@ -1904,6 +2236,7 @@ components:
           required:
           - reason
           - challenge_id
+          - available_data
       required:
       - operation
       - target_id
@@ -1924,8 +2257,7 @@ components:
           additionalProperties: false
           properties:
             flow:
-              type: string
-              maxLength: 80
+              $ref: '#/components/schemas/ConversationFlow'
             step:
               type: string
               maxLength: 80
@@ -2002,7 +2334,10 @@ components:
           trip.admin_close: '#/components/schemas/TripAdminCloseCommand'
           conversation.save: '#/components/schemas/ConversationSaveCommand'
       description: Каждая операция имеет собственный payload. expected_version относится к target_id; чужой/устаревший
-        объект не изменяется.
+        объект не изменяется. vehicle.correct_snapshot требует admin и актуальную версию vehicle; для свободной
+        машины допускает разрешённые поля, а при точной активной holding/in_trip assignment — только odometer_km,
+        reason и confirmation. Коррекция аудируется, не меняет assignment, checkout, trip, inspection или фото.
+        ODOMETER_ROLLBACK при сохранении и завершении возврата сравнивается с текущим подтверждённым vehicle snapshot.
     CommandResult:
       type: object
       additionalProperties: false
@@ -2060,6 +2395,8 @@ components:
           oneOf:
           - $ref: '#/components/schemas/UUID'
           - type: 'null'
+          description: UUID успешно решённого admin challenge; тот же ID команда передаёт как challenge_id. Mock/Python
+            сверяют SHA-256 полного canonical intent и потребляют proof один раз.
       required:
       - operation
       - aggregate
@@ -2627,7 +2964,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -2639,7 +2976,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -2657,7 +2994,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -2707,7 +3044,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -2719,7 +3056,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -2737,7 +3074,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -2787,7 +3124,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -2799,7 +3136,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -2817,7 +3154,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -2868,7 +3205,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -2880,7 +3217,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -2898,7 +3235,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -2949,7 +3286,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -2961,7 +3298,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -2979,7 +3316,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -3029,7 +3366,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -3041,7 +3378,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -3059,7 +3396,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -3127,7 +3464,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -3139,7 +3476,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -3157,7 +3494,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -3208,7 +3545,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -3220,7 +3557,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -3238,7 +3575,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -3290,7 +3627,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -3302,7 +3639,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -3320,7 +3657,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -3388,7 +3725,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -3400,7 +3737,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -3418,7 +3755,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -3469,7 +3806,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -3481,7 +3818,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -3499,7 +3836,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -3550,7 +3887,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -3562,7 +3899,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -3580,7 +3917,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -3630,7 +3967,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -3642,7 +3979,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -3660,7 +3997,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -3743,7 +4080,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -3755,7 +4092,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -3773,7 +4110,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -3836,7 +4173,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -3848,7 +4185,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -3866,7 +4203,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -3944,7 +4281,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -3956,7 +4293,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -3974,7 +4311,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -4025,7 +4362,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -4037,7 +4374,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -4055,7 +4392,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -4106,7 +4443,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -4118,7 +4455,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -4136,7 +4473,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -4208,7 +4545,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -4220,7 +4557,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -4238,7 +4575,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -4324,7 +4661,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -4336,7 +4673,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -4354,7 +4691,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -4412,7 +4749,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -4424,7 +4761,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -4442,7 +4779,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -4498,7 +4835,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -4510,7 +4847,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -4528,7 +4865,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -4588,7 +4925,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -4600,7 +4937,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -4618,7 +4955,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -4680,7 +5017,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -4692,7 +5029,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -4710,7 +5047,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -4774,7 +5111,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -4786,7 +5123,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -4804,7 +5141,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -4861,7 +5198,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -4873,7 +5210,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -4891,7 +5228,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -4948,7 +5285,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -4960,7 +5297,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -4978,7 +5315,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -5035,7 +5372,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -5047,7 +5384,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -5065,7 +5402,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -5122,7 +5459,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -5134,7 +5471,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -5152,7 +5489,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -5206,7 +5543,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -5218,7 +5555,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -5236,7 +5573,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -5298,7 +5635,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -5310,7 +5647,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -5328,7 +5665,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -5390,7 +5727,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -5402,7 +5739,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -5420,7 +5757,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -5477,7 +5814,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -5489,7 +5826,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -5507,7 +5844,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -5564,7 +5901,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -5576,7 +5913,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -5594,7 +5931,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:
@@ -5651,7 +5988,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: ACCESS_DENIED
+          description: ACCESS_DENIED for reads, ADMIN_REQUIRED for admin commands, or CANNOT_START_TRIP
           content:
             application/json:
               schema:
@@ -5663,7 +6000,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: STALE_VERSION
+          description: STALE_VERSION or INVALID_STATE
           content:
             application/json:
               schema:
@@ -5681,7 +6018,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: PHOTO_SET_INCOMPLETE
+          description: PHOTO_SET_INCOMPLETE, CHALLENGE_EXPIRED, RULES_REQUIRED, or other business validation
           content:
             application/json:
               schema:

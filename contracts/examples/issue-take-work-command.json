@@ -1,0 +1,16 @@
+{
+  "contract_version": "1.12",
+  "request": {
+    "operation": "issue.resolve",
+    "target_id": "70000000-0000-4000-8000-000000000001",
+    "expected_version": 1,
+    "payload": {
+      "status": "in_progress"
+    }
+  },
+  "expected": {
+    "assigned_to": "employee ID of the authenticated administrator",
+    "comment_required": false,
+    "confirmation_required": false
+  }
+}

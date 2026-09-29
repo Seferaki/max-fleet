@@ -81,6 +81,273 @@ func TestIssueConversationCASOwnerAndRestart(t *testing.T) {
 	}
 }
 
+func TestAdminIssueResolutionConversationRequiresCurrentAdminAndSurvivesRestart(t *testing.T) {
+	now := time.Date(2026, 9, 29, 17, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "state.json")
+	mock, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := commandClient(t, mock)
+	ctx := context.Background()
+	issueID := "70000000-0000-4000-8000-000000000021"
+	mock.issues[issueID] = dataapi.Issue{
+		ID: issueID, VehicleID: firstVehicleID, AuthorID: mock.employees[driverID].ID,
+		Stage: "during", Category: "mechanical", Description: "Синтетическая проверка",
+		Status: "open", BlocksIssuance: true, AssetIDs: []string{}, Version: 1, UpdatedAt: now,
+	}
+	admin := mock.employees[adminActorID]
+	issueVersion, pending := int64(1), "text"
+	input := dataapi.ConversationSaveInput{
+		Flow: "issue_admin_resolution", Step: "await_comment_resolved", PendingInputKind: &pending,
+		Context: dataapi.ConversationContext{IssueID: &issueID, IssueVersion: &issueVersion},
+	}
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 1, input, "admin-issue-conv-start", nil); err != nil {
+		t.Fatalf("admin could not save comment step: %v", err)
+	}
+	state, err := client.State(ctx, adminActorID)
+	if err != nil || state.Conversation == nil || state.Conversation.Step != "await_comment_resolved" || state.Conversation.Context.IssueVersion == nil || *state.Conversation.Context.IssueVersion != 1 {
+		t.Fatalf("admin conversation did not persist: %+v %v", state, err)
+	}
+
+	driver := mock.employees[driverID]
+	if _, err := client.ConversationSave(ctx, driverID, driver.ID, 1, input, "driver-issue-conv-start", nil); err == nil {
+		t.Fatal("employee saved an admin issue-resolution flow")
+	}
+	staleVersion := int64(2)
+	stale := input
+	stale.Context.IssueVersion = &staleVersion
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 2, stale, "admin-issue-conv-stale", nil); err == nil {
+		t.Fatal("conversation accepted a stale issue version")
+	}
+	comment, none := "Крепление восстановлено", "none"
+	confirmed := dataapi.ConversationSaveInput{
+		Flow: "issue_admin_resolution", Step: "confirm_resolved", PendingInputKind: &none,
+		Context: dataapi.ConversationContext{IssueID: &issueID, IssueVersion: &issueVersion, DraftText: &comment},
+	}
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 2, confirmed, "admin-issue-conv-comment", nil); err != nil {
+		t.Fatalf("admin could not persist comment before confirmation: %v", err)
+	}
+
+	restarted, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := commandClient(t, restarted).State(ctx, adminActorID)
+	if err != nil || recovered.Conversation == nil || recovered.Conversation.Step != "confirm_resolved" ||
+		recovered.Conversation.Context.DraftText == nil || *recovered.Conversation.Context.DraftText != comment ||
+		recovered.Conversation.Context.IssueVersion == nil || *recovered.Conversation.Context.IssueVersion != 1 {
+		t.Fatalf("restart lost admin resolution confirmation state: %+v %v", recovered, err)
+	}
+}
+
+func TestVehicleOdometerCorrectionConversationIsAdminBoundAndRecoverable(t *testing.T) {
+	now := time.Date(2026, 9, 29, 18, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "state.json")
+	mock, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := commandClient(t, mock)
+	ctx := context.Background()
+	created, err := client.CheckoutCreate(ctx, driverID, firstVehicleID, 1, "odometer-conversation-hold", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hold, err := dataapi.DecodeAggregate[dataapi.Checkout](created)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vehicle, err := client.Vehicle(ctx, adminActorID, firstVehicleID)
+	if err != nil || vehicle.Status != "holding" {
+		t.Fatalf("active hold not created: %+v %v", vehicle, err)
+	}
+
+	admin := mock.employees[adminActorID]
+	value, vehicleVersion, pending := int64(42150), vehicle.Version, "text"
+	input := dataapi.ConversationSaveInput{
+		Flow: "vehicle_odometer_correction", Step: "await_value", PendingInputKind: &pending,
+		Context: dataapi.ConversationContext{VehicleID: &vehicle.ID, VehicleVersion: &vehicleVersion},
+	}
+	driver := mock.employees[driverID]
+	if _, err := client.ConversationSave(ctx, driverID, driver.ID, 1, input, "odometer-conversation-driver", nil); err == nil {
+		t.Fatal("employee saved an admin odometer correction flow")
+	}
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 1, input, "odometer-conversation-await", nil); err != nil {
+		t.Fatalf("admin could not save correction input step: %v", err)
+	}
+	reason, none := "Сверили ошибочную запись с фотографией панели", "none"
+	confirmed := dataapi.ConversationSaveInput{
+		Flow: "vehicle_odometer_correction", Step: "confirm", PendingInputKind: &none,
+		Context: dataapi.ConversationContext{VehicleID: &vehicle.ID, VehicleVersion: &vehicleVersion, CorrectionOdometerKM: &value, DraftText: &reason},
+	}
+	staleVehicleVersion := vehicleVersion + 1
+	stale := confirmed
+	stale.Context.VehicleVersion = &staleVehicleVersion
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 2, stale, "odometer-conversation-stale", nil); err == nil {
+		t.Fatal("conversation accepted a stale vehicle version")
+	}
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 2, confirmed, "odometer-conversation-confirm", nil); err != nil {
+		t.Fatalf("admin could not persist correction before confirmation: %v", err)
+	}
+
+	restarted, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	restartedClient := commandClient(t, restarted)
+	state, err := restartedClient.State(ctx, adminActorID)
+	if err != nil || state.Conversation == nil || state.Conversation.Flow != "vehicle_odometer_correction" ||
+		state.Conversation.Step != "confirm" || state.Conversation.Context.VehicleVersion == nil || *state.Conversation.Context.VehicleVersion != vehicleVersion ||
+		state.Conversation.Context.CorrectionOdometerKM == nil || *state.Conversation.Context.CorrectionOdometerKM != value ||
+		state.Conversation.Context.DraftText == nil || *state.Conversation.Context.DraftText != reason {
+		t.Fatalf("restart lost correction value, reason, or CAS version: %+v %v", state.Conversation, err)
+	}
+
+	corrected, err := restartedClient.VehicleCorrectSnapshot(ctx, adminActorID, firstVehicleID, vehicleVersion,
+		dataapi.VehicleSnapshotCorrectionInput{Reason: reason, OdometerKM: &value, Confirmation: true}, "odometer-conversation-apply", nil)
+	if err != nil {
+		t.Fatalf("saved correction could not be applied: %v", err)
+	}
+	correctedVehicle, err := dataapi.DecodeAggregate[dataapi.Vehicle](corrected)
+	if err != nil || correctedVehicle.Version != vehicleVersion+1 || correctedVehicle.Status != "holding" ||
+		correctedVehicle.CurrentOdometerKM == nil || *correctedVehicle.CurrentOdometerKM != value {
+		t.Fatalf("correction changed unexpected vehicle state: %+v %v", correctedVehicle, err)
+	}
+	if checkout := restarted.checkouts[hold.ID]; checkout.Status != "holding" || checkout.Version != hold.Version {
+		t.Fatalf("correction changed active checkout: %+v", checkout)
+	}
+	correctedVersion := correctedVehicle.Version
+	done := dataapi.ConversationSaveInput{
+		Flow: "vehicle_odometer_correction", Step: "done", PendingInputKind: &none,
+		Context: dataapi.ConversationContext{VehicleID: &vehicle.ID, VehicleVersion: &correctedVersion},
+	}
+	if _, err := restartedClient.ConversationSave(ctx, adminActorID, admin.ID, 3, done, "odometer-conversation-done", nil); err != nil {
+		t.Fatalf("completed correction did not clear its durable draft: %v", err)
+	}
+}
+
+func TestTripAdminCloseConversationBindsIntentChallengeAndRestart(t *testing.T) {
+	now := time.Date(2026, 9, 29, 18, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "state.json")
+	mock, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := commandClient(t, mock)
+	ctx := context.Background()
+	tripID := "50000000-0000-4000-8000-000000000021"
+	version := int64(3)
+	driver := mock.employees[driverID]
+	admin := mock.employees[adminActorID]
+	mock.trips[tripID] = dataapi.Trip{ID: tripID, VehicleID: firstVehicleID, EmployeeID: driver.ID, Status: "active", Version: version, MissingData: []string{}, Issues: []dataapi.Issue{}}
+	if err := mock.persist(); err != nil {
+		t.Fatal(err)
+	}
+
+	text, none := "text", "none"
+	await := dataapi.ConversationSaveInput{Flow: "trip_admin_close", Step: "await_details", PendingInputKind: &text,
+		Context: dataapi.ConversationContext{TripID: &tripID, TripVersion: &version}}
+	if _, err := client.ConversationSave(ctx, driverID, driver.ID, 1, await, "admin-close-conversation-driver", nil); err == nil {
+		t.Fatal("non-admin stored an admin-close conversation")
+	}
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 1, await, "admin-close-conversation-await", nil); err != nil {
+		t.Fatalf("admin could not start a durable close conversation: %v", err)
+	}
+
+	fuel, odometer, latitude, longitude, keysReturned, carLocked := 50, int64(42150), 55.751244, 37.618423, true, true
+	landmark, reason := "Въезд со стороны улицы", "Водитель потерял доступ к MAX, автомобиль осмотрен ответственным"
+	available := &dataapi.AdminCloseData{FuelLevel: &fuel, OdometerKM: &odometer, Latitude: &latitude, Longitude: &longitude,
+		Landmark: &landmark, KeysReturned: &keysReturned, CarLocked: &carLocked}
+	confirm := dataapi.ConversationSaveInput{Flow: "trip_admin_close", Step: "confirm", PendingInputKind: &none,
+		Context: dataapi.ConversationContext{TripID: &tripID, TripVersion: &version, DraftText: &reason, AdminCloseData: available}}
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 2, confirm, "admin-close-conversation-confirm", nil); err != nil {
+		t.Fatalf("admin close details were not saved: %v", err)
+	}
+	partial := *available
+	partial.Longitude = nil
+	badDetails := confirm
+	badDetails.Context.AdminCloseData = &partial
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 3, badDetails, "admin-close-conversation-partial-location", nil); err == nil {
+		t.Fatal("conversation accepted half of a coordinate pair")
+	}
+
+	intent := dataapi.AdminChallengeIntent{Operation: "trip.admin_close", TargetID: &tripID, ExpectedVersion: &version, Reason: &reason, AvailableData: available}
+	created, err := client.AdminChallengeCreate(ctx, adminActorID, "admin_close", intent, "admin-close-conversation-challenge", nil)
+	if err != nil {
+		t.Fatalf("admin-close challenge create failed: %v", err)
+	}
+	challenge, err := dataapi.DecodeAggregate[dataapi.Challenge](created)
+	if err != nil {
+		t.Fatal(err)
+	}
+	challengeContext := dataapi.ConversationContext{TripID: &tripID, TripVersion: &version, DraftText: &reason, AdminCloseData: available,
+		ChallengeID: &challenge.ID, ChallengeVersion: &challenge.Version, ChallengeQuestion: &challenge.Question,
+		ChallengeOptions: challenge.Options, ChallengeExpiresAt: &challenge.ExpiresAt}
+	challengeState := dataapi.ConversationSaveInput{Flow: "trip_admin_close", Step: "challenge", PendingInputKind: &none, Context: challengeContext}
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 3, challengeState, "admin-close-conversation-math", nil); err != nil {
+		t.Fatalf("math challenge was not bound to saved close intent: %v", err)
+	}
+	changed := challengeState
+	changed.Context.DraftText = stringPointer("Изменённая причина")
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 4, changed, "admin-close-conversation-tampered", nil); err == nil {
+		t.Fatal("conversation accepted a reason different from the challenge hash")
+	}
+
+	wrongOption := (mock.challenges[challenge.ID].CorrectOption + 1) % len(challenge.Options)
+	wrongAnswer, err := client.ChallengeAnswer(ctx, adminActorID, challenge.ID, challenge.Version, wrongOption, "admin-close-conversation-wrong-answer", nil)
+	if err != nil || wrongAnswer.Correct == nil || *wrongAnswer.Correct {
+		t.Fatalf("wrong option result: %+v %v", wrongAnswer, err)
+	}
+	challenge, err = dataapi.DecodeAggregate[dataapi.Challenge](wrongAnswer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	challengeContext.ChallengeVersion, challengeContext.ChallengeQuestion = &challenge.Version, &challenge.Question
+	challengeContext.ChallengeOptions, challengeContext.ChallengeExpiresAt = challenge.Options, &challenge.ExpiresAt
+	challengeState.Context = challengeContext
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 4, challengeState, "admin-close-conversation-retry", nil); err != nil {
+		t.Fatalf("new challenge version was not saved after a wrong answer: %v", err)
+	}
+
+	restarted, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	restartedClient := commandClient(t, restarted)
+	recovered, err := restartedClient.State(ctx, adminActorID)
+	if err != nil || recovered.Conversation == nil || recovered.Conversation.Flow != "trip_admin_close" || recovered.Conversation.Step != "challenge" ||
+		recovered.Conversation.Context.TripID == nil || *recovered.Conversation.Context.TripID != tripID || recovered.Conversation.Context.TripVersion == nil || *recovered.Conversation.Context.TripVersion != version ||
+		recovered.Conversation.Context.DraftText == nil || *recovered.Conversation.Context.DraftText != reason || recovered.Conversation.Context.AdminCloseData == nil ||
+		recovered.Conversation.Context.ChallengeID == nil || *recovered.Conversation.Context.ChallengeID != challenge.ID || recovered.Conversation.Context.ChallengeVersion == nil || *recovered.Conversation.Context.ChallengeVersion != challenge.Version ||
+		len(recovered.Conversation.Context.ChallengeOptions) != 4 || recovered.Conversation.Context.ChallengeQuestion == nil || recovered.Conversation.Context.ChallengeExpiresAt == nil {
+		t.Fatalf("restart lost admin-close intent or challenge: %+v %v", recovered.Conversation, err)
+	}
+
+	correctOption := restarted.challenges[challenge.ID].CorrectOption
+	answer, err := restartedClient.ChallengeAnswer(ctx, adminActorID, challenge.ID, challenge.Version, correctOption, "admin-close-conversation-correct-answer", nil)
+	if err != nil || answer.Correct == nil || !*answer.Correct || answer.ChallengeProofID == nil || *answer.ChallengeProofID != challenge.ID {
+		t.Fatalf("correct answer did not return its one-use proof: %+v %v", answer, err)
+	}
+	closedResult, err := restartedClient.TripAdminClose(ctx, adminActorID, tripID, version, reason, challenge.ID, available, "admin-close-conversation-domain-close", nil)
+	if err != nil {
+		t.Fatalf("trip.admin_close failed: %v", err)
+	}
+	closed, err := dataapi.DecodeAggregate[dataapi.Trip](closedResult)
+	if err != nil || closed.Status != "closed_by_admin" || closed.Version != version+1 || len(closed.MissingData) == 0 {
+		t.Fatalf("manual close result or missing data is invalid: %+v %v", closed, err)
+	}
+	vehicle, err := restartedClient.Vehicle(ctx, adminActorID, firstVehicleID)
+	if err != nil || vehicle.Status != "unavailable" || !vehicle.NeedsReview {
+		t.Fatalf("admin close did not retain vehicle for review: %+v %v", vehicle, err)
+	}
+	done := dataapi.ConversationSaveInput{Flow: "trip_admin_close", Step: "done", PendingInputKind: &none,
+		Context: dataapi.ConversationContext{TripID: &tripID, TripVersion: &version}}
+	if _, err := restartedClient.ConversationSave(ctx, adminActorID, admin.ID, recovered.ConversationVersion, done, "admin-close-conversation-done", nil); err != nil {
+		t.Fatalf("completed admin-close conversation could not clear its draft: %v", err)
+	}
+}
+
 func TestDuringIssueConversationRequiresOwnedActiveTrip(t *testing.T) {
 	now := time.Date(2026, 9, 29, 3, 0, 0, 0, time.UTC)
 	mock, err := NewWithClock("test-service-token", func() time.Time { return now })
@@ -109,7 +376,7 @@ func TestDuringIssueConversationRequiresOwnedActiveTrip(t *testing.T) {
 	if _, err := client.ConversationSave(ctx, driverID, me.Employee.ID, 1, invalid, "during-unknown-flow", nil); err == nil {
 		t.Fatal("unsupported conversation flow accepted")
 	} else {
-		expectAPIError(t, err, "INVALID_STATE")
+		expectAPIError(t, err, "INVALID_REQUEST")
 	}
 	wrongID := newRequestID()
 	invalid = input

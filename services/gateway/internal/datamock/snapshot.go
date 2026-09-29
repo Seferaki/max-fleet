@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"unicode/utf8"
 
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 )
@@ -19,11 +20,13 @@ type stateSnapshot struct {
 	Version                 int                                     `json:"version"`
 	SeedSHA                 string                                  `json:"seed_sha256"`
 	Vehicles                []dataapi.Vehicle                       `json:"vehicles"`
+	VehicleCorrections      []vehicleSnapshotCorrectionAudit        `json:"vehicle_corrections"`
 	Employees               map[string]dataapi.Employee             `json:"employees"`
 	Checkouts               map[string]dataapi.Checkout             `json:"checkouts"`
 	Trips                   map[string]dataapi.Trip                 `json:"trips"`
 	Returns                 map[string]dataapi.Return               `json:"returns"`
 	Issues                  map[string]dataapi.Issue                `json:"issues"`
+	IssueActions            []issueActionAudit                      `json:"issue_actions"`
 	Conversations           map[string]dataapi.Conversation         `json:"conversations"`
 	IssueAssets             map[string]stagedIssueAsset             `json:"issue_assets"`
 	StageResults            map[string]stageAttempt                 `json:"stage_results"`
@@ -47,14 +50,16 @@ type stateSnapshot struct {
 
 func (s *Server) snapshot() stateSnapshot {
 	state := stateSnapshot{
-		Version:                 15,
+		Version:                 18,
 		SeedSHA:                 fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)),
 		Vehicles:                append([]dataapi.Vehicle(nil), s.vehicles...),
+		VehicleCorrections:      append([]vehicleSnapshotCorrectionAudit{}, s.vehicleCorrections...),
 		Employees:               make(map[string]dataapi.Employee, len(s.employees)),
 		Checkouts:               make(map[string]dataapi.Checkout, len(s.checkouts)),
 		Trips:                   make(map[string]dataapi.Trip, len(s.trips)),
 		Returns:                 make(map[string]dataapi.Return, len(s.returns)),
 		Issues:                  make(map[string]dataapi.Issue, len(s.issues)),
+		IssueActions:            append([]issueActionAudit{}, s.issueActions...),
 		Conversations:           make(map[string]dataapi.Conversation, len(s.conversations)),
 		IssueAssets:             make(map[string]stagedIssueAsset, len(s.issueAssets)),
 		StageResults:            make(map[string]stageAttempt, len(s.stageResults)),
@@ -154,6 +159,7 @@ func (s *Server) snapshot() stateSnapshot {
 
 func (s *Server) restore(state stateSnapshot) {
 	s.vehicles = state.Vehicles
+	s.vehicleCorrections = append([]vehicleSnapshotCorrectionAudit{}, state.VehicleCorrections...)
 	if state.Employees != nil {
 		s.employees = state.Employees
 	}
@@ -167,6 +173,7 @@ func (s *Server) restore(state stateSnapshot) {
 	if state.Issues != nil {
 		s.issues = state.Issues
 	}
+	s.issueActions = append([]issueActionAudit{}, state.IssueActions...)
 	if state.Conversations != nil {
 		s.conversations = state.Conversations
 	}
@@ -216,7 +223,7 @@ func (s *Server) loadSnapshot(path string) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var state stateSnapshot
-	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 15) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version >= 7 && (state.IssueAssets == nil || state.StageResults == nil)) || (state.Version >= 8 && (state.Inbox == nil || state.InboxKeys == nil)) || (state.Version >= 9 && state.InboxClaims == nil) || (state.Version >= 10 && state.InboxTransitions == nil) || (state.Version >= 11 && (state.Integrations == nil || state.IntegrationLeases == nil)) || (state.Version >= 12 && state.IntegrationCheckpoints == nil) || (state.Version >= 13 && (state.Notifications == nil || state.NotificationClaims == nil)) || (state.Version >= 14 && state.NotificationTransitions == nil) || (state.Version >= 15 && state.Conversations == nil) {
+	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 18) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version >= 7 && (state.IssueAssets == nil || state.StageResults == nil)) || (state.Version >= 8 && (state.Inbox == nil || state.InboxKeys == nil)) || (state.Version >= 9 && state.InboxClaims == nil) || (state.Version >= 10 && state.InboxTransitions == nil) || (state.Version >= 11 && (state.Integrations == nil || state.IntegrationLeases == nil)) || (state.Version >= 12 && state.IntegrationCheckpoints == nil) || (state.Version >= 13 && (state.Notifications == nil || state.NotificationClaims == nil)) || (state.Version >= 14 && state.NotificationTransitions == nil) || (state.Version >= 15 && state.Conversations == nil) || (state.Version >= 17 && state.VehicleCorrections == nil) || (state.Version >= 18 && state.IssueActions == nil) {
 		return errors.New("data-mock: invalid snapshot; refusing to reset")
 	}
 	if state.Challenges == nil {
@@ -230,6 +237,9 @@ func (s *Server) loadSnapshot(path string) error {
 	}
 	if state.Issues == nil {
 		state.Issues = make(map[string]dataapi.Issue)
+	}
+	if state.IssueActions == nil {
+		state.IssueActions = []issueActionAudit{}
 	}
 	if state.Conversations == nil {
 		state.Conversations = make(map[string]dataapi.Conversation)
@@ -269,6 +279,65 @@ func (s *Server) loadSnapshot(path string) error {
 	}
 	if state.NotificationTransitions == nil {
 		state.NotificationTransitions = make(map[string]notificationTransitionRecord)
+	}
+	if state.VehicleCorrections == nil {
+		state.VehicleCorrections = []vehicleSnapshotCorrectionAudit{}
+	}
+	if state.Version < 18 {
+		for key, record := range state.Commands {
+			updated, err := addIssueProjectionDefaults(record.Result.Aggregate)
+			if err != nil {
+				return errors.New("data-mock: invalid cached command aggregate")
+			}
+			record.Result.Aggregate = updated
+			state.Commands[key] = record
+		}
+	}
+	for _, correction := range state.VehicleCorrections {
+		if !validVehicleSnapshotCorrectionAudit(correction) {
+			return errors.New("data-mock: invalid vehicle correction audit")
+		}
+	}
+	for _, action := range state.IssueActions {
+		if !validIssueActionAudit(action) {
+			return errors.New("data-mock: invalid issue action audit")
+		}
+		if _, exists := state.Issues[action.IssueID]; !exists {
+			return errors.New("data-mock: issue action references unknown issue")
+		}
+		found := false
+		for _, employee := range state.Employees {
+			if employee.ID == action.ActorEmployeeID && employee.Role == "admin" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return errors.New("data-mock: issue action references unknown admin")
+		}
+	}
+	for _, issue := range state.Issues {
+		for _, employeeID := range []*string{issue.AssignedTo, issue.ResolvedBy} {
+			if employeeID == nil {
+				continue
+			}
+			if !validUUID(*employeeID) {
+				return errors.New("data-mock: invalid issue admin reference")
+			}
+			found := false
+			for _, employee := range state.Employees {
+				if employee.ID == *employeeID && employee.Role == "admin" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return errors.New("data-mock: unknown issue admin reference")
+			}
+		}
+		if issue.ResolvedAt != nil && issue.ResolvedAt.IsZero() || issue.ResolutionComment != nil && utf8.RuneCountInString(*issue.ResolutionComment) > 1000 {
+			return errors.New("data-mock: invalid issue resolution projection")
+		}
 	}
 	if state.Version < 9 {
 		identities := make([]string, 0, len(state.Inbox))

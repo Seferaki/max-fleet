@@ -44,6 +44,52 @@ type commandEnvelope[P any] struct {
 	Payload         P      `json:"payload"`
 }
 
+type nullableCommandEnvelope[P any] struct {
+	Operation       string  `json:"operation"`
+	TargetID        *string `json:"target_id"`
+	ExpectedVersion *int64  `json:"expected_version"`
+	Payload         P       `json:"payload"`
+}
+
+// AdminChallengeIntent is the exact operation-specific intent approved by an admin challenge.
+// Fields not used by the selected purpose must remain nil.
+type AdminChallengeIntent struct {
+	Operation       string          `json:"operation"`
+	TargetID        *string         `json:"target_id"`
+	ExpectedVersion *int64          `json:"expected_version"`
+	Reason          *string         `json:"reason,omitempty"`
+	ReviewCompleted *bool           `json:"review_completed,omitempty"`
+	MaxUserID       *string         `json:"max_user_id,omitempty"`
+	DisplayName     *string         `json:"display_name,omitempty"`
+	CanStartTrip    *bool           `json:"can_start_trip,omitempty"`
+	AvailableData   *AdminCloseData `json:"available_data,omitempty"`
+}
+
+type AdminCloseData struct {
+	FuelLevel    *int     `json:"fuel_level,omitempty"`
+	OdometerKM   *int64   `json:"odometer_km,omitempty"`
+	Latitude     *float64 `json:"latitude,omitempty"`
+	Longitude    *float64 `json:"longitude,omitempty"`
+	Landmark     *string  `json:"landmark,omitempty"`
+	KeysReturned *bool    `json:"keys_returned,omitempty"`
+	CarLocked    *bool    `json:"car_locked,omitempty"`
+}
+
+type adminChallengeCreatePayload struct {
+	Purpose       string               `json:"purpose"`
+	IntentPayload AdminChallengeIntent `json:"intent_payload"`
+}
+
+type adminCommandPayload struct {
+	Reason          string          `json:"reason,omitempty"`
+	ReviewCompleted *bool           `json:"review_completed,omitempty"`
+	MaxUserID       string          `json:"max_user_id,omitempty"`
+	DisplayName     string          `json:"display_name,omitempty"`
+	CanStartTrip    *bool           `json:"can_start_trip,omitempty"`
+	ChallengeID     string          `json:"challenge_id"`
+	AvailableData   *AdminCloseData `json:"available_data,omitempty"`
+}
+
 type emptyPayload struct{}
 
 type LocationInput struct {
@@ -52,6 +98,13 @@ type LocationInput struct {
 	Source    string  `json:"source"`
 	Landmark  *string `json:"landmark,omitempty"`
 	Confirmed bool    `json:"confirmed"`
+}
+type VehicleSnapshotCorrectionInput struct {
+	Reason       string         `json:"reason"`
+	FuelLevel    *int           `json:"fuel_level,omitempty"`
+	OdometerKM   *int64         `json:"odometer_km,omitempty"`
+	Location     *LocationInput `json:"location,omitempty"`
+	Confirmation bool           `json:"confirmation"`
 }
 
 type attestationPayload struct {
@@ -95,6 +148,12 @@ type IssueCreateInput struct {
 	AssetIDs     []string `json:"asset_ids"`
 }
 
+type IssueResolveInput struct {
+	Status       string `json:"status"`
+	Comment      string `json:"comment,omitempty"`
+	Confirmation bool   `json:"confirmation,omitempty"`
+}
+
 type ConversationSaveInput struct {
 	Flow             string              `json:"flow"`
 	Step             string              `json:"step"`
@@ -105,7 +164,9 @@ type ConversationSaveInput struct {
 func (c *Client) ConversationSave(ctx context.Context, actorMaxID, employeeID string, version int64, input ConversationSaveInput, key string, inbox *InboxLease) (CommandResult, error) {
 	if strings.TrimSpace(input.Flow) == "" || len(input.Flow) > 80 || strings.TrimSpace(input.Step) == "" || len(input.Step) > 80 ||
 		input.Context.DraftText != nil && utf8.RuneCountInString(*input.Context.DraftText) > 1000 || len(input.Context.AssetIDs) > 3 ||
+		input.Context.CorrectionOdometerKM != nil && *input.Context.CorrectionOdometerKM < 0 ||
 		input.Context.VehicleVersion != nil && *input.Context.VehicleVersion < 1 ||
+		input.Context.IssueVersion != nil && *input.Context.IssueVersion < 1 ||
 		input.PendingInputKind != nil && *input.PendingInputKind != "text" && *input.PendingInputKind != "photo" && *input.PendingInputKind != "geo" && *input.PendingInputKind != "none" {
 		return CommandResult{}, errors.New("data-api: invalid conversation input")
 	}
@@ -154,6 +215,64 @@ func (c *Client) ChallengeAnswer(ctx context.Context, actorMaxID, challengeID st
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[challengeAnswerPayload]{"challenge.answer", challengeID, version, challengeAnswerPayload{selectedOption}})
 }
 
+// AdminChallengeCreate binds math approval to one complete admin intent.
+func (c *Client) AdminChallengeCreate(ctx context.Context, actorMaxID, purpose string, intent AdminChallengeIntent, key string, inbox *InboxLease) (CommandResult, error) {
+	if !validAdminChallengeIntent(purpose, intent) {
+		return CommandResult{}, errors.New("data-api: invalid admin challenge intent")
+	}
+	payload := adminChallengeCreatePayload{Purpose: purpose, IntentPayload: intent}
+	return executeNullableCommand(ctx, c, actorMaxID, key, inbox, "challenge.create", intent.TargetID, intent.ExpectedVersion, payload)
+}
+
+func (c *Client) VehicleBlock(ctx context.Context, actorMaxID, vehicleID string, version int64, reason, challengeID, key string, inbox *InboxLease) (CommandResult, error) {
+	if !validAdminText(reason, 1000) || !validUUID(challengeID) {
+		return CommandResult{}, errors.New("data-api: invalid vehicle block input")
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[adminCommandPayload]{"vehicle.block", vehicleID, version, adminCommandPayload{Reason: reason, ChallengeID: challengeID}})
+}
+
+func (c *Client) VehicleUnblock(ctx context.Context, actorMaxID, vehicleID string, version int64, reason, challengeID string, reviewCompleted bool, key string, inbox *InboxLease) (CommandResult, error) {
+	if !validAdminText(reason, 1000) || !validUUID(challengeID) || !reviewCompleted {
+		return CommandResult{}, errors.New("data-api: invalid vehicle unblock input")
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[adminCommandPayload]{"vehicle.unblock", vehicleID, version, adminCommandPayload{Reason: reason, ReviewCompleted: &reviewCompleted, ChallengeID: challengeID}})
+}
+
+func (c *Client) VehicleCorrectSnapshot(ctx context.Context, actorMaxID, vehicleID string, version int64, input VehicleSnapshotCorrectionInput, key string, inbox *InboxLease) (CommandResult, error) {
+	if !validAdminText(input.Reason, 1000) || !input.Confirmation ||
+		input.FuelLevel == nil && input.OdometerKM == nil && input.Location == nil ||
+		input.FuelLevel != nil && !validFuel(*input.FuelLevel) ||
+		input.OdometerKM != nil && *input.OdometerKM < 0 ||
+		input.Location != nil && !validConfirmedLocation(*input.Location) {
+		return CommandResult{}, errors.New("data-api: invalid vehicle snapshot correction")
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[VehicleSnapshotCorrectionInput]{"vehicle.correct_snapshot", vehicleID, version, input})
+}
+
+func (c *Client) EmployeeGrant(ctx context.Context, actorMaxID, maxUserID, displayName, challengeID, key string, inbox *InboxLease) (CommandResult, error) {
+	if !validMaxID(maxUserID) || !validAdminText(displayName, 200) || !validUUID(challengeID) {
+		return CommandResult{}, errors.New("data-api: invalid employee grant input")
+	}
+	payload := adminCommandPayload{MaxUserID: maxUserID, DisplayName: displayName, ChallengeID: challengeID}
+	return executeNullableCommand(ctx, c, actorMaxID, key, inbox, "employee.grant", nil, nil, payload)
+}
+
+func (c *Client) EmployeeAccess(ctx context.Context, actorMaxID, employeeID string, version int64, canStartTrip bool, reason, challengeID, key string, inbox *InboxLease) (CommandResult, error) {
+	if !validAdminText(reason, 1000) || !validUUID(challengeID) {
+		return CommandResult{}, errors.New("data-api: invalid employee access input")
+	}
+	payload := adminCommandPayload{CanStartTrip: &canStartTrip, Reason: reason, ChallengeID: challengeID}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[adminCommandPayload]{"employee.access", employeeID, version, payload})
+}
+
+func (c *Client) TripAdminClose(ctx context.Context, actorMaxID, tripID string, version int64, reason, challengeID string, availableData *AdminCloseData, key string, inbox *InboxLease) (CommandResult, error) {
+	if !validAdminText(reason, 1000) || !validUUID(challengeID) || availableData == nil || !validAdminCloseData(availableData) {
+		return CommandResult{}, errors.New("data-api: invalid admin close input")
+	}
+	payload := adminCommandPayload{Reason: reason, ChallengeID: challengeID, AvailableData: availableData}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[adminCommandPayload]{"trip.admin_close", tripID, version, payload})
+}
+
 func (c *Client) CheckoutAcceptRules(ctx context.Context, actorMaxID, checkoutID string, version int64, rulesVersionID string, key string, inbox *InboxLease) (CommandResult, error) {
 	if !validUUID(rulesVersionID) {
 		return CommandResult{}, errors.New("data-api: invalid rules version")
@@ -191,7 +310,7 @@ func (c *Client) ReturnCancel(ctx context.Context, actorMaxID, returnID string, 
 
 func (c *Client) IssueCreate(ctx context.Context, actorMaxID, vehicleID string, vehicleVersion int64, input IssueCreateInput, key string, inbox *InboxLease) (CommandResult, error) {
 	if (input.TripID == nil) == (input.InspectionID == nil) || strings.TrimSpace(input.Description) == "" || len(input.Description) > 1000 || len(input.AssetIDs) > 3 ||
-		input.Category != "body_damage" && input.Category != "mechanical" && input.Category != "cleanliness" && input.Category != "keys" && input.Category != "other" {
+		input.Category != "body_damage" && input.Category != "mechanical" && input.Category != "cleanliness" && input.Category != "keys" && input.Category != "parking" && input.Category != "car_lock" && input.Category != "other" {
 		return CommandResult{}, errors.New("data-api: invalid issue input")
 	}
 	if input.TripID != nil && !validUUID(*input.TripID) || input.InspectionID != nil && !validUUID(*input.InspectionID) {
@@ -210,12 +329,33 @@ func (c *Client) IssueCreate(ctx context.Context, actorMaxID, vehicleID string, 
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[IssueCreateInput]{"issue.create", vehicleID, vehicleVersion, input})
 }
 
+func (c *Client) IssueResolve(ctx context.Context, actorMaxID, issueID string, version int64, input IssueResolveInput, key string, inbox *InboxLease) (CommandResult, error) {
+	validInput := false
+	switch input.Status {
+	case "in_progress":
+		validInput = input.Comment == "" && !input.Confirmation
+	case "resolved", "known_nonblocking":
+		validInput = validAdminText(input.Comment, 1000) && strings.TrimSpace(input.Comment) != "" && input.Confirmation
+	}
+	if !validInput {
+		return CommandResult{}, errors.New("data-api: invalid issue resolution input")
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[IssueResolveInput]{"issue.resolve", issueID, version, input})
+}
+
 func (c *Client) InspectionConfirmPhotos(ctx context.Context, actorMaxID, inspectionID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[emptyPayload]{"inspection.confirm_photos", inspectionID, version, emptyPayload{}})
 }
 
+func validConfirmedLocation(location LocationInput) bool {
+	return !math.IsNaN(location.Latitude) && !math.IsInf(location.Latitude, 0) && location.Latitude >= -90 && location.Latitude <= 90 &&
+		!math.IsNaN(location.Longitude) && !math.IsInf(location.Longitude, 0) && location.Longitude >= -180 && location.Longitude <= 180 &&
+		location.Confirmed && (location.Source == "max_geo" || location.Source == "manual_map" || location.Source == "admin") &&
+		(location.Landmark == nil || utf8.RuneCountInString(*location.Landmark) <= 500)
+}
+
 func (c *Client) ReturnSetLocation(ctx context.Context, actorMaxID, returnID string, version int64, key string, inbox *InboxLease, location LocationInput) (CommandResult, error) {
-	if math.IsNaN(location.Latitude) || math.IsInf(location.Latitude, 0) || location.Latitude < -90 || location.Latitude > 90 || math.IsNaN(location.Longitude) || math.IsInf(location.Longitude, 0) || location.Longitude < -180 || location.Longitude > 180 || !location.Confirmed || (location.Source != "max_geo" && location.Source != "manual_map" && location.Source != "admin") || (location.Landmark != nil && len(*location.Landmark) > 500) {
+	if !validConfirmedLocation(location) {
 		return CommandResult{}, errors.New("data-api: invalid confirmed location")
 	}
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[LocationInput]{"return.set_location", returnID, version, location})
@@ -225,10 +365,68 @@ func (c *Client) ReturnComplete(ctx context.Context, actorMaxID, returnID string
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[attestationPayload]{"return.complete", returnID, version, attestationPayload{true}})
 }
 
+func validAdminText(value string, maxRunes int) bool {
+	length := utf8.RuneCountInString(value)
+	return length >= 1 && length <= maxRunes
+}
+
+func validAdminChallengeIntent(purpose string, intent AdminChallengeIntent) bool {
+	operationByPurpose := map[string]string{
+		"vehicle_block": "vehicle.block", "vehicle_unblock": "vehicle.unblock",
+		"employee_grant": "employee.grant", "employee_access": "employee.access",
+		"admin_close": "trip.admin_close",
+	}
+	if operationByPurpose[purpose] == "" || intent.Operation != operationByPurpose[purpose] {
+		return false
+	}
+	if purpose == "employee_grant" {
+		return intent.TargetID == nil && intent.ExpectedVersion == nil && intent.Reason == nil && intent.ReviewCompleted == nil && intent.CanStartTrip == nil && intent.AvailableData == nil && intent.MaxUserID != nil && validMaxID(*intent.MaxUserID) && intent.DisplayName != nil && validAdminText(*intent.DisplayName, 200)
+	}
+	if intent.TargetID == nil || !validUUID(*intent.TargetID) || intent.ExpectedVersion == nil || *intent.ExpectedVersion < 1 || intent.MaxUserID != nil || intent.DisplayName != nil {
+		return false
+	}
+	switch purpose {
+	case "vehicle_block":
+		return validAdminTextPointer(intent.Reason, 1000) && intent.ReviewCompleted == nil && intent.CanStartTrip == nil && intent.AvailableData == nil
+	case "admin_close":
+		return validAdminTextPointer(intent.Reason, 1000) && intent.ReviewCompleted == nil && intent.CanStartTrip == nil && intent.AvailableData != nil && validAdminCloseData(intent.AvailableData)
+	case "vehicle_unblock":
+		return validAdminTextPointer(intent.Reason, 1000) && intent.ReviewCompleted != nil && *intent.ReviewCompleted && intent.CanStartTrip == nil && intent.AvailableData == nil
+	case "employee_access":
+		return validAdminTextPointer(intent.Reason, 1000) && intent.ReviewCompleted == nil && intent.CanStartTrip != nil && intent.AvailableData == nil
+	default:
+		return false
+	}
+}
+
+func validAdminTextPointer(value *string, maxRunes int) bool {
+	return value != nil && validAdminText(*value, maxRunes)
+}
+
+func validAdminCloseData(data *AdminCloseData) bool {
+	if data == nil {
+		return true
+	}
+	if data.FuelLevel != nil && !validFuel(*data.FuelLevel) || data.OdometerKM != nil && (*data.OdometerKM < 0 || *data.OdometerKM > 10_000_000) ||
+		data.Latitude == nil != (data.Longitude == nil) || data.Latitude != nil && (math.IsNaN(*data.Latitude) || math.IsInf(*data.Latitude, 0) || *data.Latitude < -90 || *data.Latitude > 90) ||
+		data.Longitude != nil && (math.IsNaN(*data.Longitude) || math.IsInf(*data.Longitude, 0) || *data.Longitude < -180 || *data.Longitude > 180) || data.Landmark != nil && (utf8.RuneCountInString(*data.Landmark) > 500 || data.Latitude == nil) {
+		return false
+	}
+	return true
+}
+
 func executeCommand[P any](ctx context.Context, c *Client, actorMaxID, key string, inbox *InboxLease, command commandEnvelope[P]) (CommandResult, error) {
-	if !validMaxID(actorMaxID) || !validUUID(command.TargetID) || command.ExpectedVersion < 1 || !validKey(key) || !validInbox(inbox) {
+	targetID, version := command.TargetID, command.ExpectedVersion
+	return executeNullableCommand(ctx, c, actorMaxID, key, inbox, command.Operation, &targetID, &version, command.Payload)
+}
+
+func executeNullableCommand[P any](ctx context.Context, c *Client, actorMaxID, key string, inbox *InboxLease, operation string, targetID *string, version *int64, payload P) (CommandResult, error) {
+	if !validMaxID(actorMaxID) || !validKey(key) || !validInbox(inbox) ||
+		(targetID == nil) != (version == nil) || targetID == nil && operation != "employee.grant" && operation != "challenge.create" ||
+		targetID != nil && (!validUUID(*targetID) || *version < 1) || !knownOperation(operation) {
 		return CommandResult{}, errors.New("data-api: invalid command identity, version or lease")
 	}
+	command := nullableCommandEnvelope[P]{Operation: operation, TargetID: targetID, ExpectedVersion: version, Payload: payload}
 	body, err := json.Marshal(command)
 	if err != nil {
 		return CommandResult{}, errors.New("data-api: invalid command body")
@@ -237,7 +435,7 @@ func executeCommand[P any](ctx context.Context, c *Client, actorMaxID, key strin
 	if err != nil {
 		return CommandResult{}, err
 	}
-	if result.Operation != command.Operation || len(result.Aggregate) == 0 || string(result.Aggregate) == "null" {
+	if result.Operation != operation || len(result.Aggregate) == 0 || string(result.Aggregate) == "null" {
 		return CommandResult{}, errors.New("data-api: invalid command result")
 	}
 	return result, nil

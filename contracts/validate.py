@@ -70,6 +70,18 @@ def main():
     declared = set(data["components"]["schemas"]["Command"]["discriminator"]["mapping"])
     if set(operations) != declared:
         raise RuntimeError("Примеры не покрывают все command operations")
+    take_work = load_json("examples/issue-take-work-command.json")
+    if take_work["contract_version"] != data["info"]["version"]:
+        raise RuntimeError("Версия issue take-work примера не совпадает с контрактом")
+    command_validator.validate(take_work["request"])
+    invalid_take_work = copy.deepcopy(take_work["request"])
+    invalid_take_work["payload"]["comment"] = "Не предусмотрено"
+    if command_validator.is_valid(invalid_take_work):
+        raise RuntimeError("Взятие issue в работу потребовало неподдерживаемое поле comment")
+    terminal_missing_comment = copy.deepcopy(take_work["request"])
+    terminal_missing_comment["payload"] = {"status": "resolved"}
+    if command_validator.is_valid(terminal_missing_comment):
+        raise RuntimeError("Терминальное issue.resolve принято без комментария/подтверждения")
     invalid = copy.deepcopy(commands[5])
     invalid["payload"]["fuel_level"] = 37
     if command_validator.is_valid(invalid):
@@ -89,8 +101,22 @@ def main():
         ("hold-expired.json", "ErrorResponse"),
         ("previous-inspection.json", "InspectionResponse"),
         ("inbox-photo.json", "NormalizedEvent"),
+        ("issue-assigned.json", "IssueResponse"),
+        ("issue-resolved.json", "IssueResponse"),
+        ("issue-admin-resolution-conversation.json", "Conversation"),
+        ("vehicle-odometer-correction-conversation.json", "Conversation"),
+        ("admin-close-conversation.json", "Conversation"),
+        ("admin-close-challenge-conversation.json", "Conversation"),
     ):
         check_example(data, "examples/" + filename, schema_name)
+    assigned_issue = load_json("examples/issue-assigned.json")["data"]
+    resolved_issue = load_json("examples/issue-resolved.json")["data"]
+    if (assigned_issue["status"] != "in_progress" or assigned_issue["assigned_to"] is None
+            or assigned_issue["resolution_comment"] is not None or assigned_issue["resolved_by"] is not None
+            or resolved_issue["status"] != "resolved" or resolved_issue["assigned_to"] != assigned_issue["assigned_to"]
+            or resolved_issue["resolved_by"] in (None, resolved_issue["assigned_to"])
+            or not resolved_issue["resolution_comment"] or not resolved_issue["resolved_at"]):
+        raise RuntimeError("Issue assignment and terminal resolver must remain distinct")
     for filename, schema_name in (
         ("map-context.json", "ContextResponse"),
         ("map-location-request.json", "LocationRequest"),
@@ -129,6 +155,134 @@ def main():
             or not all(post_return["expected"].values())
             or post_return["expected"]["issue_stage"] != "post_return"):
         raise RuntimeError("Неверная семантика post-return примера")
+    post_return_conversation = check_example(
+        data, "examples/post-return-conversation.json", "Conversation")
+    post_context = post_return_conversation["context"]
+    if (post_return_conversation["flow"] != "issue_post_return"
+            or post_context["target_id"] != post_context["trip_id"]
+            or post_context["issue_category"] not in {"parking", "car_lock"}
+            or post_context["vehicle_id"] is None
+            or post_context["vehicle_version"] is None
+            or len(post_context["asset_ids"]) > 3):
+        raise RuntimeError("Неверная семантика post-return conversation")
+    odometer_conversation = check_example(
+        data, "examples/vehicle-odometer-correction-conversation.json", "Conversation")
+    odometer_context = odometer_conversation["context"]
+    if (odometer_conversation["flow"] != "vehicle_odometer_correction"
+            or odometer_conversation["step"] != "confirm"
+            or odometer_context["vehicle_id"] is None
+            or odometer_context["vehicle_version"] is None
+            or odometer_context["correction_odometer_km"] is None
+            or odometer_context["draft_text"] is None
+            or odometer_conversation["pending_input_kind"] != "none"):
+        raise RuntimeError("Неверная семантика vehicle odometer correction conversation")
+    invalid_odometer = copy.deepcopy(odometer_conversation)
+    invalid_odometer["context"]["correction_odometer_km"] = -1
+    if jsonschema.Draft202012Validator(schema_for(data, "Conversation")).is_valid(invalid_odometer):
+        raise RuntimeError("Отрицательное значение одометра было принято")
+    admin_close = check_example(data, "examples/admin-close-conversation.json", "Conversation")
+    close_context = admin_close["context"]
+    if (admin_close["flow"] != "trip_admin_close" or admin_close["step"] != "confirm"
+            or close_context["trip_id"] is None or close_context["trip_version"] is None
+            or not close_context["draft_text"] or close_context["admin_close_data"] is None
+            or admin_close["pending_input_kind"] != "none"):
+        raise RuntimeError("Неверная семантика admin-close conversation")
+    admin_close_challenge = check_example(
+        data, "examples/admin-close-challenge-conversation.json", "Conversation")
+    challenge_context = admin_close_challenge["context"]
+    if (admin_close_challenge["flow"] != "trip_admin_close"
+            or admin_close_challenge["step"] != "challenge"
+            or challenge_context["trip_version"] != close_context["trip_version"]
+            or challenge_context["draft_text"] != close_context["draft_text"]
+            or challenge_context["admin_close_data"] != close_context["admin_close_data"]
+            or challenge_context["challenge_id"] is None
+            or challenge_context["challenge_version"] is None
+            or len(challenge_context["challenge_options"]) != 4
+            or challenge_context["challenge_expires_at"] is None):
+        raise RuntimeError("Admin-close challenge не восстанавливает сохранённый intent")
+    invalid_close = copy.deepcopy(admin_close)
+    invalid_close["context"]["admin_close_data"]["longitude"] = None
+    if jsonschema.Draft202012Validator(schema_for(data, "Conversation")).is_valid(invalid_close):
+        raise RuntimeError("Admin close принял частично заданные координаты")
+    invalid_close_challenge = copy.deepcopy(admin_close_challenge)
+    invalid_close_challenge["context"]["challenge_version"] = 0
+    if jsonschema.Draft202012Validator(schema_for(data, "Conversation")).is_valid(invalid_close_challenge):
+        raise RuntimeError("Admin close принял недопустимую версию challenge")
+    issue_categories = load_json("examples/issue-categories.json")
+    if (issue_categories["contract_version"] != data["info"]["version"]
+            or {request["payload"]["category"] for request in issue_categories["requests"]}
+            != {"parking", "car_lock"}):
+        raise RuntimeError("Нет актуальных примеров новых категорий замечаний")
+    issue_schema = schema_for(data, "IssueCreateCommand")
+    for request in issue_categories["requests"]:
+        jsonschema.Draft202012Validator(issue_schema,
+                                         format_checker=jsonschema.FormatChecker()).validate(request)
+        payload = request["payload"]
+        if payload["trip_id"] is None or payload["inspection_id"] is not None:
+            raise RuntimeError("Новые категории должны быть привязаны к поездке")
+    admin_intents = load_json("examples/admin-challenge-intents.json")
+    if admin_intents["contract_version"] != data["info"]["version"]:
+        raise RuntimeError("Версия admin challenge примера не совпадает с контрактом")
+    create_schema = schema_for(data, "ChallengeCreateCommand")
+    command_mapping = data["components"]["schemas"]["Command"]["discriminator"]["mapping"]
+    expected_admin_operations = {
+        "vehicle_block": "vehicle.block",
+        "vehicle_unblock": "vehicle.unblock",
+        "employee_grant": "employee.grant",
+        "employee_access": "employee.access",
+        "admin_close": "trip.admin_close",
+    }
+    if {entry["purpose"] for entry in admin_intents["examples"]} != set(expected_admin_operations):
+        raise RuntimeError("Не покрыты все admin challenge purposes")
+    for entry in admin_intents["examples"]:
+        intent = entry["intent_payload"]
+        create = entry["create_command"]
+        admin_command = entry["admin_command"]
+        jsonschema.Draft202012Validator(create_schema,
+                                         format_checker=jsonschema.FormatChecker()).validate(create)
+        command_name = command_mapping[intent["operation"]].rsplit("/", 1)[1]
+        jsonschema.Draft202012Validator(schema_for(data, command_name),
+                                         format_checker=jsonschema.FormatChecker()).validate(admin_command)
+        if (create["payload"]["purpose"] != entry["purpose"]
+                or create["payload"]["intent_payload"] != intent
+                or expected_admin_operations[entry["purpose"]] != intent["operation"]
+                or create["target_id"] != intent["target_id"]
+                or create["expected_version"] != intent["expected_version"]
+                or admin_command["target_id"] != intent["target_id"]
+                or admin_command["expected_version"] != intent["expected_version"]
+                or entry["challenge_proof_id_after_correct_answer"] != entry["challenge_id"]
+                or admin_command["payload"]["challenge_id"] != entry["challenge_id"]):
+            raise RuntimeError(f"Несвязанный admin challenge proof: {entry['purpose']}")
+        for field in ("reason", "review_completed", "max_user_id", "display_name", "can_start_trip"):
+            if field in intent and admin_command["payload"].get(field) != intent[field]:
+                raise RuntimeError(f"Admin-команда расходится с proof: {entry['purpose']}/{field}")
+        if intent.get("available_data") != admin_command["payload"].get("available_data"):
+            raise RuntimeError(f"Admin close data расходится с proof: {entry['purpose']}")
+    invalid_admin = copy.deepcopy(admin_intents["examples"][0]["create_command"])
+    del invalid_admin["payload"]["intent_payload"]["reason"]
+    if jsonschema.Draft202012Validator(create_schema).is_valid(invalid_admin):
+        raise RuntimeError("Admin challenge без обязательного intent поля принят")
+    invalid_admin = copy.deepcopy(admin_intents["examples"][0]["create_command"])
+    invalid_admin["payload"]["intent_payload"]["unexpected"] = True
+    if jsonschema.Draft202012Validator(create_schema).is_valid(invalid_admin):
+        raise RuntimeError("Admin challenge с лишним intent полем принят")
+    invalid_admin = copy.deepcopy(admin_intents["examples"][0]["create_command"])
+    invalid_admin["payload"]["purpose"] = "employee_grant"
+    if jsonschema.Draft202012Validator(create_schema).is_valid(invalid_admin):
+        raise RuntimeError("Purpose, не соответствующий operation intent, принят")
+    close_entry = next(entry for entry in admin_intents["examples"] if entry["purpose"] == "admin_close")
+    invalid_admin_close = copy.deepcopy(close_entry["create_command"])
+    invalid_admin_close["payload"]["intent_payload"]["available_data"] = None
+    if jsonschema.Draft202012Validator(create_schema).is_valid(invalid_admin_close):
+        raise RuntimeError("Admin challenge с null available_data принят")
+    invalid_admin_close = copy.deepcopy(close_entry["create_command"])
+    del invalid_admin_close["payload"]["intent_payload"]["available_data"]
+    if jsonschema.Draft202012Validator(create_schema).is_valid(invalid_admin_close):
+        raise RuntimeError("Admin challenge без явного available_data принят")
+    invalid_flow = copy.deepcopy(post_return_conversation)
+    invalid_flow["flow"] = "unknown_flow"
+    if jsonschema.Draft202012Validator(schema_for(data, "Conversation")).is_valid(invalid_flow):
+        raise RuntimeError("Неизвестный conversation flow был принят")
     route = "/internal/v1/trips/{id}/inspection-photos/{phase}/{slot}"
     if route not in data["paths"] or photo_read["contract_version"] != data["info"]["version"]:
         raise RuntimeError("Пример чтения фото не совпадает с контрактом")
@@ -136,7 +290,7 @@ def main():
         raise RuntimeError("Неверный пример пути чтения фото")
     if photo_read["response"]["content_type"] not in data["paths"][route]["get"]["responses"]["200"]["content"]:
         raise RuntimeError("Неверный пример media type фото")
-    areas = {"identity", "vehicles", "checkout", "inspection", "return", "delivery", "schema"}
+    areas = {"identity", "vehicles", "checkout", "inspection", "return", "delivery", "admin", "schema"}
     cases = scenarios["cases"]
     if len(cases) < 35 or {case["area"] for case in cases} != areas:
         raise RuntimeError("Неполный сценарный набор")
@@ -151,8 +305,9 @@ def main():
         if expected["error"] is not None and expected["error"] not in error_codes:
             raise RuntimeError(f"Неизвестный error code: {case['id']}")
 
+    other_example_count = len(list((ROOT / "examples").glob("*.json"))) - 1
     print(f"OK: 2 OpenAPI, {len(data['paths'])} data routes, "
-          f"{len(commands)} command examples, 9 other examples, {len(cases)} scenarios")
+          f"{len(commands)} command examples, {other_example_count} other examples, {len(cases)} scenarios")
 
 
 if __name__ == "__main__":
