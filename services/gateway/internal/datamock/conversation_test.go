@@ -80,3 +80,63 @@ func TestIssueConversationCASOwnerAndRestart(t *testing.T) {
 		t.Fatalf("restart lost issue draft: %+v %v", state, err)
 	}
 }
+
+func TestDuringIssueConversationRequiresOwnedActiveTrip(t *testing.T) {
+	now := time.Date(2026, 9, 29, 3, 0, 0, 0, time.UTC)
+	mock, err := NewWithClock("test-service-token", func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := commandClient(t, mock)
+	ctx := context.Background()
+	tripID := newRequestID()
+	trip := dataapi.Trip{ID: tripID, VehicleID: firstVehicleID, EmployeeID: mock.employees[driverID].ID, Status: "active", Version: 1}
+	mock.trips[tripID] = trip
+	me, err := client.Me(ctx, driverID)
+	if err != nil || me.Employee == nil {
+		t.Fatalf("driver identity: %+v %v", me, err)
+	}
+	category, description, kind := "mechanical", "Проблема в поездке", "photo"
+	version := int64(1)
+	input := dataapi.ConversationSaveInput{Flow: "issue_during", Step: "collect_photos", PendingInputKind: &kind, Context: dataapi.ConversationContext{TargetID: &tripID, TripID: &tripID, VehicleID: &trip.VehicleID, VehicleVersion: &version, IssueCategory: &category, DraftText: &description}}
+	if _, err := client.ConversationSave(ctx, "8000000000000000002", me.Employee.ID, 1, input, "during-foreign", nil); err == nil {
+		t.Fatal("foreign actor saved trip issue draft")
+	} else {
+		expectAPIError(t, err, "NOT_FOUND")
+	}
+	invalid := input
+	invalid.Flow = "unsupported_flow"
+	if _, err := client.ConversationSave(ctx, driverID, me.Employee.ID, 1, invalid, "during-unknown-flow", nil); err == nil {
+		t.Fatal("unsupported conversation flow accepted")
+	} else {
+		expectAPIError(t, err, "INVALID_STATE")
+	}
+	wrongID := newRequestID()
+	invalid = input
+	invalid.Context.TargetID = &wrongID
+	if _, err := client.ConversationSave(ctx, driverID, me.Employee.ID, 1, invalid, "during-wrong-trip", nil); err == nil {
+		t.Fatal("draft accepted with mismatched trip")
+	} else {
+		expectAPIError(t, err, "INVALID_STATE")
+	}
+	result, err := client.ConversationSave(ctx, driverID, me.Employee.ID, 1, input, "during-save", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := dataapi.DecodeAggregate[dataapi.Conversation](result)
+	if err != nil || saved.Version != 2 || saved.Flow != "issue_during" {
+		t.Fatalf("saved draft: %+v %v", saved, err)
+	}
+	if _, err := client.ConversationSave(ctx, driverID, me.Employee.ID, 1, input, "during-stale", nil); err == nil {
+		t.Fatal("stale draft version accepted")
+	} else {
+		expectAPIError(t, err, "STALE_VERSION")
+	}
+	trip.Status = "completed"
+	mock.trips[tripID] = trip
+	if _, err := client.ConversationSave(ctx, driverID, me.Employee.ID, 2, input, "during-completed", nil); err == nil {
+		t.Fatal("completed trip accepted new issue draft")
+	} else {
+		expectAPIError(t, err, "INVALID_STATE")
+	}
+}
