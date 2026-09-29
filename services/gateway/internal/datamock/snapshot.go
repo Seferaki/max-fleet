@@ -19,6 +19,7 @@ type stateSnapshot struct {
 	Version                 int                                     `json:"version"`
 	SeedSHA                 string                                  `json:"seed_sha256"`
 	Vehicles                []dataapi.Vehicle                       `json:"vehicles"`
+	VehicleCorrections      []vehicleSnapshotCorrectionAudit        `json:"vehicle_corrections"`
 	Employees               map[string]dataapi.Employee             `json:"employees"`
 	Checkouts               map[string]dataapi.Checkout             `json:"checkouts"`
 	Trips                   map[string]dataapi.Trip                 `json:"trips"`
@@ -47,9 +48,10 @@ type stateSnapshot struct {
 
 func (s *Server) snapshot() stateSnapshot {
 	state := stateSnapshot{
-		Version:                 16,
+		Version:                 17,
 		SeedSHA:                 fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)),
 		Vehicles:                append([]dataapi.Vehicle(nil), s.vehicles...),
+		VehicleCorrections:      append([]vehicleSnapshotCorrectionAudit{}, s.vehicleCorrections...),
 		Employees:               make(map[string]dataapi.Employee, len(s.employees)),
 		Checkouts:               make(map[string]dataapi.Checkout, len(s.checkouts)),
 		Trips:                   make(map[string]dataapi.Trip, len(s.trips)),
@@ -154,6 +156,7 @@ func (s *Server) snapshot() stateSnapshot {
 
 func (s *Server) restore(state stateSnapshot) {
 	s.vehicles = state.Vehicles
+	s.vehicleCorrections = append([]vehicleSnapshotCorrectionAudit{}, state.VehicleCorrections...)
 	if state.Employees != nil {
 		s.employees = state.Employees
 	}
@@ -216,7 +219,7 @@ func (s *Server) loadSnapshot(path string) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var state stateSnapshot
-	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 16) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version >= 7 && (state.IssueAssets == nil || state.StageResults == nil)) || (state.Version >= 8 && (state.Inbox == nil || state.InboxKeys == nil)) || (state.Version >= 9 && state.InboxClaims == nil) || (state.Version >= 10 && state.InboxTransitions == nil) || (state.Version >= 11 && (state.Integrations == nil || state.IntegrationLeases == nil)) || (state.Version >= 12 && state.IntegrationCheckpoints == nil) || (state.Version >= 13 && (state.Notifications == nil || state.NotificationClaims == nil)) || (state.Version >= 14 && state.NotificationTransitions == nil) || (state.Version >= 15 && state.Conversations == nil) {
+	if decoder.Decode(&state) != nil || decoder.Decode(new(any)) != io.EOF || (state.Version < 2 || state.Version > 17) || state.SeedSHA != fmt.Sprintf("%x", sha256.Sum256(syntheticSeed)) || len(state.Vehicles) != 10 || state.Checkouts == nil || state.Commands == nil || state.Photos == nil || state.PhotoResults == nil || (state.Version >= 3 && state.Challenges == nil) || (state.Version >= 4 && (state.Employees == nil || state.Trips == nil)) || (state.Version >= 5 && state.Returns == nil) || (state.Version >= 6 && state.Issues == nil) || (state.Version >= 7 && (state.IssueAssets == nil || state.StageResults == nil)) || (state.Version >= 8 && (state.Inbox == nil || state.InboxKeys == nil)) || (state.Version >= 9 && state.InboxClaims == nil) || (state.Version >= 10 && state.InboxTransitions == nil) || (state.Version >= 11 && (state.Integrations == nil || state.IntegrationLeases == nil)) || (state.Version >= 12 && state.IntegrationCheckpoints == nil) || (state.Version >= 13 && (state.Notifications == nil || state.NotificationClaims == nil)) || (state.Version >= 14 && state.NotificationTransitions == nil) || (state.Version >= 15 && state.Conversations == nil) || (state.Version >= 17 && state.VehicleCorrections == nil) {
 		return errors.New("data-mock: invalid snapshot; refusing to reset")
 	}
 	if state.Challenges == nil {
@@ -269,6 +272,14 @@ func (s *Server) loadSnapshot(path string) error {
 	}
 	if state.NotificationTransitions == nil {
 		state.NotificationTransitions = make(map[string]notificationTransitionRecord)
+	}
+	if state.VehicleCorrections == nil {
+		state.VehicleCorrections = []vehicleSnapshotCorrectionAudit{}
+	}
+	for _, correction := range state.VehicleCorrections {
+		if !validVehicleSnapshotCorrectionAudit(correction) {
+			return errors.New("data-mock: invalid vehicle correction audit")
+		}
 	}
 	if state.Version < 9 {
 		identities := make([]string, 0, len(state.Inbox))

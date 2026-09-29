@@ -50,6 +50,8 @@ func (s *Server) adminCommand(w http.ResponseWriter, requestID, actor string, co
 		return s.employeeAccess(w, requestID, actor, command)
 	case "trip.admin_close":
 		return s.tripAdminClose(w, requestID, actor, command)
+	case "vehicle.correct_snapshot":
+		return s.correctVehicleSnapshot(w, requestID, actor, command)
 	default:
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return dataapi.CommandResult{}, false

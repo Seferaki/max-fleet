@@ -99,6 +99,13 @@ type LocationInput struct {
 	Landmark  *string `json:"landmark,omitempty"`
 	Confirmed bool    `json:"confirmed"`
 }
+type VehicleSnapshotCorrectionInput struct {
+	Reason       string         `json:"reason"`
+	FuelLevel    *int           `json:"fuel_level,omitempty"`
+	OdometerKM   *int64         `json:"odometer_km,omitempty"`
+	Location     *LocationInput `json:"location,omitempty"`
+	Confirmation bool           `json:"confirmation"`
+}
 
 type attestationPayload struct {
 	Attestation bool `json:"attestation"`
@@ -223,6 +230,17 @@ func (c *Client) VehicleUnblock(ctx context.Context, actorMaxID, vehicleID strin
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[adminCommandPayload]{"vehicle.unblock", vehicleID, version, adminCommandPayload{Reason: reason, ReviewCompleted: &reviewCompleted, ChallengeID: challengeID}})
 }
 
+func (c *Client) VehicleCorrectSnapshot(ctx context.Context, actorMaxID, vehicleID string, version int64, input VehicleSnapshotCorrectionInput, key string, inbox *InboxLease) (CommandResult, error) {
+	if !validAdminText(input.Reason, 1000) || !input.Confirmation ||
+		input.FuelLevel == nil && input.OdometerKM == nil && input.Location == nil ||
+		input.FuelLevel != nil && !validFuel(*input.FuelLevel) ||
+		input.OdometerKM != nil && *input.OdometerKM < 0 ||
+		input.Location != nil && !validConfirmedLocation(*input.Location) {
+		return CommandResult{}, errors.New("data-api: invalid vehicle snapshot correction")
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[VehicleSnapshotCorrectionInput]{"vehicle.correct_snapshot", vehicleID, version, input})
+}
+
 func (c *Client) EmployeeGrant(ctx context.Context, actorMaxID, maxUserID, displayName, challengeID, key string, inbox *InboxLease) (CommandResult, error) {
 	if !validMaxID(maxUserID) || !validAdminText(displayName, 200) || !validUUID(challengeID) {
 		return CommandResult{}, errors.New("data-api: invalid employee grant input")
@@ -307,8 +325,15 @@ func (c *Client) InspectionConfirmPhotos(ctx context.Context, actorMaxID, inspec
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[emptyPayload]{"inspection.confirm_photos", inspectionID, version, emptyPayload{}})
 }
 
+func validConfirmedLocation(location LocationInput) bool {
+	return !math.IsNaN(location.Latitude) && !math.IsInf(location.Latitude, 0) && location.Latitude >= -90 && location.Latitude <= 90 &&
+		!math.IsNaN(location.Longitude) && !math.IsInf(location.Longitude, 0) && location.Longitude >= -180 && location.Longitude <= 180 &&
+		location.Confirmed && (location.Source == "max_geo" || location.Source == "manual_map" || location.Source == "admin") &&
+		(location.Landmark == nil || utf8.RuneCountInString(*location.Landmark) <= 500)
+}
+
 func (c *Client) ReturnSetLocation(ctx context.Context, actorMaxID, returnID string, version int64, key string, inbox *InboxLease, location LocationInput) (CommandResult, error) {
-	if math.IsNaN(location.Latitude) || math.IsInf(location.Latitude, 0) || location.Latitude < -90 || location.Latitude > 90 || math.IsNaN(location.Longitude) || math.IsInf(location.Longitude, 0) || location.Longitude < -180 || location.Longitude > 180 || !location.Confirmed || (location.Source != "max_geo" && location.Source != "manual_map" && location.Source != "admin") || (location.Landmark != nil && len(*location.Landmark) > 500) {
+	if !validConfirmedLocation(location) {
 		return CommandResult{}, errors.New("data-api: invalid confirmed location")
 	}
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[LocationInput]{"return.set_location", returnID, version, location})

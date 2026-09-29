@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.6",
+  "contract_version": "1.7",
   "requests": [
     {
       "operation": "issue.create",

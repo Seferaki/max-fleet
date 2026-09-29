@@ -50,6 +50,7 @@ type Server struct {
 	workerToken             string
 	employees               map[string]dataapi.Employee
 	vehicles                []dataapi.Vehicle
+	vehicleCorrections      []vehicleSnapshotCorrectionAudit
 	checkouts               map[string]dataapi.Checkout
 	trips                   map[string]dataapi.Trip
 	returns                 map[string]dataapi.Return

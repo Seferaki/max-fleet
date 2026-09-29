@@ -1,4 +1,4 @@
-"""Build the reviewed MAX Fleet v1.6 internal HTTP contract.
+"""Build the reviewed MAX Fleet v1.7 internal HTTP contract.
 
 Run: py contracts/build_openapi.py
 Requires PyYAML. The generated YAML is committed so consumers do not need Python.
@@ -204,7 +204,7 @@ schemas = {
         "conversation_version": ref("Version"),
     }, ("checkout", "trip", "return", "next_step", "conversation", "conversation_version")),
     "Meta": obj({
-        "contract_version": {"const": "1.6"}, "build_sha": string(64),
+        "contract_version": {"const": "1.7"}, "build_sha": string(64),
         "mode": string(enum=["mock", "real"]), "capabilities": array(string(80)),
     }, ("contract_version", "build_sha", "mode", "capabilities")),
     "AdminSummary": obj({
@@ -245,8 +245,8 @@ for name in ("Vehicle", "Trip", "Issue", "Employee"):
 
 spec = {
     "openapi": "3.1.0",
-    "info": {"title": "MAX Fleet Data API", "version": "1.6",
-             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.6 связывает доступные данные admin close с SHA-256 намерения, поэтому proof подтверждает все изменения поездки и snapshot."},
+    "info": {"title": "MAX Fleet Data API", "version": "1.7",
+             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.6 связывает доступные данные admin close с SHA-256 намерения. Версия 1.7 разрешает аудитируемую коррекцию только одометра snapshot активной брони или поездки без изменения inspection и assignment; ODOMETER_ROLLBACK сверяется с текущим snapshot машины."},
     "servers": [{"url": "http://data-api:8000"}, {"url": "http://data-mock:8000"}],
     "tags": [{"name": name, "description": description} for name, description in (
         ("read", "Чтение доменных данных с проверкой actor и прав"),
@@ -264,7 +264,7 @@ spec = {
         },
         "parameters": {
             "ContractVersion": {"name": "X-Contract-Version", "in": "header", "required": True,
-                                "schema": {"const": "1.6"}},
+                                "schema": {"const": "1.7"}},
             "RequestID": {"name": "X-Request-ID", "in": "header", "required": True,
                           "schema": ref("UUID")},
             "ActorMaxID": {"name": "X-Actor-Max-ID", "in": "header", "required": True,
@@ -581,7 +581,7 @@ schemas["Command"] = {
         operation: REF + "".join(part.capitalize() for part in operation.replace(".", "_").split("_")) + "Command"
         for operation, _, _, _ in command_specs
     }},
-    "description": "Каждая операция имеет собственный payload. expected_version относится к target_id; чужой/устаревший объект не изменяется.",
+    "description": "Каждая операция имеет собственный payload. expected_version относится к target_id; чужой/устаревший объект не изменяется. vehicle.correct_snapshot требует admin и актуальную версию vehicle; для свободной машины допускает разрешённые поля, а при точной активной holding/in_trip assignment — только odometer_km, reason и confirmation. Коррекция аудируется, не меняет assignment, checkout, trip, inspection или фото. ODOMETER_ROLLBACK при сохранении и завершении возврата сравнивается с текущим подтверждённым vehicle snapshot.",
 }
 schemas["CommandResult"] = obj({
     "operation": string(enum=[entry[0] for entry in command_specs]),

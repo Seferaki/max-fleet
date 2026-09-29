@@ -123,6 +123,8 @@ erDiagram
 | last_inspection_id uuid? FK inspections | Последний принятый осмотр; не путать с последним завершённым возвратом |
 | created_at, updated_at, version | Для stale-button защиты |
 
+Текущий odometer snapshot — подтверждённый порог для ввода на выезде и возврате. При active hold/trip администратор может скорректировать только snapshot одометра: Python блокирует vehicle и точную assignment в одной транзакции, пишет автора/причину/старое и новое значение в audit, не меняя inspection, фото и assignment. До коррекции порог совпадает с before-inspection; после неё сравнения используют новый snapshot, а исторический before-inspection остаётся неизменным.
+
 Доступность **вычисляется**: нет assignment, manual_blocked=false, needs_review=false, нет блокирующего issue, есть парковка и инструкция ключей. Состояния интерфейса: trip → «В поездке», hold → «Оформляется», иначе блок/неполная карточка → «Недоступен», иначе «Доступен». Запрет следующей выдачи виден отдельно при поездке.
 
 ### 3.3. rules_versions
