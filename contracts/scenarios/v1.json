@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.8",
+  "contract_version": "1.9",
   "fake_clock_utc": "2026-09-27T09:00:00Z",
   "seed": "../examples/synthetic-seed.json",
   "cases": [
@@ -69,7 +69,8 @@
 
     {"id":"admin.block-intent-proof","area":"admin","given":"admin решил math для vehicle.block","when":"vehicle.block с тем же reason,target_id,expected_version","expect":{"http":200,"error":null,"facts":["challenge_proof_id равен challenge.id","mock/Python проверяет canonical intent SHA-256"]}},
     {"id":"admin.block-tampered-intent","area":"admin","given":"challenge решён, но reason изменён","when":"vehicle.block с тем же challenge_id","expect":{"http":422,"error":"CHALLENGE_INVALID","facts":["proof не потреблён","vehicle не меняется"]}},
-    {"id":"admin.issue-assignment","area":"admin","given":"два администратора видят одно open issue","when":"первый issue.resolve переводит его в in_progress","expect":{"http":200,"error":null,"facts":["assigned_to равен employee ID текущего admin actor","assignee не берётся из payload","issue.version увеличена","комментарий и actor записаны в audit","issue продолжает блокировать выдачу"]}},
+    {"id":"admin.issue-assignment","area":"admin","given":"два администратора видят одно open issue","when":"первый issue.resolve переводит его в in_progress","expect":{"http":200,"error":null,"facts":["assigned_to равен employee ID текущего admin actor","assignee не берётся из payload","issue.version увеличена","actor записан в audit без обязательного комментария и подтверждения","issue продолжает блокировать выдачу"]}},
+    {"id":"admin.issue-take-work-minimal","area":"admin","given":"новое open issue","when":"issue.resolve отправляет только status=in_progress","expect":{"http":200,"error":null,"facts":["комментарий и confirmation не требуются","actor становится assigned_to","actor записывается в audit"]}},
     {"id":"admin.issue-assignment-forbidden","area":"admin","given":"сотрудник вызывает issue.resolve","when":"POST /commands","expect":{"http":403,"error":"ADMIN_REQUIRED","facts":["issue, assigned_to и audit не изменены"]}},
     {"id":"admin.issue-assignment-stale","area":"admin","given":"admin использует устаревшую версию issue","when":"issue.resolve","expect":{"http":409,"error":"STALE_VERSION","facts":["assigned_to и audit не изменены"]}},
     {"id":"admin.issue-assignment-replay","area":"admin","given":"ответ issue.resolve потерян после commit","when":"повтор той же команды с прежним actor и Idempotency-Key","expect":{"http":200,"error":null,"facts":["возвращён прежний assigned_to","вторая запись audit не добавлена","тот же ключ с другим body даёт IDEMPOTENCY_CONFLICT"]}},

@@ -35,11 +35,16 @@ func TestIssueResolveAssignsVerifiedAdminAndRecovers(t *testing.T) {
 	mock.employees[secondAdminID] = secondAdmin
 	client := commandClient(t, mock)
 
-	input := dataapi.IssueResolveInput{Status: "in_progress", Comment: "Проверяю причину сбоя", Confirmation: true}
+	input := dataapi.IssueResolveInput{Status: "in_progress"}
 	status, _, code := postRawCommand(t, mock, adminActorID, "issue-assignment-forged", "issue.resolve", issueID, 1,
 		map[string]any{"status": "in_progress", "comment": input.Comment, "confirmation": true, "assigned_to": secondAdmin.ID})
 	if status != 400 || code != "INVALID_REQUEST" || mock.issues[issueID].AssignedTo != nil || len(mock.issueActions) != 0 {
 		t.Fatalf("caller-selected assignee was accepted: status=%d code=%s issue=%+v", status, code, mock.issues[issueID])
+	}
+	status, _, code = postRawCommand(t, mock, adminActorID, "issue-terminal-missing-comment", "issue.resolve", issueID, 1,
+		map[string]any{"status": "resolved"})
+	if status != 400 || code != "INVALID_REQUEST" || mock.issues[issueID].AssignedTo != nil || len(mock.issueActions) != 0 {
+		t.Fatalf("terminal issue transition without comment/confirmation was accepted: status=%d code=%s", status, code)
 	}
 	_, err = client.IssueResolve(ctx, driverID, issueID, 1, input, "issue-assignment-nonadmin", nil)
 	expectAPIError(t, err, "ADMIN_REQUIRED")
@@ -88,8 +93,7 @@ func TestIssueResolveAssignsVerifiedAdminAndRecovers(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(replayed, started) || len(mock.issueActions) != 1 {
 		t.Fatalf("same-key retry changed issue/audit: %+v %v audit=%d", replayed, err, len(mock.issueActions))
 	}
-	changed := input
-	changed.Comment = "Другой текст"
+	changed := dataapi.IssueResolveInput{Status: "resolved", Comment: "Другой текст", Confirmation: true}
 	_, err = client.IssueResolve(ctx, adminActorID, issueID, 1, changed, "issue-assignment-start", nil)
 	expectAPIError(t, err, "IDEMPOTENCY_CONFLICT")
 

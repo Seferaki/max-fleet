@@ -27,9 +27,17 @@ type issueActionAudit struct {
 
 func (s *Server) resolveIssue(w http.ResponseWriter, requestID, actor string, command mockCommand) (dataapi.CommandResult, bool) {
 	var input issueResolvePayload
-	if !hasFields(command.Payload, "status", "comment", "confirmation") || !strictPayload(command.Payload, &input) ||
-		(input.Status != "in_progress" && input.Status != "resolved" && input.Status != "known_nonblocking") ||
-		strings.TrimSpace(input.Comment) == "" || utf8.RuneCountInString(input.Comment) > 1000 || !input.Confirmation {
+	validPayload := strictPayload(command.Payload, &input)
+	switch input.Status {
+	case "in_progress":
+		validPayload = validPayload && hasFields(command.Payload, "status") && input.Comment == "" && !input.Confirmation
+	case "resolved", "known_nonblocking":
+		validPayload = validPayload && hasFields(command.Payload, "status", "comment", "confirmation") &&
+			strings.TrimSpace(input.Comment) != "" && utf8.RuneCountInString(input.Comment) <= 1000 && input.Confirmation
+	default:
+		validPayload = false
+	}
+	if !validPayload {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return dataapi.CommandResult{}, false
 	}
@@ -86,9 +94,10 @@ func validIssueActionAudit(audit issueActionAudit) bool {
 	validStatus := func(status string) bool {
 		return status == "open" || status == "in_progress" || status == "resolved" || status == "known_nonblocking"
 	}
+	commentValid := utf8.RuneCountInString(audit.Comment) <= 1000 &&
+		(audit.NextStatus == "in_progress" || strings.TrimSpace(audit.Comment) != "")
 	return validUUID(audit.IssueID) && validUUID(audit.ActorEmployeeID) && validStatus(audit.PreviousStatus) &&
-		validStatus(audit.NextStatus) && audit.PreviousStatus != audit.NextStatus && strings.TrimSpace(audit.Comment) != "" &&
-		utf8.RuneCountInString(audit.Comment) <= 1000 && !audit.CreatedAt.IsZero()
+		validStatus(audit.NextStatus) && audit.PreviousStatus != audit.NextStatus && commentValid && !audit.CreatedAt.IsZero()
 }
 
 func addIssueProjectionDefaults(raw json.RawMessage) (json.RawMessage, error) {

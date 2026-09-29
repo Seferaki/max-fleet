@@ -150,8 +150,8 @@ type IssueCreateInput struct {
 
 type IssueResolveInput struct {
 	Status       string `json:"status"`
-	Comment      string `json:"comment"`
-	Confirmation bool   `json:"confirmation"`
+	Comment      string `json:"comment,omitempty"`
+	Confirmation bool   `json:"confirmation,omitempty"`
 }
 
 type ConversationSaveInput struct {
@@ -328,8 +328,14 @@ func (c *Client) IssueCreate(ctx context.Context, actorMaxID, vehicleID string, 
 }
 
 func (c *Client) IssueResolve(ctx context.Context, actorMaxID, issueID string, version int64, input IssueResolveInput, key string, inbox *InboxLease) (CommandResult, error) {
-	if input.Status != "in_progress" && input.Status != "resolved" && input.Status != "known_nonblocking" ||
-		!validAdminText(input.Comment, 1000) || strings.TrimSpace(input.Comment) == "" || !input.Confirmation {
+	validInput := false
+	switch input.Status {
+	case "in_progress":
+		validInput = input.Comment == "" && !input.Confirmation
+	case "resolved", "known_nonblocking":
+		validInput = validAdminText(input.Comment, 1000) && strings.TrimSpace(input.Comment) != "" && input.Confirmation
+	}
+	if !validInput {
 		return CommandResult{}, errors.New("data-api: invalid issue resolution input")
 	}
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[IssueResolveInput]{"issue.resolve", issueID, version, input})

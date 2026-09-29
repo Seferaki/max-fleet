@@ -70,6 +70,18 @@ def main():
     declared = set(data["components"]["schemas"]["Command"]["discriminator"]["mapping"])
     if set(operations) != declared:
         raise RuntimeError("Примеры не покрывают все command operations")
+    take_work = load_json("examples/issue-take-work-command.json")
+    if take_work["contract_version"] != data["info"]["version"]:
+        raise RuntimeError("Версия issue take-work примера не совпадает с контрактом")
+    command_validator.validate(take_work["request"])
+    invalid_take_work = copy.deepcopy(take_work["request"])
+    invalid_take_work["payload"]["comment"] = "Не предусмотрено"
+    if command_validator.is_valid(invalid_take_work):
+        raise RuntimeError("Взятие issue в работу потребовало неподдерживаемое поле comment")
+    terminal_missing_comment = copy.deepcopy(take_work["request"])
+    terminal_missing_comment["payload"] = {"status": "resolved"}
+    if command_validator.is_valid(terminal_missing_comment):
+        raise RuntimeError("Терминальное issue.resolve принято без комментария/подтверждения")
     invalid = copy.deepcopy(commands[5])
     invalid["payload"]["fuel_level"] = 37
     if command_validator.is_valid(invalid):
