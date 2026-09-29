@@ -1,0 +1,12 @@
+{
+  "flow": "issue_admin_resolution",
+  "step": "confirm_resolved",
+  "context": {
+    "issue_id": "70000000-0000-4000-8000-000000000021",
+    "issue_version": 2,
+    "draft_text": "Крепление восстановлено, проверка завершена"
+  },
+  "pending_input_kind": "none",
+  "version": 4,
+  "updated_at": "2026-09-29T17:00:00Z"
+}

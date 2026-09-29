@@ -81,6 +81,66 @@ func TestIssueConversationCASOwnerAndRestart(t *testing.T) {
 	}
 }
 
+func TestAdminIssueResolutionConversationRequiresCurrentAdminAndSurvivesRestart(t *testing.T) {
+	now := time.Date(2026, 9, 29, 17, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "state.json")
+	mock, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := commandClient(t, mock)
+	ctx := context.Background()
+	issueID := "70000000-0000-4000-8000-000000000021"
+	mock.issues[issueID] = dataapi.Issue{
+		ID: issueID, VehicleID: firstVehicleID, AuthorID: mock.employees[driverID].ID,
+		Stage: "during", Category: "mechanical", Description: "Синтетическая проверка",
+		Status: "open", BlocksIssuance: true, AssetIDs: []string{}, Version: 1, UpdatedAt: now,
+	}
+	admin := mock.employees[adminActorID]
+	issueVersion, pending := int64(1), "text"
+	input := dataapi.ConversationSaveInput{
+		Flow: "issue_admin_resolution", Step: "await_comment_resolved", PendingInputKind: &pending,
+		Context: dataapi.ConversationContext{IssueID: &issueID, IssueVersion: &issueVersion},
+	}
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 1, input, "admin-issue-conv-start", nil); err != nil {
+		t.Fatalf("admin could not save comment step: %v", err)
+	}
+	state, err := client.State(ctx, adminActorID)
+	if err != nil || state.Conversation == nil || state.Conversation.Step != "await_comment_resolved" || state.Conversation.Context.IssueVersion == nil || *state.Conversation.Context.IssueVersion != 1 {
+		t.Fatalf("admin conversation did not persist: %+v %v", state, err)
+	}
+
+	driver := mock.employees[driverID]
+	if _, err := client.ConversationSave(ctx, driverID, driver.ID, 1, input, "driver-issue-conv-start", nil); err == nil {
+		t.Fatal("employee saved an admin issue-resolution flow")
+	}
+	staleVersion := int64(2)
+	stale := input
+	stale.Context.IssueVersion = &staleVersion
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 2, stale, "admin-issue-conv-stale", nil); err == nil {
+		t.Fatal("conversation accepted a stale issue version")
+	}
+	comment, none := "Крепление восстановлено", "none"
+	confirmed := dataapi.ConversationSaveInput{
+		Flow: "issue_admin_resolution", Step: "confirm_resolved", PendingInputKind: &none,
+		Context: dataapi.ConversationContext{IssueID: &issueID, IssueVersion: &issueVersion, DraftText: &comment},
+	}
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 2, confirmed, "admin-issue-conv-comment", nil); err != nil {
+		t.Fatalf("admin could not persist comment before confirmation: %v", err)
+	}
+
+	restarted, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := commandClient(t, restarted).State(ctx, adminActorID)
+	if err != nil || recovered.Conversation == nil || recovered.Conversation.Step != "confirm_resolved" ||
+		recovered.Conversation.Context.DraftText == nil || *recovered.Conversation.Context.DraftText != comment ||
+		recovered.Conversation.Context.IssueVersion == nil || *recovered.Conversation.Context.IssueVersion != 1 {
+		t.Fatalf("restart lost admin resolution confirmation state: %+v %v", recovered, err)
+	}
+}
+
 func TestDuringIssueConversationRequiresOwnedActiveTrip(t *testing.T) {
 	now := time.Date(2026, 9, 29, 3, 0, 0, 0, time.UTC)
 	mock, err := NewWithClock("test-service-token", func() time.Time { return now })

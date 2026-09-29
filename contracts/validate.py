@@ -103,6 +103,7 @@ def main():
         ("inbox-photo.json", "NormalizedEvent"),
         ("issue-assigned.json", "IssueResponse"),
         ("issue-resolved.json", "IssueResponse"),
+        ("issue-admin-resolution-conversation.json", "Conversation"),
     ):
         check_example(data, "examples/" + filename, schema_name)
     assigned_issue = load_json("examples/issue-assigned.json")["data"]

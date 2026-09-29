@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.9",
+  "contract_version": "1.10",
   "fake_clock_utc": "2026-09-27T09:00:00Z",
   "seed": "../examples/synthetic-seed.json",
   "cases": [
@@ -74,6 +74,7 @@
     {"id":"admin.issue-assignment-forbidden","area":"admin","given":"сотрудник вызывает issue.resolve","when":"POST /commands","expect":{"http":403,"error":"ADMIN_REQUIRED","facts":["issue, assigned_to и audit не изменены"]}},
     {"id":"admin.issue-assignment-stale","area":"admin","given":"admin использует устаревшую версию issue","when":"issue.resolve","expect":{"http":409,"error":"STALE_VERSION","facts":["assigned_to и audit не изменены"]}},
     {"id":"admin.issue-assignment-replay","area":"admin","given":"ответ issue.resolve потерян после commit","when":"повтор той же команды с прежним actor и Idempotency-Key","expect":{"http":200,"error":null,"facts":["возвращён прежний assigned_to","вторая запись audit не добавлена","тот же ключ с другим body даёт IDEMPOTENCY_CONFLICT"]}},
+    {"id":"admin.issue-resolution-conversation","area":"admin","given":"admin сохраняет комментарий перед подтверждением терминального решения","when":"conversation.save flow=issue_admin_resolution","expect":{"http":200,"error":null,"facts":["только admin actor","issue_id и issue_version совпадают с текущим issue","комментарий и шаг подтверждения переживают restart","устаревшая issue.version и незавершённое состояние другого flow отклоняются"]}},
     {"id":"admin.proof-one-use","area":"admin","given":"admin proof уже потреблён командой","when":"повторная admin-команда с этим challenge_id и актуальной версией агрегата","expect":{"http":422,"error":"CHALLENGE_INVALID","facts":["proof нельзя применить второй раз","версия агрегата не меняется"]}},
     {"id":"admin.close-data-tampered","area":"admin","given":"admin решил math для trip.admin_close с available_data","when":"trip.admin_close отправляет изменённое available_data","expect":{"http":422,"error":"CHALLENGE_INVALID","facts":["proof охватывает топливо, пробег, координаты и возврат ключей/закрытие машины","trip, осмотр и snapshot не меняются"]}},
     {"id":"admin.grant-null-target","area":"admin","given":"employee.grant admin intent имеет target_id=null и expected_version=null","when":"challenge.create(employee_grant)","expect":{"http":200,"error":null,"facts":["intent содержит ровно 5 полей","MAX ID и display_name зафиксированы до math"]}},

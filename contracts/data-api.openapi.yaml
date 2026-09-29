@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MAX Fleet Data API
-  version: '1.9'
+  version: '1.10'
   description: 'Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID
     и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом
     запросе. Версия 1.6 связывает доступные данные admin close с SHA-256 намерения. Версия 1.7 разрешает аудитируемую
@@ -9,8 +9,9 @@ info:
     1.8 публикует в Issue назначение assigned_to, комментарий и автора/время терминального решения; issue.resolve
     при первом переходе в in_progress устанавливает employee ID из проверенного admin actor, а последующие терминальные
     переходы сохраняют назначение. Версия 1.9 уточняет, что in_progress принимает только status, а терминальные
-    решения требуют комментарий и подтверждение. Версии: vehicle растёт при смене доступности, блокировке, issue
-    и коррекции; checkout при изменении оформления; inspection при ответе, фото и подтверждении; return при месте/отмене/завершении;
+    решения требуют комментарий и подтверждение. Версия 1.10 добавляет проверяемый и восстанавливаемый issue_admin_resolution
+    conversation с CAS по Issue.version. Версии: vehicle растёт при смене доступности, блокировке, issue и коррекции;
+    checkout при изменении оформления; inspection при ответе, фото и подтверждении; return при месте/отмене/завершении;
     trip при начале возврата, отмене, завершении и admin close; conversation только при save. Фото повышает inspection
     и его родительский checkout/return version. Перед start/complete Go читает актуальный агрегат. Hold равен 15
     минутам серверного времени. Finalized inspection неизменяем, admin close не подставляет отсутствующие данные.'
@@ -48,7 +49,7 @@ components:
       in: header
       required: true
       schema:
-        const: '1.9'
+        const: '1.10'
     RequestID:
       name: X-Request-ID
       in: header
@@ -137,6 +138,7 @@ components:
       - issue_after
       - return_location
       - issue_post_return
+      - issue_admin_resolution
     ErrorCode:
       type: string
       enum:
@@ -842,7 +844,7 @@ components:
       additionalProperties: false
       properties:
         contract_version:
-          const: '1.9'
+          const: '1.10'
         build_sha:
           type: string
           maxLength: 64
@@ -1219,6 +1221,10 @@ components:
               oneOf:
               - $ref: '#/components/schemas/UUID'
               - type: 'null'
+            issue_version:
+              oneOf:
+              - $ref: '#/components/schemas/Version'
+              - type: 'null'
             cursor:
               oneOf:
               - type: string
@@ -1266,7 +1272,9 @@ components:
       description: issue_post_return belongs to the actor's own completed trip. target_id and trip_id are that trip
         ID; vehicle_id and vehicle_version bind the draft to its vehicle snapshot. draft_text, issue_category and
         up to three trip-scoped asset_ids survive restart. Saving the issue uses issue.create with trip_id and inspection_id=null;
-        it must not update the completed trip or finalized after-inspection.
+        it must not update the completed trip or finalized after-inspection. issue_admin_resolution is admin-only
+        and binds issue_id plus issue_version to the current issue. It stores the resolution comment before confirmation
+        so restart can resume safely; take-work itself remains status-only.
     LocationInput:
       type: object
       additionalProperties: false

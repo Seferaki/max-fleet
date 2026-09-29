@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.9",
+  "contract_version": "1.10",
   "request": {
     "operation": "issue.resolve",
     "target_id": "70000000-0000-4000-8000-000000000001",

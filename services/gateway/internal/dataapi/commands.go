@@ -165,6 +165,7 @@ func (c *Client) ConversationSave(ctx context.Context, actorMaxID, employeeID st
 	if strings.TrimSpace(input.Flow) == "" || len(input.Flow) > 80 || strings.TrimSpace(input.Step) == "" || len(input.Step) > 80 ||
 		input.Context.DraftText != nil && utf8.RuneCountInString(*input.Context.DraftText) > 1000 || len(input.Context.AssetIDs) > 3 ||
 		input.Context.VehicleVersion != nil && *input.Context.VehicleVersion < 1 ||
+		input.Context.IssueVersion != nil && *input.Context.IssueVersion < 1 ||
 		input.PendingInputKind != nil && *input.PendingInputKind != "text" && *input.PendingInputKind != "photo" && *input.PendingInputKind != "geo" && *input.PendingInputKind != "none" {
 		return CommandResult{}, errors.New("data-api: invalid conversation input")
 	}

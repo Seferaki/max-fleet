@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	ContractVersion = "1.9"
+	ContractVersion = "1.10"
 	maxJSONBytes    = 2 << 20
 	maxAttempts     = 4 // initial request and at most three retries
 )

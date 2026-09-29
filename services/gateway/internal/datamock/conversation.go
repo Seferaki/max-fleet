@@ -13,7 +13,7 @@ import (
 
 func validConversationFlow(flow string) bool {
 	switch flow {
-	case "issue_before", "issue_during", "issue_after", "return_location", "issue_post_return":
+	case "issue_before", "issue_during", "issue_after", "return_location", "issue_post_return", "issue_admin_resolution":
 		return true
 	}
 	return false
@@ -25,7 +25,7 @@ func validConversationContext(context dataapi.ConversationContext) bool {
 			return false
 		}
 	}
-	if context.VehicleVersion != nil && *context.VehicleVersion < 1 || context.SelectedSlot != nil && (*context.SelectedSlot < 1 || *context.SelectedSlot > 8) || context.DraftText != nil && utf8.RuneCountInString(*context.DraftText) > 1000 || context.Cursor != nil && len(*context.Cursor) > 2048 || len(context.AssetIDs) > 3 {
+	if context.VehicleVersion != nil && *context.VehicleVersion < 1 || context.IssueVersion != nil && *context.IssueVersion < 1 || context.SelectedSlot != nil && (*context.SelectedSlot < 1 || *context.SelectedSlot > 8) || context.DraftText != nil && utf8.RuneCountInString(*context.DraftText) > 1000 || context.Cursor != nil && len(*context.Cursor) > 2048 || len(context.AssetIDs) > 3 {
 		return false
 	}
 	if context.IssueCategory != nil && !validIssueCategory(*context.IssueCategory) {
@@ -73,6 +73,8 @@ func (s *Server) saveConversation(w http.ResponseWriter, requestID, actor string
 		valid = s.validPostReturnIssueConversation(actor, input)
 	case "return_location":
 		valid = s.validReturnLocationConversation(actor, input)
+	case "issue_admin_resolution":
+		valid = s.validAdminIssueResolutionConversation(actor, input)
 	}
 	if !valid {
 		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
@@ -83,6 +85,33 @@ func (s *Server) saveConversation(w http.ResponseWriter, requestID, actor string
 	conversation := dataapi.Conversation{Flow: input.Flow, Step: input.Step, Context: context, PendingInputKind: input.PendingInputKind, Version: currentVersion + 1, UpdatedAt: s.now().UTC()}
 	s.conversations[actor] = conversation
 	return commandResult("conversation.save", conversation), true
+}
+
+func (s *Server) validAdminIssueResolutionConversation(actor string, input dataapi.ConversationSaveInput) bool {
+	employee, found := s.employees[actor]
+	c := input.Context
+	if !found || employee.Role != "admin" || c.IssueID == nil || c.IssueVersion == nil ||
+		c.TargetID != nil || c.VehicleID != nil || c.VehicleVersion != nil || c.IssueCategory != nil || c.SelectedSlot != nil ||
+		c.ChallengeID != nil || c.TripID != nil || c.ReturnID != nil || c.Cursor != nil || len(c.AssetIDs) != 0 {
+		return false
+	}
+	issue, found := s.issues[*c.IssueID]
+	if !found || issue.Version != *c.IssueVersion {
+		return false
+	}
+	statusCanResolve := issue.Status == "open" || issue.Status == "in_progress"
+	switch input.Step {
+	case "await_comment_resolved", "await_comment_known_nonblocking":
+		return statusCanResolve && c.DraftText == nil && input.PendingInputKind != nil && *input.PendingInputKind == "text"
+	case "confirm_resolved", "confirm_known_nonblocking":
+		return statusCanResolve && c.DraftText != nil && strings.TrimSpace(*c.DraftText) != "" && input.PendingInputKind != nil && *input.PendingInputKind == "none"
+	case "done":
+		return (issue.Status == "resolved" || issue.Status == "known_nonblocking") && c.DraftText == nil && input.PendingInputKind != nil && *input.PendingInputKind == "none"
+	case "cancelled":
+		return statusCanResolve && c.DraftText == nil && input.PendingInputKind != nil && *input.PendingInputKind == "none"
+	default:
+		return false
+	}
 }
 
 func (s *Server) validPostReturnIssueConversation(actor string, input dataapi.ConversationSaveInput) bool {
