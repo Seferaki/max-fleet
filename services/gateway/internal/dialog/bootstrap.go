@@ -98,12 +98,14 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	returnCancelID, returnCancelVersion, returnCancel := vehicleActionTarget(item.Event, "return-cancel:")
 	returnCheckID, returnCheckVersion, returnCheck := vehicleActionTarget(item.Event, "return-check:")
 	returnSetID, returnSetVersion, returnField, returnValue, returnSet := returnCheckAnswerTarget(item.Event)
+	returnPhotosID, returnPhotosVersion, returnPhotos := vehicleActionTarget(item.Event, "return-photos:")
+	returnConfirmPhotosID, returnConfirmPhotosVersion, returnConfirmPhotos := vehicleActionTarget(item.Event, "return-confirm-photos:")
 	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
 	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -154,6 +156,12 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 			inspectionID, version = returnSetID, returnSetVersion
 		}
 		return p.returnChecklist(ctx, item, actor, maxID, *me.Employee, state, inspectionID, version, returnField, returnValue, returnSet)
+	}
+	if returnPhotos {
+		return p.returnPhotos(ctx, maxID, *me.Employee, state, returnPhotosID, returnPhotosVersion)
+	}
+	if returnConfirmPhotos {
+		return p.confirmReturnPhotos(ctx, item, actor, maxID, *me.Employee, state, returnConfirmPhotosID, returnConfirmPhotosVersion)
 	}
 	if intent || confirm {
 		vehicleID, version := actionVehicleID, actionVersion
@@ -244,6 +252,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	if photoMessage {
 		if state.Conversation != nil && state.Conversation.Flow == "issue_before" && state.Conversation.Step == "collect_photos" {
 			return p.issuePhotoStage(ctx, item, actor, maxID, state)
+		}
+		if state.Return != nil && state.Trip != nil && state.Trip.Status == "returning" {
+			return p.returnPhotoUpload(ctx, item, actor, maxID, *me.Employee, state)
 		}
 		return p.checkoutPhotoUpload(ctx, item, actor, maxID, state)
 	}
@@ -891,6 +902,12 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 		}
 		if state.Return.Step == "checklist" && nextReturnCheckField(state.Return.Inspection) != "" {
 			rows = append([][]maxsdk.Button{{{Text: "Продолжить анкету возврата", Payload: fmt.Sprintf("return-check:%s:%d", state.Return.Inspection.ID, state.Return.Inspection.Version)}}}, rows...)
+		}
+		if state.Return.Step == "checklist" {
+			rows = append(rows, []maxsdk.Button{{Text: "Фото после поездки", Payload: fmt.Sprintf("return-photos:%s:%d", state.Return.ID, state.Return.Version)}})
+			if slot, _, ok := photoSlotPhase(state.Return.Inspection, "after"); ok && slot == 0 && state.Return.Inspection.PhotosConfirmedAt == nil {
+				rows = append(rows, []maxsdk.Button{{Text: "Подтвердить фото после", Payload: fmt.Sprintf("return-confirm-photos:%s:%d", state.Return.Inspection.ID, state.Return.Inspection.Version)}})
+			}
 		}
 		rows = append(rows, []maxsdk.Button{{Text: "Текущая поездка", Payload: "trip:" + state.Trip.ID}})
 		rows = append(rows, []maxsdk.Button{{Text: "Вернуться к поездке", Payload: fmt.Sprintf("return-cancel-intent:%s:%d", state.Return.ID, state.Return.Version)}})
