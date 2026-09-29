@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T13:38:06Z"
+heartbeat_utc: "2026-09-29T13:40:02Z"
 current_task: BE-08
-current_substep: "BE-08: MAX-диалог просмотра previous-inspection photos реализован и проверен; code+status опубликованы обычным push, ls-remote подтвердил 8c70633c0b6eb141009c9026c2b34850626266f8"
+current_substep: "BE-08 acceptance: добавить сквозную mock-проверку completed return -> карточка previous inspection -> чтение фото через защищённый API от владельца и отказ подменённому actor"
 last_verified_code_commit: "5d8cd01a3b86987f59ae2645cb5639ede1185706"
 checkpoint_state: WIP
 contract_commit: "bb6f258f8e1fa8f1f028a77df68b36226de1444b"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-08: завершить IDOR/recovery и 8+8 acceptance для входных/исходных фото, stale callbacks, storage errors и потери ответа; затем проверить published status. До INT передать SHA bb6f258f8e1fa8f1f028a77df68b36226de1444b в codex/data и проверить совместимость Python, не меняя services/data здесь. Затем BE-09: audited rollback correction под hold/return, assigned_to и admin proof; контакты/retention требуют H-03/H-04. Hold 15 минут сохранён по текущему явному требованию."
+next_step: "BE-08: сквозная проверка фото latest finalized after с completed trip, своей и чужой учётной записью; затем остаточная IDOR/recovery и сводка 8+8 acceptance. До INT передать SHA bb6f258f8e1fa8f1f028a77df68b36226de1444b в codex/data и проверить совместимость Python, не меняя services/data здесь. Затем BE-09: audited rollback correction под hold/return, assigned_to и admin proof; контакты/retention требуют H-03/H-04. Hold 15 минут сохранён по текущему явному требованию."
 human_required: [H-01]
 ```
 
