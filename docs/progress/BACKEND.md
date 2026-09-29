@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. BE-12 и обязательный UI-01 закрыты только в Go/mock; backend gate true, full stack false. По прямому распоряжению пользователя начат INT-01: проверить/завершить недостающее DE и перейти к MVP-интеграции. QA пропускается по решению пользователя, но остаётся непроведённой и не считается PASS. На origin/codex/data SHA 9eb2211b29e48fce8a6afc410bc986fa98a4988e зафиксированы DE-09 IN_PROGRESS, OpenAPI v1.0, data_ready_for_integration=false; сначала аудит в integration branch, не перезаписывая исходную codex/data ветку.
+Единственный текущий статус backend. BE-12 и обязательный UI-01 закрыты только в Go/mock; backend gate true, full stack false. По прямому распоряжению пользователя начат INT-01: закончить недостающие DE и перейти к MVP-интеграции. QA пропускается по решению пользователя, но остаётся непроведённой и не считается PASS. Исходная `codex/data` сохранена на SHA `9eb2211b29e48fce8a6afc410bc986fa98a4988e`; импорт и совместимые исправления выполняются в `codex/integration`.
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-29T22:15:27Z"
+heartbeat_utc: "2026-09-29T22:35:25Z"
 current_task: INT-01
-current_substep: "DE branch влита обычным merge в codex/integration, merge checkpoint 1bb911fca387002cab9362c89b72205a46e41f83; секрет-скан staged diff PASS. Проверки Python ещё не запускались; далее uv sync и тесты на PostgreSQL, затем чиню только воспроизводимые расхождения v1.13."
-last_verified_code_commit: "1d175d7120c6c7021e68800b22e824d4871b8a9b"
+current_substep: "DE синхронизирован с контрактом v1.13; code checkpoint 5ea435ecaa11f3364a112f476b9cb3f88b223be9. `uv sync --frozen`, `ruff check app tests migrations`, `mypy app`, `pytest -q` на PostgreSQL 17.6: 43 passed; regression включает ACL/version, expiry errors, 8+8 фото, post-return, assigned_to, active-odometer correction и notification contract. Следом полный Compose Go→Python→PostgreSQL/S3."
+last_verified_code_commit: "5ea435ecaa11f3364a112f476b9cb3f88b223be9"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "Прогнать uv sync, ruff, mypy и pytest с PostgreSQL для импортированного DE; исправить подтверждённые v1.13 несоответствия с миграцией и regression-тестами. Затем настроить Compose full и пройти синтетический Go→Python→PostgreSQL/S3 сценарий; QA пропущена и не PASS."
+next_step: "Подготовить приватные service/db/storage secrets локально, проверить docker compose full config/build/cold start и readiness, затем синтетический Go→Python→PostgreSQL/S3 lifecycle. QA пропущена и не PASS; после интеграции зафиксировать конфигурацию и известные ограничения."
 human_required: [H-01]
 ```
 
@@ -41,7 +41,7 @@ human_required: [H-01]
 | BE-10 | DONE (mock) | e2f1976221a14bc6684c34605fd4d53e39f3bf00 — recipients; c0bd317cb22967ebb29b4da29fde53bff7d801ea — sender core; 90e74c7430f1652996faa90461f611a0d400d712 — gateway startup/recovery; caa134ddffcc0edd501851ae82f12020c992e75a — Data API v1.13 enqueued_at; c7ad26747876e824b4f6e69c119e62747d7fb79b — безопасные логи operation/request_id/error_code и метрики batch; 5e913f91ebf71275dcdb75b697d94ae93a94e62d — dead-letter после пятой ошибки, отказ неизвестному event и сохранение поездки при ошибке MAX. Targeted Go tests PASS; verify gateway PASS; verify contract PASS (2 OpenAPI/37 routes/24 commands/22 examples/75 scenarios); staged secret/diff checks PASS; code published at checkpoint 65458515e103287c47276558f58a61b0ceb484ac. Go/mock only; Python/MAX/INT remain unverified. | BE-11 Docker/security/CI; data v1.13 sync before INT |
 | BE-11 | DONE (mock) | Code `1612d4e9ff99ae35ea31b13a29f3fcfe20e87e78`; fixes `8734ab0e1fe283cbf1388c95763f3681be83c821`, `18cc884cfdf09d8b49cdaae862c89f576efecec8`, `e57517a91937562ec4b06c8cb60193e44d51a6fe`. Actions [#290](https://github.com/Seferaki/max-fleet/actions/runs/36633923376) all jobs green: Linux bootstrap permissions, contract, Go test/race/vet/build, web, Compose cold start/health/restart/non-root/read-only. | Только mock; Python/MAX не проверены. BE-12 synthetic gate. |
 | BE-12 | DONE (Go/mock gate) | Code 1d175d7120c6c7021e68800b22e824d4871b8a9b, contract caa134ddffcc0edd501851ae82f12020c992e75a, published checkpoint 085768d39f3c22d64a06e2e763c1ba4686f0d884; local Go/contract checks and Actions #292 successful, all five jobs. | backend_ready_for_integration=true; INT-01 ждёт DE-09 gate на v1.13 и QA-03. |
-| INT-01 | IN_PROGRESS (WIP) | Merge `origin/codex/data` → `codex/integration`: `1bb911fca387002cab9362c89b72205a46e41f83`; `git diff --cached --check` и `py scripts/check-secrets.py --staged` PASS до merge-коммита. Python/DB тесты ещё не запускались; обнаружен контракт v1.0 вместо v1.13 и несколько реализационных пробелов. | uv sync + Python/PostgreSQL gates; затем синхронизировать DE с контрактом v1.13 и перейти к Go→Python; QA пропущена по решению пользователя. |
+| INT-01 | IN_PROGRESS (WIP) | Merge `origin/codex/data`: `1bb911fca387002cab9362c89b72205a46e41f83`; code `5ea435ecaa11f3364a112f476b9cb3f88b223be9`. `uv sync --frozen`, `uv run ruff check app tests migrations`, `uv run mypy app`, `TEST_DATABASE_URL=<disposable PostgreSQL 17.6> uv run pytest -q`: 43 passed; проверены OpenAPI v1.13 ответы, миграция 0002, auth/CAS/idempotency, 8+8 фото/recovery, категории, assigned_to и correction на active assignment. Staged secret scan 15 файлов PASS. DE Compose/S3 и Go→Python ещё не проверены. | Full Compose config/build/readiness, затем synthetic lifecycle Go→Python→PostgreSQL/S3; обновить DATA progress после gate. QA явно пропущена и не PASS. |
 | INT-02 | TODO | — | См. план |
 | INT-03 | TODO | — | См. план |
 | INT-04 | TODO | — | См. план |
