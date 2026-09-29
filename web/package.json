@@ -13,15 +13,18 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@maxhub/max-ui": "^0.5.0",
     "leaflet": "^1.9.4",
-    "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.3",
     "@types/leaflet": "^1.9.22",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
+    "jsdom": "^30.1.1",
     "typescript": "7.0.2",
     "vite": "8.3.1",
     "vitest": "^5.0.2"
