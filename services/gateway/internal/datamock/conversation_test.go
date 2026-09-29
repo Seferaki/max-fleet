@@ -140,3 +140,52 @@ func TestDuringIssueConversationRequiresOwnedActiveTrip(t *testing.T) {
 		expectAPIError(t, err, "INVALID_STATE")
 	}
 }
+
+func TestAfterIssueConversationRequiresCurrentOwnedReturn(t *testing.T) {
+	now := time.Date(2026, 9, 29, 3, 0, 0, 0, time.UTC)
+	mock, err := NewWithClock("test-service-token", func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	tripID, returnID, inspectionID := newRequestID(), newRequestID(), newRequestID()
+	employee := mock.employees[driverID]
+	employee.ActiveTripID = &tripID
+	mock.employees[driverID] = employee
+	mock.vehicles[0].Status = "in_trip"
+	mock.trips[tripID] = dataapi.Trip{ID: tripID, VehicleID: firstVehicleID, EmployeeID: employee.ID, Status: "returning", ReturnID: &returnID, Version: 2}
+	mock.returns[returnID] = dataapi.Return{ID: returnID, TripID: tripID, Status: "draft", Step: "checklist", IntentConfirmedAt: &now, Inspection: dataapi.Inspection{ID: inspectionID, Phase: "after", Status: "draft", Version: 1}, Version: 1}
+	client := commandClient(t, mock)
+	ctx := context.Background()
+	category, description, kind := "cleanliness", "Грязный салон", "photo"
+	vehicleVersion := int64(1)
+	input := dataapi.ConversationSaveInput{Flow: "issue_after", Step: "collect_photos", PendingInputKind: &kind, Context: dataapi.ConversationContext{TargetID: &inspectionID, TripID: &tripID, ReturnID: &returnID, VehicleID: &mock.vehicles[0].ID, VehicleVersion: &vehicleVersion, IssueCategory: &category, DraftText: &description}}
+	if _, err := client.ConversationSave(ctx, "8000000000000000002", employee.ID, 1, input, "after-foreign", nil); err == nil {
+		t.Fatal("foreign actor saved after draft")
+	} else {
+		expectAPIError(t, err, "NOT_FOUND")
+	}
+	wrongReturn := newRequestID()
+	invalid := input
+	invalid.Context.ReturnID = &wrongReturn
+	if _, err := client.ConversationSave(ctx, driverID, employee.ID, 1, invalid, "after-wrong-return", nil); err == nil {
+		t.Fatal("draft accepted for another return")
+	} else {
+		expectAPIError(t, err, "INVALID_STATE")
+	}
+	if _, err := client.ConversationSave(ctx, driverID, employee.ID, 1, input, "after-save", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ConversationSave(ctx, driverID, employee.ID, 1, input, "after-stale", nil); err == nil {
+		t.Fatal("stale version accepted")
+	} else {
+		expectAPIError(t, err, "STALE_VERSION")
+	}
+	draft := mock.returns[returnID]
+	draft.Status = "cancelled"
+	mock.returns[returnID] = draft
+	if _, err := client.ConversationSave(ctx, driverID, employee.ID, 2, input, "after-cancelled", nil); err == nil {
+		t.Fatal("cancelled return accepted after draft")
+	} else {
+		expectAPIError(t, err, "INVALID_STATE")
+	}
+}

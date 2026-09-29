@@ -56,6 +56,8 @@ func (s *Server) saveConversation(w http.ResponseWriter, requestID, actor string
 		valid = s.validBeforeIssueConversation(actor, input)
 	case "issue_during":
 		valid = s.validDuringIssueConversation(actor, input)
+	case "issue_after":
+		valid = s.validAfterIssueConversation(actor, input)
 	}
 	if !valid {
 		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
@@ -66,6 +68,38 @@ func (s *Server) saveConversation(w http.ResponseWriter, requestID, actor string
 	conversation := dataapi.Conversation{Flow: input.Flow, Step: input.Step, Context: context, PendingInputKind: input.PendingInputKind, Version: currentVersion + 1, UpdatedAt: s.now().UTC()}
 	s.conversations[actor] = conversation
 	return commandResult("conversation.save", conversation), true
+}
+
+func (s *Server) validAfterIssueConversation(actor string, input dataapi.ConversationSaveInput) bool {
+	c := input.Context
+	if c.TargetID == nil || c.TripID == nil || c.ReturnID == nil || c.VehicleID == nil || c.VehicleVersion == nil || c.IssueCategory == nil || c.DraftText == nil || strings.TrimSpace(*c.DraftText) == "" {
+		return false
+	}
+	draft, found := s.returns[*c.ReturnID]
+	if !found || draft.Inspection.ID != *c.TargetID || draft.TripID != *c.TripID {
+		return false
+	}
+	trip, found := s.trips[*c.TripID]
+	if !found || trip.EmployeeID != s.employees[actor].ID || trip.VehicleID != *c.VehicleID || trip.ReturnID == nil || *trip.ReturnID != draft.ID {
+		return false
+	}
+	if input.Step == "done" {
+		if c.IssueID == nil {
+			return false
+		}
+		issue, found := s.issues[*c.IssueID]
+		return found && issue.AuthorID == trip.EmployeeID && issue.TripID != nil && *issue.TripID == trip.ID && issue.InspectionID != nil && *issue.InspectionID == draft.Inspection.ID && issue.VehicleID == trip.VehicleID && issue.Stage == "after"
+	}
+	if input.Step != "collect_photos" && input.Step != "review" || trip.Status != "returning" || draft.Status != "draft" || draft.Inspection.Status != "draft" || draft.IntentConfirmedAt == nil || c.IssueID != nil {
+		return false
+	}
+	for _, id := range c.AssetIDs {
+		asset, found := s.issueAssets[id]
+		if !found || asset.Actor != actor || asset.ScopeType != "inspection" || asset.ScopeID != draft.Inspection.ID || asset.AttachedIssueID != nil || !s.now().UTC().Before(asset.ExpiresAt) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) validDuringIssueConversation(actor string, input dataapi.ConversationSaveInput) bool {
