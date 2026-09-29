@@ -766,7 +766,7 @@ def return_complete(ctx: Ctx) -> dict[str, Any]:
                  "needs_review": vehicle.needs_review})
     outbox(session, "trip_completed", "trip", trip.id, trip.version, vehicle_id=vehicle.id, reason=None, now=now)
     session.flush()
-    # data-mock возвращает Return; OpenAPI объявляет Trip — см. вопросы контракта в progress/DATA.md.
+    # OpenAPI v1.13 uses a generic CommandResult aggregate; Go mock and Python return the Return DTO here.
     return result("return.complete", dto.return_dto(session, ret))
 
 

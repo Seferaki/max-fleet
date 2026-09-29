@@ -1,0 +1,64 @@
+# Full synthetic stack: Go gateway + React map + Python Data API + PostgreSQL + S3.
+# Run with a private MAX_FLEET_SECRETS_DIR and SEED_SYNTHETIC=1 for local smoke.
+name: max-fleet-full
+
+include:
+  - path: compose.data.yaml
+
+services:
+  gateway:
+    build:
+      context: ../services/gateway
+      dockerfile: Dockerfile.gateway
+    image: max-fleet-gateway:local
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      MAX_UPDATE_MODE: ${MAX_UPDATE_MODE:-webhook}
+      MAX_INTEGRATION_KEY: ${MAX_INTEGRATION_KEY:-demo-bot}
+      MAX_WEBHOOK_SECRET_FILE: /run/secrets/max_webhook_secret
+      DATA_API_BASE_URL: http://data-api:8000/internal/v1
+      DATA_API_TOKEN_FILE: /run/secrets/data_api_token
+      WORKER_API_TOKEN_FILE: /run/secrets/worker_api_token
+      MAX_BOT_NAME: ${MAX_BOT_NAME:-}
+      MAX_PHOTO_HOSTS: ${MAX_PHOTO_HOSTS:-}
+      COMPANY_MAP_LAT: ${COMPANY_MAP_LAT:-}
+      COMPANY_MAP_LON: ${COMPANY_MAP_LON:-}
+    secrets: [max_webhook_secret, data_api_token, worker_api_token]
+    depends_on:
+      data-api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/health/live]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+      args:
+        VITE_MAP_TILE_URL: ${MAP_TILE_URL:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}
+        VITE_MAP_ATTRIBUTION: ${MAP_ATTRIBUTION:-OpenStreetMap contributors}
+    image: max-fleet-map-web:local
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports:
+      - 127.0.0.1:${WEB_PORT:-8081}:8080
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: unless-stopped
+
+secrets:
+  max_webhook_secret:
+    file: ${MAX_FLEET_SECRETS_DIR:?Set MAX_FLEET_SECRETS_DIR to the private local secrets directory}/max_webhook_secret
