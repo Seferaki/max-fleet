@@ -81,6 +81,7 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	pageNumber, catalog := catalogPage(item.Event)
 	vehicleID, expectedVersion, card := cardTarget(item.Event)
 	previousVehicleID, previous := previousTarget(item.Event)
+	previousPhoto := parsePreviousPhotoTarget(item.Event)
 	actionVehicleID, actionVersion, intent := vehicleActionTarget(item.Event, "intent:")
 	confirmVehicleID, confirmVersion, confirm := vehicleActionTarget(item.Event, "take:")
 	cancelID, cancelVersion, cancelIntent := vehicleActionTarget(item.Event, "cancel-intent:")
@@ -141,7 +142,7 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	geoMessage := returnGeoEvent(item.Event)
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !returnOdometerConfirm && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !postReturnIssueOpen && !postReturnCategoryPrompt && !postReturnPhotoHelp && !postReturnReview && !postReturnSend && !returnIssuePrompt && !tripIssuePhotoHelp && !returnIssuePhotoHelp && !tripIssueReview && !tripIssueSend && !returnIssueReview && !returnIssueSend && !returnGeoConfirm && !returnSummary && !returnComplete && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !geoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !previousPhoto.recognized && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !returnOdometerConfirm && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !postReturnIssueOpen && !postReturnCategoryPrompt && !postReturnPhotoHelp && !postReturnReview && !postReturnSend && !returnIssuePrompt && !tripIssuePhotoHelp && !returnIssuePhotoHelp && !tripIssueReview && !tripIssueSend && !returnIssueReview && !returnIssueSend && !returnGeoConfirm && !returnSummary && !returnComplete && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !geoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -414,8 +415,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	}
 	if previous {
 		message := "Некорректная ссылка на предыдущий осмотр. Откройте /cars."
+		var inspection dataapi.Inspection
 		if vehicleIDPattern.MatchString(previousVehicleID) {
-			inspection, readErr := p.Data.PreviousInspection(ctx, actor, previousVehicleID)
+			loadedInspection, readErr := p.Data.PreviousInspection(ctx, actor, previousVehicleID)
 			if readErr != nil {
 				var apiErr *dataapi.APIError
 				if !errors.As(readErr, &apiErr) || apiErr.Status != 404 {
@@ -423,10 +425,18 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 				}
 				message = "Подтверждённого предыдущего осмотра пока нет."
 			} else {
+				inspection = loadedInspection
 				message = previousInspectionText(inspection, p.Location)
 			}
 		}
-		return p.sendView(ctx, maxID, message, [][]maxsdk.Button{{{Text: "К списку", Payload: "cars:1"}}})
+		rows := [][]maxsdk.Button{{{Text: "К списку", Payload: "cars:1"}}}
+		if inspection.Phase == "after" && inspection.Status == "finalized" && inspection.Version > 0 && len(inspection.OccupiedSlots) > 0 {
+			rows = append([][]maxsdk.Button{{{Text: "Фото предыдущего осмотра", Payload: fmt.Sprintf("prev-photos:%s:%d", previousVehicleID, inspection.Version)}}}, rows...)
+		}
+		return p.sendView(ctx, maxID, message, rows)
+	}
+	if previousPhoto.recognized {
+		return p.showPreviousInspectionPhotos(ctx, actor, maxID, previousPhoto)
 	}
 	message := menuText(*me.Employee, state)
 	if state.Checkout != nil {

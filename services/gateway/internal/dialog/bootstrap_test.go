@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
@@ -465,13 +466,35 @@ func TestCatalogCallbacksUseClickerAndRefreshStaleCard(t *testing.T) {
 
 type previousReader struct {
 	emptyCatalogReader
-	inspection dataapi.Inspection
-	actor      string
+	inspection   dataapi.Inspection
+	actor        string
+	photo        dataapi.AssetContent
+	photoErr     error
+	photoActor   string
+	photoVehicle string
+	photoSlot    int
+	photoCalls   int
 }
 
 func (r *previousReader) PreviousInspection(_ context.Context, actor, _ string) (dataapi.Inspection, error) {
 	r.actor = actor
 	return r.inspection, nil
+}
+
+func (r *previousReader) PreviousInspectionPhoto(_ context.Context, actor, vehicleID string, slot int) (dataapi.AssetContent, error) {
+	r.photoCalls++
+	r.photoActor, r.photoVehicle, r.photoSlot = actor, vehicleID, slot
+	return r.photo, r.photoErr
+}
+
+type recordedPreviousImage struct {
+	*maxsdk.RecordingTransport
+	images []string
+}
+
+func (s *recordedPreviousImage) SendImage(_ context.Context, userID int64, caption, contentType string, data []byte) (string, error) {
+	s.images = append(s.images, caption+"|"+contentType+"|"+string(data))
+	return "synthetic-previous-image", nil
 }
 
 func TestPreviousInspectionShowsOnlyProjectionAndRechecksActor(t *testing.T) {
@@ -502,8 +525,8 @@ func TestPreviousInspectionShowsOnlyProjectionAndRechecksActor(t *testing.T) {
 	if got := sender.AnsweredCallbacks(); len(got) != 2 {
 		t.Fatalf("previous callback answers = %v", got)
 	}
-	reader := &previousReader{inspection: dataapi.Inspection{ID: "30000000-0000-4000-8000-000000000002", Phase: "after", Status: "finalized", UpdatedAt: now, FuelLevel: intPointer(65), OdometerKM: int64Pointer(12000), OccupiedSlots: []int{1, 2, 3, 4, 5, 6, 7, 8}}}
-	privateSender := &maxsdk.RecordingTransport{}
+	reader := &previousReader{inspection: dataapi.Inspection{ID: "30000000-0000-4000-8000-000000000002", Phase: "after", Status: "finalized", UpdatedAt: now, FuelLevel: intPointer(65), OdometerKM: int64Pointer(12000), OccupiedSlots: []int{1, 2, 3, 4, 5, 6, 7, 8}, Version: 7}, photo: dataapi.AssetContent{ContentType: "image/png", Bytes: []byte("synthetic-photo")}}
+	privateSender := &recordedPreviousImage{RecordingTransport: &maxsdk.RecordingTransport{}}
 	if err := (Bootstrap{Data: reader, MAX: privateSender, Location: time.FixedZone("MSK", 3*3600)}).Handle(context.Background(), callbackItem(driver, "prev-finalized", "prev:"+vehicleID, now)); err != nil {
 		t.Fatal(err)
 	}
@@ -518,6 +541,43 @@ func TestPreviousInspectionShowsOnlyProjectionAndRechecksActor(t *testing.T) {
 	}
 	if reader.actor != driver {
 		t.Fatalf("projection read for %q", reader.actor)
+	}
+	var photoMenuPayload string
+	for _, row := range privateSender.Messages()[0].Buttons {
+		if row[0].Text == "Фото предыдущего осмотра" {
+			photoMenuPayload = row[0].Payload
+		}
+	}
+	if photoMenuPayload != "prev-photos:"+vehicleID+":7" {
+		t.Fatalf("previous photo button missing or unversioned: %+v", privateSender.Messages()[0].Buttons)
+	}
+	staleMenuPayload := "prev-photos:" + vehicleID + ":6"
+	if err := (Bootstrap{Data: reader, MAX: privateSender}).Handle(context.Background(), callbackItem(driver, "prev-photo-stale-menu", staleMenuPayload, now)); err != nil || !strings.Contains(privateSender.Messages()[len(privateSender.Messages())-1].Text, "изменились") || reader.photoCalls != 0 {
+		t.Fatalf("stale previous photo menu accepted: %v %+v", err, privateSender.Messages())
+	}
+	if err := (Bootstrap{Data: reader, MAX: privateSender}).Handle(context.Background(), callbackItem(driver, "prev-photo-menu", photoMenuPayload, now)); err != nil {
+		t.Fatal(err)
+	}
+	photoMenu := privateSender.Messages()[len(privateSender.Messages())-1]
+	if !strings.Contains(photoMenu.Text, "ракурс предыдущего осмотра") || len(photoMenu.Buttons) != 9 {
+		t.Fatalf("previous photo angle menu: %+v", photoMenu)
+	}
+	photoPayload := photoMenu.Buttons[2][0].Payload
+	if photoPayload != "prev-photo:"+vehicleID+":7:3" {
+		t.Fatalf("photo callback: %+v", photoMenu.Buttons[2][0])
+	}
+	if err := (Bootstrap{Data: reader, MAX: privateSender}).Handle(context.Background(), callbackItem(driver, "prev-photo-invalid-slot", "prev-photo:"+vehicleID+":7:9", now)); err != nil || reader.photoCalls != 0 {
+		t.Fatalf("invalid photo slot reached API: %v %+v", err, privateSender.Messages())
+	}
+	if err := (Bootstrap{Data: reader, MAX: privateSender}).Handle(context.Background(), callbackItem(driver, "prev-photo-view", photoPayload, now)); err != nil {
+		t.Fatal(err)
+	}
+	if len(privateSender.images) != 1 || !strings.Contains(privateSender.images[0], "3/8") || !strings.Contains(privateSender.images[0], "synthetic-photo") || reader.photoActor != driver || reader.photoVehicle != vehicleID || reader.photoSlot != 3 {
+		t.Fatalf("previous photo delivery: %+v read actor=%s vehicle=%s slot=%d", privateSender.images, reader.photoActor, reader.photoVehicle, reader.photoSlot)
+	}
+	reader.photoErr = &dataapi.APIError{Status: http.StatusServiceUnavailable, Code: "STORAGE_UNAVAILABLE"}
+	if err := (Bootstrap{Data: reader, MAX: privateSender}).Handle(context.Background(), callbackItem(driver, "prev-photo-unavailable", photoPayload, now)); err != nil || !strings.Contains(privateSender.Messages()[len(privateSender.Messages())-1].Text, "временно не удалось прочитать") || len(privateSender.images) != 1 {
+		t.Fatalf("storage failure leaked/failed: %v %+v %+v", err, privateSender.Messages(), privateSender.images)
 	}
 }
 
