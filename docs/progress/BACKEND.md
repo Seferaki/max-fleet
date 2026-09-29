@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "27659325-800e-4ea6-99ac-3d8edec02849"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T08:33:49Z"
+heartbeat_utc: "2026-09-29T08:37:39Z"
 current_task: BE-08
-current_substep: "BE-08: история по 5, admin close и замечания по страницам проверены; сообщение после возврата/IDOR впереди"
-last_verified_code_commit: "e14bc18704afc5f1146f5184f5e55fa697fbaf98"
+current_substep: "BE-08: Go проверяет owner/admin перед карточкой и фото даже при ошибке Data API; post-return сообщение впереди"
+last_verified_code_commit: "788fe4e91156f5c369c03fa46987515abd2c103e"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-08: сообщение после возврата из карточки, IDOR asset/курсора, immutable история; Docker/Nginx smoke после доступного Engine"
+next_step: "BE-08: проработать безопасное post-return сообщение без изменения immutable trip; проверить IDOR asset/курсора; Docker/Nginx smoke после доступного Engine"
 human_required: [H-01]
 ```
 
@@ -36,7 +36,7 @@ human_required: [H-01]
 | BE-06 | DONE | `fe53501113ab5238235e0d9ee4149c85d276e7fd` — топливо; `e1352c0742974c8ba69096cbcaf279642a6ab701` — одометр; `47d0369c527eb60a6d62acbc3cb205496b6c1b1b` — ответ; `da3931879aeb663dd529c8c5af8cdb1e744d9cdd` — контракт v1.2; `d3a54dc7cfa6a0b93253527751671f6cf3c81ebc` — Go conversation; `f73ccbec636c39309202cc68716b087622d96e3c` — описание; `79e98ba3b09f26997d6867a60650c9367b0a27a2` — до 3 фото; `ccb4eedf036efbf3432f440d8f60bec907398132` — issue.create/recovery; `626086e96668660c87430fb1e73a2d355c4c86fc` — summary/start/recovery; `0eb2fc5e8a82a367b4f0377783bbd8a7bf81f90f` — полный mock take/hold expiry и README | Реальный MAX и Python — отдельные INT; BE-07 |
 | BE-07 | DONE (mock) | `4dd7ad33419cf10d8e5b7e4b6eb924d52a458c6f` — begin; `a69c51a182bc0e19655cc4e74a1cfa12f75f70c8` — cancel/fresh draft; `5be149e482bd79c761d68e9f6170e562b72c0dd1` — 8 фото после; `18a01ebb695ea2a05a45f91c35be43b5dad8cb0f` — issue при возврате и уведомление; `fd340988305cfcbb269f505b457bb0d0a2dacd9b` — MAX geo; `033161eced999a40508a07df9af9069ba33bf2d7` — complete/recovery; `d8247983d7be77b6b71c8f7e778990fec3286bb2` — полный mock return; остальные подшаги ниже | Реальная доставка MAX и Python — INT; прямой контакт ответственного требует H-03 |
 | UI-01 | DONE (mock) | `0bc3b2152264d61b89bd5324c9a630077134fda2` — initData; `46e898e326672f07e266a9b59e81a0e6035b9d90` — context; `f07e73314a313b6b774550ab987c9953e815664f` — location; `855ed0cbfe19e9592cb8d80c8951f170c3079f34` — gateway; `dd518f3960c30cba29793d74d6b4971e4acc3b54` — web API client; `12bbdf320bfc8e516f00979507a8d9ddd3f3808a` — React карта; `f92eb6a00e1bdc599d6c04f8fbcafa33fbd03925` — MAX start_param; `f7e2dfd9cc53e978dd10fefbc33f72af11b6eed5` — web proxy; `9908f32c6bdc8849ee3b963d37e223e1849485b0` — MAX кнопка; `bff0469dcf092fdc08565f0bcff0edc47ea33387` — Go HTTP/mock регрессия | Реальный Bridge — INT-04; Docker/Nginx smoke не выполнен из-за недоступного Engine |
-| BE-08 | IN_PROGRESS | `57447711d3781bdc3940679848d3c6ba1c9de4e2` — история по 5, приватный курсор; `e14bc18704afc5f1146f5184f5e55fa697fbaf98` — admin close/замечания; существующие детали/фото требуют аудита | Сообщение после возврата, immutable история, IDOR |
+| BE-08 | IN_PROGRESS | `57447711d3781bdc3940679848d3c6ba1c9de4e2` — история по 5, приватный курсор; `e14bc18704afc5f1146f5184f5e55fa697fbaf98` — admin close/замечания; `788fe4e91156f5c369c03fa46987515abd2c103e` — защита owner/admin в Go | Post-return сообщение, immutable история, IDOR asset/курсора |
 | BE-09 | TODO | — | См. план |
 | BE-10 | TODO | — | См. план |
 | BE-11 | TODO | — | См. план |
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-08 code `788fe4e91156f5c369c03fa46987515abd2c103e`: Go сверяет ID и владельца Trip после чтения Data API перед выдачей карточки, замечаний и фотографий; admin сохраняет право просмотра. Тест специально вернул чужой Trip из подменённого reader и проверил отказ сотруднику, а также допуск admin. `go test ./internal/dialog -run '^TestTrip(HistoryShowsAdminCloseAndOwnedIssuesByVersion|PhotoDialogOwnerAdminPhaseAndVersion)$' -count=1 -v` → PASS после исправления прежнего ожидания кнопок активной собственной поездки; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS. BE-08 WIP; реальный Python не проверен.
 
 - BE-08 code `e14bc18704afc5f1146f5184f5e55fa697fbaf98`: карточка показывает явную пометку `closed_by_admin` и missing_data; замечания доступны по пять с отдельной версией поездки в callback. Тест проверил 6 замечаний на двух страницах, запрет просмотра чужого actor и отказ устаревшей версии. `go test ./internal/dialog -run '^TestTripHistoryShowsAdminCloseAndOwnedIssuesByVersion$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS. BE-08 WIP: сообщение после возврата, immutable история и полный IDOR ещё не подтверждены.
 
