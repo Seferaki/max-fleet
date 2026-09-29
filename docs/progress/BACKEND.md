@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "27659325-800e-4ea6-99ac-3d8edec02849"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T03:31:28Z"
+heartbeat_utc: "2026-09-29T03:37:32Z"
 current_task: BE-07
-current_substep: "BE-07 WIP: MAX geo требует явного confirm и сохраняется с recovery; React map впереди"
-last_verified_code_commit: "fd340988305cfcbb269f505b457bb0d0a2dacd9b"
+current_substep: "BE-07 Go/mock: safe complete и recovery проверены; UI-01 manual map остаётся P0"
+last_verified_code_commit: "033161eced999a40508a07df9af9069ba33bf2d7"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "UI-01 React manual map + Go initData endpoint для return.set_location; затем BE-07 безопасный complete/recovery и контакт ответственного"
+next_step: "UI-01: React/Leaflet manual map, Go initData auth и return.set_location; затем BE-07 контакт ответственного и финальная регрессия Go/mock"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-07 code `033161eced999a40508a07df9af9069ba33bf2d7`: итог return показывает только после анкеты, 8 подтверждённых after-фото, топлива и пробега; без точки/issue указывает недостающее; unsafe parking/keys/lock не даёт complete. `return.complete` с CAS/lease и OwnCommandResult при потере ответа; успех сверяет completed Return и Trip. MAX меню удержано в лимите 10 строк. Тест проверил отсутствие точки, чужого actor, отсутствие lease, unsafe, happy complete, lost reply/retry и admin menu. `go test ./internal/dialog -run '^TestReturn(CompleteRequiresSafetyAndRecoversLostReply|SummaryBlocksUnsafeParkingKeysAndLock|MenuFitsMAXKeyboardWithAdminIssueDraft)$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. React manual map и реальный MAX/Python не проверены, BE-07 WIP.
 
 - BE-07 code `fd340988305cfcbb269f505b457bb0d0a2dacd9b`: MAX geo создаёт conversation preview для текущего return, отдельная кнопка подтверждения пишет return.set_location source=max_geo; OwnCommandResult восстанавливает прерывание до conversation done. Несохранённый issue_after черновик защищён от перезаписи. Тест проверил отсутствие записи до confirm, чужого actor, lease, interruption/retry без второй точки и потерянный ответ. `go test ./internal/dialog -run '^TestReturnMAXGeoNeedsExplicitConfirmAndRecoversCommit$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Ручная React карта и complete ещё впереди, реальный MAX/Python не проверены, BE-07 WIP.
 
