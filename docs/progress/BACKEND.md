@@ -8,16 +8,16 @@ track: backend
 lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
-branch: codex/backend
+branch: codex/integration
 heartbeat_utc: "2026-09-29T22:08:14Z"
 current_task: INT-01
-current_substep: "Claim INT-01 до любых изменений: пользователь разрешил закончить реально недостающий DE в интеграционной ветке и пропустить QA для срочного MVP. QA остаётся непроверенной; начинаю с аудита data branch v1.0/DE-09, затем codex/integration и фактические Python gates."
+current_substep: "INT-01: codex/integration создана от опубликованного backend checkpoint; сейчас присоединяю codex/data и аудирую фактическую готовность DE-09. QA явно пропускается по решению пользователя и не будет обозначаться PASS."
 last_verified_code_commit: "1d175d7120c6c7021e68800b22e824d4871b8a9b"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "Сначала обычным push опубликовать claim-коммит. После подтверждения создать codex/integration от backend, слить codex/data без force/rebase и проверить реальные отличия реализации/fixtures от contract v1.13. Если DE-09 не готов, исправлять его в integration branch и прогнать PostgreSQL/S3/Python CI; исходную codex/data ветку сохранить. QA gate пропускается по прямому решению пользователя, отмечать QA как PASS нельзя. Затем перейти к INT-01/02 Compose и Go→Python интеграции; фиксировать все непрошедшие проверки, full_stack_accepted пока false."
+next_step: "Слить origin/codex/data обычным merge в codex/integration, сохранить исходную ветку. Сверить contract v1.13, runtime implementation, fixtures и DE-09 tests; если недостающее подтвердится, исправить в integration branch и запустить PostgreSQL/S3/Python gates. После успешных тестов обновить DE progress только на интеграционной ветке и перейти к Compose/Go→Python. QA waiver не означает QA pass."
 human_required: [H-01]
 ```
 
