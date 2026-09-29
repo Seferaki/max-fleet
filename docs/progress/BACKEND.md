@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "27659325-800e-4ea6-99ac-3d8edec02849"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T03:02:10Z"
+heartbeat_utc: "2026-09-29T03:05:06Z"
 current_task: BE-07
-current_substep: "BE-07: issue during/after, проверка ближайшего подшага"
-last_verified_code_commit: "01ca6e133a4901c502493c63deb8832aa7fdb931"
+current_substep: "BE-07 WIP: mock валидирует черновик issue_during по владельцу и активной поездке"
+last_verified_code_commit: "d2ac38b648c0c0b65e0d244ed856bd8a5c4d37c1"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-07 issue во время поездки и по проблемам after (категория/описание/до 3 фото, CAS/idempotency, admin notification), затем подтверждённая точка парковки и безопасный return.complete. UI-01 React карта остаётся P0"
+next_step: "BE-07: добавить диалог issue_during (черновик, до 3 фото, submit/recovery), затем issue_after, парковку и безопасный complete; UI-01 React карта P0"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-07 code `d2ac38b648c0c0b65e0d244ed856bd8a5c4d37c1`: mock conversation.save валидирует issue_during по owned active trip и stage-фото, отклоняет неизвестный flow; диалог ещё не подключён. `go test ./internal/datamock -run '^TestDuringIssueConversationRequiresOwnedActiveTrip$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Реальный MAX/Python не проверены, BE-07 WIP.
 
 - CLAIM 2026-09-29T03:02:10Z ноутбук B/session 27659325-800e-4ea6-99ac-3d8edec02849: опубликованный HANDOFF `8687ddc155378ab874db13a769d442099729fb1f` при чистом дереве; продолжаю BE-07.
 
