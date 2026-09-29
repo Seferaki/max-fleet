@@ -155,9 +155,9 @@ go test ./internal/dataapi -run '^TestLivePythonDataAPI$' -count=1 -v
 Pop-Location
 ```
 
-Тест пропускается, если не включён `MAX_FLEET_LIVE_DATA_API=1`; токен читается из файла и не печатается. Полный MAX/Bridge и gateway readiness, реальный MAX, QA и восстановление остаются отдельными проверками.
+Тест пропускается, если не включён `MAX_FLEET_LIVE_DATA_API=1`; токен читается из файла и не печатается. Реальный MAX/Bridge, gateway readiness, сервисные отказы и backup/restore остаются отдельными проверками.
 
-Сквозной Go inbox/dialog → Python → PostgreSQL/S3 smoke на синтетических данных проходит возврат через диалог Go, ручной выбор точки картой, историю и S3-фото, а также подачу и разбор замечания администратором. Он проверяет 15-минутный hold, 8+8 фото, безопасное освобождение автомобиля, повтор сохранения `manual_map` с тем же ключом и запрет сотруднику на admin-команду. MAX transport, сотрудник/администратор и фото синтетические; это не проверка реального MAX. Используйте отдельный disposable Compose project и сотрудника без активной поездки. Значения токенов нигде не задаются: тест читает локальные `data_api_token`/`worker_api_token` из файлов.
+Сквозной Go inbox/dialog → Python → PostgreSQL/S3 smoke на синтетических данных проходит возврат через диалог Go, ручной выбор точки картой, историю и S3-фото, а также подачу и разбор замечания администратором. Он проверяет 15-минутный hold, 8+8 фото, безопасное освобождение автомобиля, повтор сохранения `manual_map` с тем же ключом и запрет сотруднику на admin-команду. На отметке 4/8 тест пересоздаёт Go inbox worker, подтверждает восстановление прогресса из Python и проверяет, что повтор фото-события ссылается на ту же inbox row и не обрабатывается повторно. MAX transport, сотрудник/администратор и фото синтетические; это не проверка реального MAX. Используйте отдельный disposable Compose project и сотрудника без активной поездки. Значения токенов нигде не задаются: тест читает локальные `data_api_token`/`worker_api_token` из файлов.
 
 ```powershell
 $env:MAX_FLEET_SECRETS_DIR = 'C:\MAXFleet\secrets'
@@ -179,7 +179,7 @@ Push-Location services/gateway
 Pop-Location
 ```
 
-Используйте только синтетический seed/учётные записи. Если сотрудник уже имеет активную поездку после прерванного теста, укажите другой свободный синтетический ID через `MAX_FLEET_LIVE_DATA_API_ACTOR`; секреты приложения MAX для этого smoke не нужны. Без MAX token `/health/ready` остаётся `503 dialog flows incomplete`.
+Используйте только синтетический seed/учётные записи. Если тест прервался и оставил поездку, создайте новый Compose project с отдельными свободными `WEB_PORT` и `DATA_API_PORT` (например, имя `max-fleet-int-recovery`, порты `8084` и `18003`); он получит собственные volumes и чистый seed, а прежнее состояние останется нетронутым. Секреты приложения MAX для этого smoke не нужны. Без MAX token `/health/ready` остаётся `503 dialog flows incomplete`.
 
 Для локальной проверки входа webhook используется дополнительный `deploy/compose.backend.webhook.yaml`: он включает `MAX_UPDATE_MODE=webhook` поверх базового Compose, оставляя mock DataAPI и bind на `127.0.0.1`. Файл `MAX_FLEET_MAX_WEBHOOK_SECRET_FILE` должен быть приватным локальным файлом; для синтетического smoke допустим отдельный тестовый secret без настоящего MAX token. На Windows подготовить копии `data_api_token` и `worker_api_token` для Docker Desktop через `scripts/prepare-compose-token.ps1 -Name data_api_token` и `-Name worker_api_token`, затем передать их пути в `MAX_FLEET_DATA_API_TOKEN_FILE` и `MAX_FLEET_WORKER_API_TOKEN_FILE`. Запуск: `docker compose -f deploy/compose.backend.yaml -f deploy/compose.backend.webhook.yaml -p max-fleet-backend up -d --build --wait`. Без `MAX_BOT_TOKEN_FILE` webhook только сохраняет inbox; `/health/ready` остаётся 503. Не включать этот overlay на публичном сервере и не считать такой smoke проверкой реального MAX.
 

@@ -168,15 +168,17 @@ func TestLivePythonReturnDialog(t *testing.T) {
 	fetcher := &syntheticPhotoFetcher{}
 	processor := Bootstrap{Data: client, Commands: client, MAX: sender, Photos: fetcher, PhotoStore: client, Location: time.UTC}
 	worker := inboxworker.Worker{ID: "live-dialog-smoke", Store: workerStore, Processor: &processor, Now: time.Now}
-	deliver := func(event dataapi.NormalizedEvent) {
+	deliver := func(event dataapi.NormalizedEvent) dataapi.InboxStored {
 		t.Helper()
-		if _, storeErr := workerStore.StoreInbox(ctx, event, maxsdk.InboxIdempotencyKey(event)); storeErr != nil {
+		stored, storeErr := workerStore.StoreInbox(ctx, event, maxsdk.InboxIdempotencyKey(event))
+		if storeErr != nil {
 			t.Fatalf("store MAX-like inbox event: %v", storeErr)
 		}
 		result, runErr := worker.RunOnce(ctx, 1)
 		if runErr != nil || result.Acked != 1 {
 			t.Fatalf("process live Go dialog event: result=%+v err=%v", result, runErr)
 		}
+		return stored
 	}
 	deliverCallback := func(payload string) {
 		t.Helper()
@@ -268,9 +270,43 @@ func TestLivePythonReturnDialog(t *testing.T) {
 	deliverCallback(button("return-photos:"))
 	for slot := 1; slot <= 8; slot++ {
 		fetcher.image = samplePhoto(t, uint8(150+slot))
-		deliver(photoItem(actorID, key(), time.Now().UTC()).Event)
+		photoEvent := photoItem(actorID, key(), time.Now().UTC()).Event
+		storedPhoto := deliver(photoEvent)
+		if storedPhoto.Duplicate {
+			t.Fatalf("fresh photo event was unexpectedly a duplicate: stored=%+v", storedPhoto)
+		}
 		if !strings.Contains(latest().Text, fmt.Sprintf("%d/8", slot)) {
 			t.Fatalf("after photo %d did not advance: %+v", slot, latest())
+		}
+		if slot == 4 {
+			state, err = client.State(ctx, actorID)
+			if err != nil || state.Return == nil || len(state.Return.Inspection.OccupiedSlots) != 4 {
+				t.Fatalf("mid-return photo checkpoint was not durable: state=%+v err=%v", state, err)
+			}
+
+			// Rebuild the in-memory Go dialog worker as after a process restart.
+			sender = &maxsdk.RecordingTransport{}
+			fetcher = &syntheticPhotoFetcher{}
+			processor = Bootstrap{Data: client, Commands: client, MAX: sender, Photos: fetcher, PhotoStore: client, Location: time.UTC}
+			worker = inboxworker.Worker{ID: "live-dialog-smoke-restarted", Store: workerStore, Processor: &processor, Now: time.Now}
+
+			duplicate, storeErr := workerStore.StoreInbox(ctx, photoEvent, key())
+			if storeErr != nil || !duplicate.Duplicate || duplicate.ID != storedPhoto.ID {
+				t.Fatalf("replayed photo event did not resolve to the same inbox row after worker restart: original=%+v replay=%+v err=%v", storedPhoto, duplicate, storeErr)
+			}
+			replay, runErr := worker.RunOnce(ctx, 1)
+			if runErr != nil || replay.Claimed != 0 || replay.Acked != 0 {
+				t.Fatalf("acked photo event was processed again after restart: result=%+v err=%v", replay, runErr)
+			}
+			state, err = client.State(ctx, actorID)
+			if err != nil || state.Return == nil || len(state.Return.Inspection.OccupiedSlots) != 4 {
+				t.Fatalf("duplicate replay changed the durable photo count: state=%+v err=%v", state, err)
+			}
+			menu()
+			deliverCallback(button("return-photos:"))
+			if !strings.Contains(latest().Text, "сохранено 4/8") {
+				t.Fatalf("Go dialog did not restore the four-photo checkpoint after restart: %+v", latest())
+			}
 		}
 	}
 	menu()
