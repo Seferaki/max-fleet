@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03, BE-01…BE-08 и UI-01 выполнены на Go mock; BE-09 в работе. Контракт v1.5 и Go client/mock опубликованы в `codex/backend`. Python живёт отдельно в `codex/data` (checkpoint `9eb2211b29e48fce8a6afc410bc986fa98a4988e`, DE-09 WIP), всё ещё на v1.2 и не интегрирован; contract commit `e3084a25378a1cc981f3ea1650c1264ade3684fe` нужно синхронизировать с data engineer до INT. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03, BE-01…BE-08 и UI-01 выполнены на Go mock; BE-09 в работе. Новый локально проверенный backend/contract checkpoint `17ebba523954c8396150a9182128f9fd5a7a7078` ещё ожидает push-проверки. На `origin/codex/data` опубликован Python checkpoint `9eb2211b29e48fce8a6afc410bc986fa98a4988e`: DE-01…DE-08 готовы, DE-09 ожидает решения backend; фактический OpenAPI там v1.0 (`aa56f0e05b3c2458eee1fe88550d183ece9075af`), отдельная от backend реализация и пока не интегрированная. Contract v1.6 и актуальные решения по вопросам DE должны быть синхронизированы в Python до INT; `services/data/` не менялся. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T15:26:14Z"
+heartbeat_utc: "2026-09-29T15:52:12Z"
 current_task: BE-09
-current_substep: "BE-09: admin challenge.create/answer выдаёт сохраняемый proof после correct math; следующий подшаг — финальные admin-команды с одноразовым SHA-bound proof"
-last_verified_code_commit: "298626a80132d891c1482085901697406bcc328d"
+current_substep: "BE-09: пять admin-команд проверяют actor, version, exact intent, одноразовый proof и idempotency; contract v1.6 связывает available_data admin close с proof. Next: audited odometer correction при активном hold/возврате, затем assigned_to."
+last_verified_code_commit: "17ebba523954c8396150a9182128f9fd5a7a7078"
 checkpoint_state: WIP
-contract_commit: "e3084a25378a1cc981f3ea1650c1264ade3684fe"
+contract_commit: "17ebba523954c8396150a9182128f9fd5a7a7078"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-09: завершить финальные Go/mock команды vehicle.block/unblock, employee.grant/access и trip.admin_close — точная сверка SHA intent, actor, purpose, version, истечения и one-use proof с сохранением idempotency/recovery. Затем отдельно исправить тупик odometer rollback во время hold/возврата и добавить assigned_to. Contract v1.5 пока не синхронизирован с codex/data; services/data здесь не менять. H-03/H-04 нужны для контактов/retention; hold 15 минут сохранён, real MAX/Python не приняты."
+next_step: "BE-09 WIP: финальные mock/client-команды для vehicle.block/unblock, employee.grant/access и trip.admin_close реализованы и покрыты actor/version/hash/one-use/idempotency/recovery тестами; available_data теперь входит в admin_close proof по v1.6. Следом исправить ODOMETER_ROLLBACK через аудируемую коррекцию snapshot при active hold/return без переписи inspection или assignment, затем добавить assigned_to. Перед INT синхронизировать согласованные версии контракта с Python; services/data не менять. Contacts/retention остаются политическим блокером H-03/H-04, P1 retired_at отложен; hold 15 минут сохранён. Mock не является продуктовой приёмкой. Push v1.6 checkpoint ожидает сверки владельца и staged secret-scan."
 human_required: [H-01]
 ```
 
@@ -37,7 +37,7 @@ human_required: [H-01]
 | BE-07 | DONE (mock) | `4dd7ad33419cf10d8e5b7e4b6eb924d52a458c6f` — begin; `a69c51a182bc0e19655cc4e74a1cfa12f75f70c8` — cancel/fresh draft; `5be149e482bd79c761d68e9f6170e562b72c0dd1` — 8 фото после; `18a01ebb695ea2a05a45f91c35be43b5dad8cb0f` — issue при возврате и уведомление; `fd340988305cfcbb269f505b457bb0d0a2dacd9b` — MAX geo; `033161eced999a40508a07df9af9069ba33bf2d7` — complete/recovery; `d8247983d7be77b6b71c8f7e778990fec3286bb2` — полный mock return; остальные подшаги ниже | Реальная доставка MAX и Python — INT; прямой контакт ответственного требует H-03 |
 | UI-01 | DONE (mock) | `0bc3b2152264d61b89bd5324c9a630077134fda2` — initData; `46e898e326672f07e266a9b59e81a0e6035b9d90` — context; `f07e73314a313b6b774550ab987c9953e815664f` — location; `855ed0cbfe19e9592cb8d80c8951f170c3079f34` — gateway; `dd518f3960c30cba29793d74d6b4971e4acc3b54` — web API client; `12bbdf320bfc8e516f00979507a8d9ddd3f3808a` — React карта; `f92eb6a00e1bdc599d6c04f8fbcafa33fbd03925` — MAX start_param; `f7e2dfd9cc53e978dd10fefbc33f72af11b6eed5` — web proxy; `9908f32c6bdc8849ee3b963d37e223e1849485b0` — MAX кнопка; `bff0469dcf092fdc08565f0bcff0edc47ea33387` — Go HTTP/mock регрессия | Реальный Bridge — INT-04; Docker/Nginx smoke не выполнен из-за недоступного Engine |
 | BE-08 | DONE (mock) | `57447711d3781bdc3940679848d3c6ba1c9de4e2` — история по 5, приватный курсор; `e14bc18704afc5f1146f5184f5e55fa697fbaf98` — admin close/замечания; `788fe4e91156f5c369c03fa46987515abd2c103e` — owner/admin в карточке; `ff21858a2ac2265f9b477e2addc11b18ca18f820` — owner в списке; `81cd668513b3aeada46d915db008893c8099dc26` — immutable snapshot; `73a5f35e3c0e963cfea5c79aff1aca28756ef031` — чужое фото; `11567c535b3968ee10b27d052f380c017560cbd1` — post-return диалог на mock; `bb6f258f8e1fa8f1f028a77df68b36226de1444b` — contract v1.4; `0057f0be6f672a44cc587ce623fad2993494392c` — composite checklist; `64ea9246d8a25bbb7c611c41ee5bcb40044a5d42` — подтверждение прироста одометра >1000 км; `7fffb636db2e0ef1702b780037de842de4e1823b` — private previous inspection photo client/mock; `5d8cd01a3b86987f59ae2645cb5639ede1185706` — MAX-диалог просмотра previous-inspection photos; `51c3bbbf4e8750265d922c1138c7c1ccaecc2b11` — сквозной mock completed return, приватный просмотр фото и отказ неизвестному actor | только Go/mock; Python/реальный MAX, data-contract sync и INT остаются впереди |
-| BE-09 | IN_PROGRESS | `e3084a25378a1cc981f3ea1650c1264ade3684fe` — OpenAPI v1.5; `298626a80132d891c1482085901697406bcc328d` — admin challenge create/answer, persistent SHA-bound proof; `go test ./internal/datamock -count=1` PASS | Финальные admin-команды, однократное потребление proof, затем audited odometer correction и `assigned_to` |
+| BE-09 | IN_PROGRESS | `17ebba523954c8396150a9182128f9fd5a7a7078` — OpenAPI/client/mock v1.6; полный `verify.ps1 -Direction contract` и `-Direction gateway` PASS; staged/tracked secret scans PASS | Push после проверки lock; затем audited odometer correction при hold/return и `assigned_to`; Python v1.0 требует синхронизации до INT |
 | BE-10 | TODO | — | См. план |
 | BE-11 | TODO | — | См. план |
 | BE-12 | TODO | — | См. план |
@@ -61,16 +61,25 @@ human_required: [H-01]
 
 ## Сверка замечаний data engineer
 
-Сверено с `origin/codex/data` commit `9eb2211b29e48fce8a6afc410bc986fa98a4988e`; Python-файлы здесь не менялись, его CI/41 PostgreSQL тест и backup/restore приняты как отдельные DE доказательства, не как интеграционная проверка.
+Сверено с `origin/codex/data` commit `9eb2211b29e48fce8a6afc410bc986fa98a4988e` и его `docs/progress/DATA.md`; код Python здесь не менялся. DE-01…DE-08 и CI/41 PostgreSQL теста/backup-restore — отдельные доказательства Data, не интеграционная проверка. Ветка Data всё ещё использует contract commit `aa56f0e05b3c2458eee1fe88550d183ece9075af`/OpenAPI 1.0; общий contract SHA обязателен до INT.
 
-- В v1.3 уже отражены `return.complete → Return` и повышение checkout/return version при фото по mock/Python. Python ветка пока v1.2; до INT всё равно нужен общий contract SHA.
-- Ответы `RULES_REQUIRED` и `CHALLENGE_EXPIRED`: выровнять mock на контрактные 422 и оставить разбор Go по коду ошибки. Для read `/admin/*` оставить согласованный `ACCESS_DENIED`, для admin command — `ADMIN_REQUIRED`; явно зафиксировать в контракте. Конфликт `employee.grant` на занятый MAX ID: 409 `INVALID_STATE`.
-- Admin challenge/`intent_payload` сверить и реализовать в BE-09: hash включает operation, target, version и критический payload; `challenge_proof_id` передаётся как `challenge_id`; старое доказательство, неверный actor и изменённое намерение отклоняются.
-- `conversation.save` использует target текущего employee, начальную версию 1 и первую сохранённую версию 2; новый `issue_post_return` должен быть описан в OpenAPI с примерами/сценариями и поддержан mock.
-- Python отправляет `trip_admin_closed` водителю и `access_changed` сотруднику дополнительно к admin; в BE-10 сверить mock с PRODUCT_SPEC §13.6. Mock также должен реализовать контрактный `GET /vehicles/{id}/previous-inspection/photos/{slot}`.
-- Прочие замечания: сделать категории `parking`/`car_lock`; один составной вопрос про закрытую машину и ключи при раздельных правдивых полях; подтверждение прироста одометра более 1000 км; безопасный admin odometer correction при hold/возврате; `assigned_to`; employee/responsible contact; P1 `retired_at`; retention фото/геоточек/контактов. BE-08/09/P1 план обновлён. Действующее указание пользователя сохраняет hold 15 минут; менять его без подтверждённой политики компании не буду. H-04 по сроку хранения остаётся неизвестным и нужен до реального пилота.
+Решения backend по вопросам DE:
+
+1. `return.complete` возвращает `Return`, как описано в v1.3 и реализовано в mock/Python.
+2. Фото и `inspection.update` повышают версию inspection и её родительского checkout/return, как зафиксировано в OpenAPI и mock; дочерний CAS не заменяет версию родителя.
+3. `RULES_REQUIRED` и `CHALLENGE_EXPIRED` — HTTP 422 по контракту; Go ветвится по коду ошибки.
+4. Не-admin GET `/admin/*` возвращает `ACCESS_DENIED`; admin-команды — `ADMIN_REQUIRED`.
+5. Admin intent operation-specific и exact; `employee.grant` использует target/version null. v1.6 дополнительно включает `available_data` в intent hash для admin close, потому что эти значения меняют Return и vehicle snapshot.
+6. `conversation.save` адресован ID текущего employee; начальная версия черновика — 1, первое сохранение — версия 2.
+7. Выдача доступа MAX ID, уже существующему в реестре, — `409 INVALID_STATE`.
+8. Уведомления создаются из outbox по PRODUCT_SPEC §13.6: администраторам, водителю при admin close и сотруднику при смене доступа. Текущий Go mock неполон по двум дополнительным получателям; сверить/исправить в BE-10.
+9. Previous-inspection photo route из OpenAPI реализован в mock и Go-клиенте; Python должен синхронизировать v1.4+ маршрут.
+
+Дополнительные замечания учтены в плане: категории `parking`/`car_lock` и составной вопрос с отдельными `keys_returned`/`car_locked` уже в BE-08; подтверждение прироста свыше 1000 км готово; audited correction во время hold/return и `assigned_to` остаются BE-09; contacts ждут владельца/ACL/retention (H-03/H-04); `retired_at` — P1 после приёмки P0; требование пользователя сохраняет hold 15 минут. PII retention должен быть определён до реального пилота.
 
 ## Последний checkpoint
+
+- BE-09 code `17ebba523954c8396150a9182128f9fd5a7a7078`: реализованы клиент и mock для `vehicle.block/unblock`, `employee.grant/access`, `trip.admin_close`; proof проверяется по actor, purpose, сроку, версии и SHA и используется один раз; корректный повтор с тем же Idempotency-Key возвращает сохранённый результат. Проверены изменённые reason/data, другой admin actor, non-admin, открытая blocking issue, stale version, параллельное применение, повтор grant, отмена hold с освобождением машины, admin close с missing_data/needs_review. Безопасный возврат не понижает текущий одометр, отсутствующие after-фото остаются явно в `missing_data`. Контракт v1.6 включает переданный `available_data` в challenge hash: intent и финальная команда обязаны совпасть. Команды: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction contract` → PASS (37 маршрутов, 24 command examples, 14 other examples, 63 scenarios; Redocly обе схемы valid); `... -Direction gateway` → PASS (Go test/vet/build); `git diff --check` → PASS; staged scan 28 файлов и после commit `py scripts/check-secrets.py --tracked` (230 файлов) → без совпадений. `go test -race` недоступен локально (`CGO_ENABLED=0`); конкурентный сценарий proof прогнан обычным `go test` 10 раз без сбоя. Код-коммит локальный, push ожидает повторной сверки owner/session и staged diff. Python `codex/data` на v1.0; hash/schema admin close нужно синхронизировать по v1.6 до INT. Следующий кодовый шаг: audited `ODOMETER_ROLLBACK` correction при active hold/return, затем issue `assigned_to`. Только Go/mock, Python и MAX не приняты.
 
 - BE-09 admin challenge code `298626a80132d891c1482085901697406bcc328d`: mock создаёт admin math challenge только после строгой проверки purpose/operation, operation-specific ключей без extras, согласованности внешних target/version с intent, прав admin и текущей версии агрегата. `employee.grant` поддерживает только обязательные `target_id=null` и `expected_version=null`; старый нерешённый challenge на ту же цель/purpose инвалидируется. Canonical SHA-256 совпадает с Python `json.dumps(sort_keys=True, separators=(',', ':'), ensure_ascii=False)` на тестовом Unicode/HTML vector. Correct `challenge.answer` возвращает `challenge_proof_id=challenge.id`; повтор чужого actor скрывает challenge как `NOT_FOUND`. Hash/actor/решение переживают restart в snapshot v16. Проверки: `go test ./internal/datamock -run '(AdminChallenge|EmployeeGrantChallenge|AdminIntentHash|TakeChallenge)' -count=1 -v` → PASS; `go test ./internal/datamock -count=1` → PASS; `gofmt`, `git diff --check`, staged secret scan 4 файлов → PASS. Final admin operations и proof consumption пока не реализованы, BE-09 WIP; это только mock, Python и MAX не проверены. Перед push проверить remote owner/session; следующий кодовый шаг — добавить пять финальных admin-команд и тесты tampering/actor/stale/reuse/idempotency.
 
