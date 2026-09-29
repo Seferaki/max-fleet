@@ -9,9 +9,9 @@ lock_state: ACTIVE
 owner: A
 session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T13:46:51Z"
+heartbeat_utc: "2026-09-29T13:47:30Z"
 current_task: BE-09
-current_substep: "BE-08 закрыта на Go/mock после 23 фото/история/IDOR/recovery тестов; выбираю и проверяю административный intent_payload для первого подшага BE-09"
+current_substep: "BE-08 закрыта только на Go/mock; BE-09: сверяю admin intent_payload с удалённым codex/data и contract v1.4; статус BE-08/BE-09 опубликован на 3ac3ab78274b771dc48a30df6aae78517d410b58"
 last_verified_code_commit: "51c3bbbf4e8750265d922c1138c7c1ccaecc2b11"
 checkpoint_state: WIP
 contract_commit: "bb6f258f8e1fa8f1f028a77df68b36226de1444b"
