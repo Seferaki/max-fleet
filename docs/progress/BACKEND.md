@@ -5,19 +5,19 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: HANDOFF
+lock_state: ACTIVE
 owner: B
-session_id: "2a3026c7-1c0f-4258-9d7c-020601272841"
+session_id: "27659325-800e-4ea6-99ac-3d8edec02849"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T02:40:40Z"
+heartbeat_utc: "2026-09-29T03:02:10Z"
 current_task: BE-07
-current_substep: "BE-07 WIP: after-чеклист, фото, топливо и пробег проверены; очередь передана после checkpoint"
+current_substep: "BE-07: issue during/after, проверка ближайшего подшага"
 last_verified_code_commit: "01ca6e133a4901c502493c63deb8832aa7fdb931"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "После claim: BE-07 issue во время поездки и по проблемам after (категория/описание/до 3 фото, CAS/idempotency, admin notification), затем подтверждённая точка парковки и безопасный return.complete. UI-01 React карта остаётся P0"
+next_step: "BE-07 issue во время поездки и по проблемам after (категория/описание/до 3 фото, CAS/idempotency, admin notification), затем подтверждённая точка парковки и безопасный return.complete. UI-01 React карта остаётся P0"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- CLAIM 2026-09-29T03:02:10Z ноутбук B/session 27659325-800e-4ea6-99ac-3d8edec02849: опубликованный HANDOFF `8687ddc155378ab874db13a769d442099729fb1f` при чистом дереве; продолжаю BE-07.
 
 - HANDOFF 2026-09-29 02:40:40 UTC, ноутбук B/session `2a3026c7-1c0f-4258-9d7c-020601272841`. Последний проверенный код `01ca6e133a4901c502493c63deb8832aa7fdb931` и его статусный checkpoint `6604d1fcd6d5897214e47ca2c62176eeb080a165` опубликованы обычным push; локальный HEAD равен remote, worktree чист. BE-06 DONE только на Go/mock; BE-07 WIP, issue во время/после, точка и complete ещё не реализованы. Реальный MAX/Python не проверены. `scripts/enter-max-token.ps1 -Check` → MAX_BOT_TOKEN_FILE отсутствует, значение не читалось. `Get-Process -Name gateway,data-mock` → локальных процессов нет; Docker Engine недоступен, поэтому контейнеры проверить не удалось и состояние общего webhook неизвестно. Синтетического seed достаточно, приватный backup не нужен. Следующий исполнитель сначала перечитывает remote/lock и публикует claim, затем выполняет next_step. UI-01 React карта остаётся P0.
 
