@@ -96,12 +96,14 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	returnMathID, returnMathVersion, returnMath := vehicleActionTarget(item.Event, "return-math:")
 	returnCancelIntentID, returnCancelIntentVersion, returnCancelIntent := vehicleActionTarget(item.Event, "return-cancel-intent:")
 	returnCancelID, returnCancelVersion, returnCancel := vehicleActionTarget(item.Event, "return-cancel:")
+	returnCheckID, returnCheckVersion, returnCheck := vehicleActionTarget(item.Event, "return-check:")
+	returnSetID, returnSetVersion, returnField, returnValue, returnSet := returnCheckAnswerTarget(item.Event)
 	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
 	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -145,6 +147,13 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 			returnID, version = returnCancelID, returnCancelVersion
 		}
 		return p.cancelReturn(ctx, item, actor, maxID, *me.Employee, state, returnID, version, returnCancel)
+	}
+	if returnCheck || returnSet {
+		inspectionID, version := returnCheckID, returnCheckVersion
+		if returnSet {
+			inspectionID, version = returnSetID, returnSetVersion
+		}
+		return p.returnChecklist(ctx, item, actor, maxID, *me.Employee, state, inspectionID, version, returnField, returnValue, returnSet)
 	}
 	if intent || confirm {
 		vehicleID, version := actionVehicleID, actionVersion
@@ -879,6 +888,9 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 	if state.Return != nil && state.Trip != nil && state.Trip.Status == "returning" {
 		if state.Return.Step == "math" {
 			rows = append([][]maxsdk.Button{{{Text: "Продолжить возврат · проверка", Payload: fmt.Sprintf("return-math:%s:%d", state.Return.ID, state.Return.Version)}}}, rows...)
+		}
+		if state.Return.Step == "checklist" && nextReturnCheckField(state.Return.Inspection) != "" {
+			rows = append([][]maxsdk.Button{{{Text: "Продолжить анкету возврата", Payload: fmt.Sprintf("return-check:%s:%d", state.Return.Inspection.ID, state.Return.Inspection.Version)}}}, rows...)
 		}
 		rows = append(rows, []maxsdk.Button{{Text: "Текущая поездка", Payload: "trip:" + state.Trip.ID}})
 		rows = append(rows, []maxsdk.Button{{Text: "Вернуться к поездке", Payload: fmt.Sprintf("return-cancel-intent:%s:%d", state.Return.ID, state.Return.Version)}})
