@@ -204,6 +204,26 @@ func TestWorkerDeadLettersInvalidRecipientAndUnsupportedEvent(t *testing.T) {
 	if err == nil || message != "" {
 		t.Fatalf("unsupported event was formatted: %q, %v", message, err)
 	}
+
+	store = testStore(&now, "8000000000000000001")
+	store.deliveries[0].item.Event.Type = "unknown"
+	sender = &senderStub{}
+	result, err = testWorker(&now, store, sender).RunOnce(context.Background(), 10)
+	if err != nil || result.Dead != 1 || len(result.Failures) != 1 || result.Failures[0].ErrorCode != "UNSUPPORTED_NOTIFICATION" || len(sender.calls) != 0 {
+		t.Fatalf("unsupported event was not dead-lettered safely: result=%+v err=%v", result, err)
+	}
+}
+
+func TestWorkerDeadLettersAfterFifthFailedSend(t *testing.T) {
+	now := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
+	store := testStore(&now, "8000000000000000001")
+	store.deliveries[0].item.Attempt = defaultAttempts - 1
+	sender := &senderStub{err: &codedSendError{code: "MAX_RATE_LIMIT"}}
+	result, err := testWorker(&now, store, sender).RunOnce(context.Background(), 1)
+	delivery := store.deliveries[0]
+	if err != nil || result.Claimed != 1 || result.Retried != 0 || result.Dead != 1 || delivery.state != "dead" || delivery.retryAfter != nil || delivery.item.Attempt != defaultAttempts || len(result.Failures) != 1 || result.Failures[0].ErrorCode != "MAX_RATE_LIMIT" {
+		t.Fatalf("fifth send failure was not dead-lettered: result=%+v err=%v delivery=%+v", result, err, delivery)
+	}
 }
 
 type failingClaimStore struct {
@@ -224,6 +244,13 @@ func TestWorkerFailureKeepsDataAPIRequestIDAndSafeCode(t *testing.T) {
 	result, err := worker.RunOnce(context.Background(), 10)
 	if !errors.Is(err, apiErr) || len(result.Failures) != 1 || result.Failures[0].Operation != "claim" || result.Failures[0].RequestID != requestID || result.Failures[0].ErrorCode != "DATABASE_UNAVAILABLE" {
 		t.Fatalf("DataAPI failure was not reduced to safe diagnostics: result=%+v err=%v", result, err)
+	}
+
+	apiErr = &dataapi.APIError{Code: "private\nresponse", RequestID: "invalid"}
+	worker = testWorker(&now, failingClaimStore{Store: store, err: apiErr}, &senderStub{})
+	result, err = worker.RunOnce(context.Background(), 10)
+	if err == nil || len(result.Failures) != 1 || result.Failures[0].ErrorCode != "DATA_API_ERROR" || result.Failures[0].RequestID != result.RequestID || !validUUID(result.RequestID) {
+		t.Fatalf("untrusted API diagnostics were not bounded: result=%+v err=%v", result, err)
 	}
 }
 

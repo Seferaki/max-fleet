@@ -93,6 +93,9 @@ func TestNotificationWorkerRetriesAndRecoversAfterMockRestart(t *testing.T) {
 	if failed.Status != "retry" || failed.Attempt != 1 || failed.ErrorCode == nil || *failed.ErrorCode != "MAX_RATE_LIMIT" || failed.NextAttemptAt == nil || !failed.NextAttemptAt.Equal(clock.Add(5*time.Second)) {
 		t.Fatalf("retry was not persisted: %+v", failed)
 	}
+	if issue, found := mock.issues[issueID]; !found || issue.ID != issueID || mock.notifications[failed.ID].Status != "retry" {
+		t.Fatalf("MAX send failure changed committed issue or lost its outbox row: issue=%+v found=%t", issue, found)
+	}
 	server.Close()
 
 	clock = clock.Add(5 * time.Second)
@@ -107,6 +110,41 @@ func TestNotificationWorkerRetriesAndRecoversAfterMockRestart(t *testing.T) {
 	sent := findNotification(t, restarted, issueID)
 	if sent.Status != "sent" || sent.Attempt != 2 || sent.ProviderID == nil || !strings.Contains(sender.calls[1], "Создано замечание") {
 		t.Fatalf("recovered delivery did not persist: %+v", sent)
+	}
+}
+
+func TestTripStartRemainsCommittedWhenMAXNotificationFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	clock := time.Date(2026, 9, 29, 9, 0, 0, 0, time.UTC)
+	now := func() time.Time { return clock }
+	mock, server, store := notificationWorkerTestServer(t, path, now)
+	defer server.Close()
+	scenario := scenarioContext{
+		t: t, client: commandClient(t, mock), worker: store, mock: mock,
+		ctx: context.Background(), now: clock, clock: &clock,
+	}
+	ready := scenario.readyCheckout()
+	started, err := scenario.client.CheckoutStart(context.Background(), driverID, ready.ID, ready.Version, "notification-start-trip", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trip, err := dataapi.DecodeAggregate[dataapi.Trip](started)
+	if err != nil || trip.Status != "active" {
+		t.Fatalf("trip start did not commit: trip=%+v err=%v", trip, err)
+	}
+
+	sender := &notificationSenderStub{err: notificationRateLimit{}}
+	worker := notificationworker.Worker{ID: "gateway-notification-worker", Store: store, Sender: sender, Now: now}
+	result, err := worker.RunOnce(context.Background(), 1)
+	if err != nil || result.Retried != 1 || result.Dead != 0 {
+		t.Fatalf("notification failure result = %+v, %v", result, err)
+	}
+	if current, found := mock.trips[trip.ID]; !found || current.Status != "active" || current.EmployeeID != trip.EmployeeID {
+		t.Fatalf("MAX send failure rolled back the trip: trip=%+v found=%t", current, found)
+	}
+	notification := findNotification(t, mock, trip.ID)
+	if notification.Event.Type != "trip_started" || notification.Status != "retry" {
+		t.Fatalf("trip event was not left durable for retry: %+v", notification)
 	}
 }
 
