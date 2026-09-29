@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. S-01…S-03, BE-01…BE-10 и UI-01 выполнены только на Go/mock. BE-11 — WIP: code commit `1612d4e9ff99ae35ea31b13a29f3fcfe20e87e78` прошёл локальные contract/Go/web/Docker и cold-start/restart проверки; GitHub Actions ещё должны подтвердить Linux race и Compose gates. Remote base до BE-11: `66e0726f3513800b7a72f6c0cdedcf326f8e89fe`. Data API v1.13 contract commit `caa134ddffcc0edd501851ae82f12020c992e75a`. Python на origin/codex/data commit `9eb2211b29e48fce8a6afc410bc986fa98a4988e` использует OpenAPI v1.0 и не синхронизирован; DE-01…DE-08 и их проверки — результаты Data Engineer, независимо от backend. До INT data engineer должен реализовать общий контракт v1.13; `services/data/` здесь не менялся. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
+Единственный текущий статус backend. S-01…S-03, BE-01…BE-10 и UI-01 выполнены только на Go/mock. BE-11 — WIP: code commit `1612d4e9ff99ae35ea31b13a29f3fcfe20e87e78` прошёл локальные contract/Go/web/Docker и cold-start/restart проверки; GitHub Actions ещё должны подтвердить Linux race и Compose gates. Последний опубликованный remote checkpoint: `84b2687e895c7b10f908692fff1997af8255b8a1`; remote base до BE-11 был `66e0726f3513800b7a72f6c0cdedcf326f8e89fe`. Data API v1.13 contract commit `caa134ddffcc0edd501851ae82f12020c992e75a`. Python на origin/codex/data commit `9eb2211b29e48fce8a6afc410bc986fa98a4988e` использует OpenAPI v1.0 и не синхронизирован; DE-01…DE-08 и их проверки — результаты Data Engineer, независимо от backend. До INT data engineer должен реализовать общий контракт v1.13; `services/data/` здесь не менялся. Описание задач — [план](../IMPLEMENTATION_PLAN.md); обновление — [протокол](../HANDOFF.md).
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "94672c6f-598a-4d27-b87f-26fe106c59e0"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T20:57:58Z"
+heartbeat_utc: "2026-09-29T21:00:43Z"
 current_task: BE-11
-current_substep: "BE-11/11.1 WIP: Compose cold start, health, HTTP smoke и gateway restart recovery проверены; code commit 1612d4e локально проверен. GitHub Actions и Linux race gate ожидают публикации/результата."
+current_substep: "BE-11/11.1 WIP: code 1612d4e и WIP status опубликованы обычным push; fetch подтвердил ACTIVE A/94672c6; git ls-remote подтвердил remote 84b2687. Локальные gates зелёные; GitHub Actions/Linux race ожидаются."
 last_verified_code_commit: "1612d4e9ff99ae35ea31b13a29f3fcfe20e87e78"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "Опубликовать code/status обычным push после свежей проверки owner/session и staged secrets; затем дождаться GitHub Actions для code SHA 1612d4e. До зелёного Linux race/Compose CI оставить BE-11 WIP; при успехе закрыть BE-11 отдельным status commit и начать BE-12 synthetic gate. Python должен синхронизироваться с v1.13 до INT; mock не доказывает готовность MAX. H-03/H-04 остаются входами для контактов/retention; retired_at — P1; hold остаётся 15 минут."
+next_step: "Дождаться GitHub Actions для remote head 84b2687/code SHA 1612d4e (Linux race, secret-scan, contract, gateway, web, Compose cold start/health/restart). До полного успеха оставить BE-11 WIP; при зелёных gates закрыть BE-11 отдельным status commit и начать BE-12 synthetic gate. Python должен синхронизироваться с v1.13 до INT; mock не доказывает готовность MAX. H-03/H-04 остаются входами для контактов/retention; retired_at — P1; hold остаётся 15 минут."
 human_required: [H-01]
 ```
 
@@ -39,7 +39,7 @@ human_required: [H-01]
 | BE-08 | DONE (mock) | `57447711d3781bdc3940679848d3c6ba1c9de4e2` — история по 5, приватный курсор; `e14bc18704afc5f1146f5184f5e55fa697fbaf98` — admin close/замечания; `788fe4e91156f5c369c03fa46987515abd2c103e` — owner/admin в карточке; `ff21858a2ac2265f9b477e2addc11b18ca18f820` — owner в списке; `81cd668513b3aeada46d915db008893c8099dc26` — immutable snapshot; `73a5f35e3c0e963cfea5c79aff1aca28756ef031` — чужое фото; `11567c535b3968ee10b27d052f380c017560cbd1` — post-return диалог на mock; `bb6f258f8e1fa8f1f028a77df68b36226de1444b` — contract v1.4; `0057f0be6f672a44cc587ce623fad2993494392c` — composite checklist; `64ea9246d8a25bbb7c611c41ee5bcb40044a5d42` — подтверждение прироста одометра >1000 км; `7fffb636db2e0ef1702b780037de842de4e1823b` — private previous inspection photo client/mock; `5d8cd01a3b86987f59ae2645cb5639ede1185706` — MAX-диалог просмотра previous-inspection photos; `51c3bbbf4e8750265d922c1138c7c1ccaecc2b11` — сквозной mock completed return, приватный просмотр фото и отказ неизвестному actor | только Go/mock; Python/реальный MAX, data-contract sync и INT остаются впереди |
 | BE-09 | DONE (mock) | `17ebba523954c8396150a9182128f9fd5a7a7078` — admin-команды v1.6; `8c4a4a705ba5337d77c5cb8e1a684e7cf5180344` — odometer correction v1.7; `821e7735c81dd320f69d56c7e2766515efc0d807` — issue assignment/resolve v1.8; `ae4f01fe042c2d8fd653a9804a853a158ceb4507` — v1.9 status-only take-work; `a70150167a21ca489748b4ff8e1ac453a8be7017` — v1.10 durable resolution conversation; `2a1c72215e6ed295a0993816e846bd64262d6ab4` — admin issue MAX flow/photos/recovery; `61f6f1749445a181c216511faf6eb3c9b5fc3973` — v1.11 correction schema/mock; `03faac7fde0a0cf3cc08ceac6ce2a63e95226d82` — `/adminodo` durable MAX/mock correction and recovery; `5877f459d93d4482559f279d4e2b479437c8b5ed` — in-trip flow and permanent API-error handling tests; `a679941c1a9dac104502e41c5ffa10edb67fc7a4` — v1.12 durable admin-close conversation and mock validation; `637c8baf321483f15e4f05df756429ef5c051aea` — admin-only close button for active/returning trips, targeted test PASS; `0f7c45a24f3994b0f368ab45b8ab2d7f84c93be3` — durable MAX admin-close reason/data/math challenge, stale/version/actor checks and recovery; targeted flow and full gateway gates PASS | Go/mock админские действия и отказы проверены; остаются настоящие MAX/Python, v1.12 sync и H-03/H-04 для контактов/retention |
 | BE-10 | DONE (mock) | e2f1976221a14bc6684c34605fd4d53e39f3bf00 — recipients; c0bd317cb22967ebb29b4da29fde53bff7d801ea — sender core; 90e74c7430f1652996faa90461f611a0d400d712 — gateway startup/recovery; caa134ddffcc0edd501851ae82f12020c992e75a — Data API v1.13 enqueued_at; c7ad26747876e824b4f6e69c119e62747d7fb79b — безопасные логи operation/request_id/error_code и метрики batch; 5e913f91ebf71275dcdb75b697d94ae93a94e62d — dead-letter после пятой ошибки, отказ неизвестному event и сохранение поездки при ошибке MAX. Targeted Go tests PASS; verify gateway PASS; verify contract PASS (2 OpenAPI/37 routes/24 commands/22 examples/75 scenarios); staged secret/diff checks PASS; code published at checkpoint 65458515e103287c47276558f58a61b0ceb484ac. Go/mock only; Python/MAX/INT remain unverified. | BE-11 Docker/security/CI; data v1.13 sync before INT |
-| BE-11 | WIP | `1612d4e9ff99ae35ea31b13a29f3fcfe20e87e78`: исправлены secret-path правила и Windows bootstrap override; web test, Node pin и CI Compose smoke; локальные checks ниже. | Публикация и GitHub Actions pending; локальный race недоступен при CGO_ENABLED=0, Linux CI обязателен |
+| BE-11 | WIP | Code `1612d4e9ff99ae35ea31b13a29f3fcfe20e87e78`, status checkpoint `84b2687e895c7b10f908692fff1997af8255b8a1`; локальные checks ниже. | GitHub Actions pending; локальный race недоступен при CGO_ENABLED=0, Linux CI обязателен |
 | BE-12 | TODO | — | См. план |
 | INT-01 | TODO | — | См. план |
 | INT-02 | TODO | — | См. план |
@@ -89,7 +89,8 @@ human_required: [H-01]
 
 ## Текущий checkpoint BE-11
 
-- BE-11 code `1612d4e9ff99ae35ea31b13a29f3fcfe20e87e78` — локальные gates выше PASS, очередь ACTIVE A; status commit и ordinary push/GitHub CI ожидаются. Это только контейнерный Go/mock контур; `backend_ready_for_integration=false`, Python/MAX не проверены.
+- Публикация 2026-09-29 21:00 UTC: свежий `git fetch origin codex/backend` подтвердил base `66e0726f3513800b7a72f6c0cdedcf326f8e89fe` и очередь ACTIVE A/session `94672c6f-598a-4d27-b87f-26fe106c59e0`; outgoing diff не включает `services/data/`, diff-check и tracked secret scan (253 Git files) прошли. `git push origin codex/backend` отправил code/status обычным fast-forward; `git ls-remote origin refs/heads/codex/backend` подтвердил `84b2687e895c7b10f908692fff1997af8255b8a1`.
+- BE-11 code `1612d4e9ff99ae35ea31b13a29f3fcfe20e87e78` — локальные gates выше PASS, очередь остаётся ACTIVE A; GitHub Actions ещё не проверены. Это только контейнерный Go/mock контур; `backend_ready_for_integration=false`, Python/MAX не проверены.
 
 ## Предыдущий checkpoint BE-10
 
