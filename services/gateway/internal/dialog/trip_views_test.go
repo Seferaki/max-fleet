@@ -242,4 +242,8 @@ func TestTripPhotoDialogOwnerAdminPhaseAndVersion(t *testing.T) {
 	if data.photoCalls != 3 {
 		t.Fatalf("unexpected private photo reads: %d", data.photoCalls)
 	}
+	data.trip.EmployeeID = "another-employee"
+	if err := processor.Handle(ctx, callbackItem(owner, "forged-photo-owner", "photo-view:"+tripID+":3:after:3", now)); err != nil || data.photoCalls != 3 || !strings.Contains(sender.Messages()[len(sender.Messages())-1].Text, "недоступна") {
+		t.Fatalf("foreign trip reached private photo reader: %v, calls=%d, messages=%+v", err, data.photoCalls, sender.Messages())
+	}
 }
