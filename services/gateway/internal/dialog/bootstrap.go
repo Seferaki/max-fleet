@@ -100,6 +100,11 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	issueKindID, issueKindVersion, issueKind, issueKindPrompt := issueCategoryTarget(item.Event)
 	issueDraftText, issueDraftCommand := issueDraftInput(item.Event)
 	tripIssueID, tripIssueVersion, tripIssueCategory, tripIssuePrompt := tripIssueTarget(item.Event)
+	postReturnIssueID, postReturnIssueVersion, postReturnIssueOpen := vehicleActionTarget(item.Event, "trip-post-issue:")
+	postReturnCategoryID, postReturnCategoryVersion, postReturnCategory, postReturnCategoryPrompt := postReturnIssueCategoryTarget(item.Event)
+	postReturnPhotoID, postReturnPhotoVersion, postReturnPhotoHelp := vehicleActionTarget(item.Event, "trip-post-issue-photos:")
+	postReturnReviewID, postReturnReviewVersion, postReturnReview := vehicleActionTarget(item.Event, "trip-post-issue-review:")
+	postReturnSubmitID, postReturnSubmitVersion, postReturnSend := vehicleActionTarget(item.Event, "trip-post-issue-submit:")
 	returnIssueID, returnIssueVersion, returnIssueCategory, returnIssuePrompt := returnIssueTarget(item.Event)
 	returnIssuePhotoID, returnIssuePhotoVersion, returnIssuePhotoHelp := vehicleActionTarget(item.Event, "return-issue-photos:")
 	returnIssueReviewID, returnIssueReviewVersion, returnIssueReview := vehicleActionTarget(item.Event, "return-issue-review:")
@@ -135,7 +140,7 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	geoMessage := returnGeoEvent(item.Event)
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !returnIssuePrompt && !tripIssuePhotoHelp && !returnIssuePhotoHelp && !tripIssueReview && !tripIssueSend && !returnIssueReview && !returnIssueSend && !returnGeoConfirm && !returnSummary && !returnComplete && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !geoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !postReturnIssueOpen && !postReturnCategoryPrompt && !postReturnPhotoHelp && !postReturnReview && !postReturnSend && !returnIssuePrompt && !tripIssuePhotoHelp && !returnIssuePhotoHelp && !tripIssueReview && !tripIssueSend && !returnIssueReview && !returnIssueSend && !returnGeoConfirm && !returnSummary && !returnComplete && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !geoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -163,6 +168,15 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	if err != nil {
 		return err
 	}
+	if postReturnIssueOpen {
+		return p.startPostReturnIssue(ctx, actor, maxID, *me.Employee, postReturnIssueID, postReturnIssueVersion)
+	}
+	if postReturnCategoryPrompt {
+		return p.selectPostReturnIssueCategory(ctx, item, actor, maxID, *me.Employee, state, postReturnCategoryID, postReturnCategoryVersion, postReturnCategory)
+	}
+	if issueDraftCommand && state.Conversation != nil && state.Conversation.Flow == postReturnIssueFlow {
+		return p.postReturnIssueDraft(ctx, item, actor, maxID, *me.Employee, state, issueDraftText)
+	}
 	if returnIssuePrompt || issueDraftCommand && state.Return != nil && state.Trip != nil && state.Trip.Status == "returning" {
 		return p.returnIssueDraft(ctx, item, actor, maxID, *me.Employee, state, returnIssueID, returnIssueVersion, returnIssueCategory, issueDraftText, issueDraftCommand)
 	}
@@ -182,6 +196,16 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 			inspectionID, version = returnIssueSubmitID, returnIssueSubmitVersion
 		}
 		return p.returnIssueSubmit(ctx, item, actor, maxID, *me.Employee, state, inspectionID, version, returnIssueSend)
+	}
+	if postReturnReview || postReturnSend {
+		tripID, version := postReturnReviewID, postReturnReviewVersion
+		if postReturnSend {
+			tripID, version = postReturnSubmitID, postReturnSubmitVersion
+		}
+		return p.postReturnIssueSubmit(ctx, item, actor, maxID, *me.Employee, state, tripID, version, postReturnSend)
+	}
+	if postReturnPhotoHelp {
+		return p.postReturnIssuePhotoHelp(ctx, actor, maxID, *me.Employee, state, postReturnPhotoID, postReturnPhotoVersion)
 	}
 	if geoMessage {
 		return p.returnGeoDraft(ctx, item, actor, maxID, *me.Employee, state)
@@ -335,6 +359,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		return p.requestReplacement(ctx, maxID, state, replaceSlotCheckoutID, replaceSlotVersion, selectedSlot)
 	}
 	if photoMessage {
+		if state.Conversation != nil && state.Conversation.Flow == postReturnIssueFlow && state.Conversation.Step == "collect_photos" {
+			return p.postReturnIssuePhotoStage(ctx, item, actor, maxID, *me.Employee, state)
+		}
 		if state.Conversation != nil && (state.Conversation.Flow == "issue_before" || state.Conversation.Flow == "issue_during" || state.Conversation.Flow == "issue_after") && state.Conversation.Step == "collect_photos" {
 			return p.issuePhotoStage(ctx, item, actor, maxID, state)
 		}
@@ -422,6 +449,16 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 			message += "\nЗамечание при возврате сохранено."
 		} else if state.Conversation.Step == "collect_photos" {
 			message += fmt.Sprintf("\nПроблема при возврате: черновик, %d/3 дополнительных фото; ещё не отправлена.", len(state.Conversation.Context.AssetIDs))
+		}
+	}
+	if state.Conversation != nil && state.Conversation.Flow == postReturnIssueFlow && state.Conversation.Context.TripID != nil {
+		switch state.Conversation.Step {
+		case "awaiting_description":
+			message += "\nВыбрана проблема после поездки; отправьте описание командой /issue <описание>."
+		case "collect_photos":
+			message += fmt.Sprintf("\nЧерновик сообщения после поездки: %d/3 дополнительных фото; ещё не отправлен.", len(state.Conversation.Context.AssetIDs))
+		case "done":
+			message += "\nСообщение после поездки сохранено отдельно от завершённого осмотра."
 		}
 	}
 	if state.Return != nil && state.Return.Step == "checklist" {
@@ -1050,6 +1087,16 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState, mapBotName 
 		if draft, ok := issuePhotoDraft(state); ok && draft.Flow == "issue_during" {
 			rows = append(rows, []maxsdk.Button{{Text: "Фото проблемы", Payload: fmt.Sprintf("trip-issue-photos:%s:%d", state.Trip.ID, draft.Version)}})
 			rows = append(rows, []maxsdk.Button{{Text: "Проверить проблему", Payload: fmt.Sprintf("trip-issue-review:%s:%d", state.Trip.ID, draft.Version)}})
+		}
+	}
+	if state.Conversation != nil && state.Conversation.Flow == postReturnIssueFlow && state.Conversation.Context.TripID != nil {
+		draft := state.Conversation
+		switch draft.Step {
+		case "collect_photos":
+			rows = append(rows, []maxsdk.Button{{Text: "Фото к сообщению после поездки", Payload: fmt.Sprintf("trip-post-issue-photos:%s:%d", *draft.Context.TripID, draft.Version)}})
+			rows = append(rows, []maxsdk.Button{{Text: "Проверить сообщение после поездки", Payload: fmt.Sprintf("trip-post-issue-review:%s:%d", *draft.Context.TripID, draft.Version)}})
+		case "done":
+			rows = append(rows, []maxsdk.Button{{Text: "Открыть завершённую поездку", Payload: "trip:" + *draft.Context.TripID}})
 		}
 	}
 	if employee.CanStartTrip && state.Trip == nil && state.Checkout == nil {

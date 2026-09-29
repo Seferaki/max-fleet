@@ -3,6 +3,7 @@ package datamock
 import (
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -60,6 +61,8 @@ func (s *Server) saveConversation(w http.ResponseWriter, requestID, actor string
 		valid = s.validDuringIssueConversation(actor, input)
 	case "issue_after":
 		valid = s.validAfterIssueConversation(actor, input)
+	case "issue_post_return":
+		valid = s.validPostReturnIssueConversation(actor, input)
 	case "return_location":
 		valid = s.validReturnLocationConversation(actor, input)
 	}
@@ -72,6 +75,51 @@ func (s *Server) saveConversation(w http.ResponseWriter, requestID, actor string
 	conversation := dataapi.Conversation{Flow: input.Flow, Step: input.Step, Context: context, PendingInputKind: input.PendingInputKind, Version: currentVersion + 1, UpdatedAt: s.now().UTC()}
 	s.conversations[actor] = conversation
 	return commandResult("conversation.save", conversation), true
+}
+
+func (s *Server) validPostReturnIssueConversation(actor string, input dataapi.ConversationSaveInput) bool {
+	c := input.Context
+	if c.TargetID == nil || c.TripID == nil || *c.TargetID != *c.TripID || c.VehicleID == nil || c.VehicleVersion == nil || *c.VehicleVersion < 1 || c.IssueCategory == nil || !validIssueCategory(*c.IssueCategory) || c.ReturnID != nil {
+		return false
+	}
+	trip, found := s.trips[*c.TripID]
+	if !found || trip.EmployeeID != s.employees[actor].ID || trip.Status != "completed" || trip.VehicleID != *c.VehicleID {
+		return false
+	}
+	vehicleIndex := -1
+	for i := range s.vehicles {
+		if s.vehicles[i].ID == trip.VehicleID {
+			vehicleIndex = i
+			break
+		}
+	}
+	if vehicleIndex < 0 {
+		return false
+	}
+	vehicle := s.vehicles[vehicleIndex]
+	if input.Step == "done" {
+		if c.IssueID == nil || c.VehicleVersion == nil || vehicle.Version <= *c.VehicleVersion {
+			return false
+		}
+		issue, found := s.issues[*c.IssueID]
+		return found && issue.AuthorID == trip.EmployeeID && issue.VehicleID == trip.VehicleID && issue.TripID != nil && *issue.TripID == trip.ID && issue.InspectionID == nil && issue.Stage == "post_return" && issue.Status == "open" && slices.Equal(issue.AssetIDs, c.AssetIDs)
+	}
+	if c.IssueID != nil || vehicle.Version != *c.VehicleVersion || vehicle.Status == "holding" || vehicle.Status == "in_trip" {
+		return false
+	}
+	if input.Step == "awaiting_description" {
+		return c.DraftText == nil && len(c.AssetIDs) == 0
+	}
+	if input.Step != "collect_photos" || c.DraftText == nil || strings.TrimSpace(*c.DraftText) == "" {
+		return false
+	}
+	for _, id := range c.AssetIDs {
+		asset, found := s.issueAssets[id]
+		if !found || asset.Actor != actor || asset.ScopeType != "trip" || asset.ScopeID != trip.ID || asset.AttachedIssueID != nil || !s.now().UTC().Before(asset.ExpiresAt) {
+			return false
+		}
+	}
+	return true
 }
 
 func parseDraftCoordinates(value string) (float64, float64, bool) {
