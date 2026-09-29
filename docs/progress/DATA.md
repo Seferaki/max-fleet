@@ -7,14 +7,14 @@ status_schema: 1
 track: data-integration-audit
 owner: A
 branch: codex/integration
-current_task: INT-01
+current_task: INT-02
 current_substep: "В integration перенесён Python API v1.13 и миграция 0002; live PostgreSQL/SeaweedFS lifecycle smoke прошёл"
 last_verified_code_commit: "36c18f2b7e143e12c036e280a10c21fd8415cbda"
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 migration_head: "0002"
 data_ready_for_integration: true
 checkpoint_state: VERIFIED
-next_step: "Завершить Go → Python проверку в compose.full; это отдельный integration gate, не покрытый data_ready_for_integration"
+next_step: "Go Data API smoke против full Compose прошёл; INT-02 продолжает полный Go dialog путь через Python, включая фото, историю и admin. QA пропущена и не PASS"
 human_required: []
 ```
 
@@ -28,7 +28,7 @@ human_required: []
 | DE-06 | DONE | Возврат, отмена→новый ID, UNSAFE_RETURN, повреждение→needs_review, admin close с missing_data, block/unblock с math proof, employee.grant/access, issue.resolve, vehicle.edit/correct_snapshot (только свободная машина)/annotate; двойной complete → один 200 | — |
 | DE-07 | DONE | Inbox: дубликаты, порядок по actor, claim/ack/retry, fencing команд по lease; истёкший lease старого worker не ack-ает и не выполняет команду после перехвата; integration lease/checkpoint CAS; outbox + получатели в доменной транзакции; claim/ack/retry/dead уведомлений | — |
 | DE-08 | DONE | `scripts/load.py`: 50 users, 20 rps, 600 с — 12 000 запросов, p50 14.9 мс, p95 34.4 мс, p99 45.4 мс, 5xx 0%; 10×5 MiB параллельно — 10/10 200, max 2.9 с; EXPLAIN — все выборки < 1 мс по индексам; `scripts/backup-restore.sh` — 21 таблица / 3258 строк совпали, 27 объектов SHA-256 совпали, 0 битых ссылок | — |
-| DE-09 | READY FOR INT (audit в integration) | Code `5ea435ecaa11f3364a112f476b9cb3f88b223be9`, smoke version fix `36c18f2b7e143e12c036e280a10c21fd8415cbda`; `uv sync --frozen`, Ruff, mypy, PostgreSQL 17.6 pytest: 43 passed; Data Compose healthy; live PostgreSQL + SeaweedFS smoke: 8 before + 8 after, `manual_map`, return complete и previous-inspection read. Исходный `codex/data` оставлен без переписывания | Go → Python проверяется в INT-01; Linux secrets/QA не проверялись, QA пропущена по решению владельца |
+| DE-09 | READY FOR INT (audit в integration) | Code `5ea435ecaa11f3364a112f476b9cb3f88b223be9`, smoke version fix `36c18f2b7e143e12c036e280a10c21fd8415cbda`; `uv sync --frozen`, Ruff, mypy, PostgreSQL 17.6 pytest: 43 passed; Data Compose healthy; live PostgreSQL + SeaweedFS smoke: 8 before + 8 after, `manual_map`, return complete и previous-inspection read. Исходный `codex/data` оставлен без переписывания | Go Data API smoke в Compose прошёл на INT-01; Linux secrets/QA не проверялись, полный Go dialog остаётся в INT-02 |
 
 ## Последний checkpoint
 
@@ -40,7 +40,7 @@ human_required: []
 - `uv run ruff check scripts/smoke.py` — PASS; `scripts/smoke.py` против живого контура (реальные PostgreSQL + SeaweedFS S3): взятие → 8 фото → поездка → возврат → 8 фото → `manual_map` → завершение и чтение прошлого осмотра — PASS;
 - runtime-роль БД не может менять схему; анонимный запрос к S3 → 403.
 
-Контрактные вопросы сопоставлены с OpenAPI v1.13, Go client/mock и Python. Data API готов для интеграции по проверкам выше; Go → Python, MAX, Linux host-secret permissions и QA ещё не приняты этим выводом.
+Контрактные вопросы сопоставлены с OpenAPI v1.13, Go client/mock и Python. Data API готов для интеграции по проверкам выше; Go client smoke в Compose прошёл, но полный Go dialog, MAX, Linux host-secret permissions и QA ещё не приняты этим выводом.
 
 Найдено при нагрузке: в контейнере с read-only ФС Starlette не мог буферизовать multipart > 1 MiB во временный файл (400 на фото 5 MiB) — добавлен tmpfs `/tmp` 128 MiB для data-api.
 
@@ -69,7 +69,7 @@ human_required: []
 
 ## Результаты нагрузки и восстановления
 
-Стенд: Windows 11, Docker Desktop 29.4 (4 vCPU, 12 GiB для VM), PostgreSQL 17.6, SeaweedFS S3, data-api — 1 процесс uvicorn, pool 5+5. Contract SHA `aa56f0e`.
+Стенд исходного DE-08 измерения: Windows 11, Docker Desktop 29.4 (4 vCPU, 12 GiB для VM), PostgreSQL 17.6, SeaweedFS S3, data-api — 1 процесс uvicorn, pool 5+5. Contract SHA `aa56f0e`, schema head `0001`; эти performance/backup цифры не повторялись после интеграционного v1.13 и миграции `0002`.
 
 | Проверка | Результат |
 |---|---|

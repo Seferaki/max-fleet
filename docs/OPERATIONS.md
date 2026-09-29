@@ -109,7 +109,7 @@ docker compose -f deploy/compose.backend.yaml up --build -d --wait
 
 Full и data конфигурации переиспользуют одинаковые pinned images/настройки сервисов; не поддерживать несовместимые копии миграций. Root .env.example — общий список имён. У каждого контура отдельное имя Compose project и volumes, чтобы тесты не затронули демо.
 
-Целевые команды **после соответствующих задач**, одинаковые в PowerShell и Unix:
+Целевые команды:
 
 ```text
 docker compose --env-file .env -f deploy/compose.backend.yaml -p max-fleet-backend up -d --build --wait
@@ -118,6 +118,44 @@ docker compose --env-file .env -f deploy/compose.full.yaml -p max-fleet-full up 
 ```
 
 Не запускать все три окружения на общих портах/токене. Backend-mock не подключается к production MAX по умолчанию. По необходимости локальные debug-порты bind только 127.0.0.1.
+
+### Локальный полный synthetic stack
+
+В `compose.full.yaml` сервисы Data API/worker/migrate/PostgreSQL/S3 подключаются через `include` из `compose.data.yaml`, поэтому миграции и pinned images заданы в одном месте. На Windows:
+
+```powershell
+$env:MAX_FLEET_SECRETS_DIR = 'C:\MAXFleet\secrets'
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
+$env:APP_ENV = 'development'
+$env:MAX_UPDATE_MODE = 'webhook'
+$env:MAX_INTEGRATION_KEY = 'demo-bot'
+$env:SEED_SYNTHETIC = '1'
+docker compose -f deploy/compose.full.yaml -p max-fleet-full up -d --build --wait
+```
+
+Карта доступна на `http://127.0.0.1:8081`. Если порт занят, задайте `WEB_PORT` (и `DATA_API_PORT` для loopback debug API). Postgres/S3 не публикуются. Без MAX bot token gateway принимает только synthetic входящие события без ответов; `/health/ready` сообщает `503 dialog flows incomplete`, а Compose проверяет `/health/live`. Этот synthetic запуск не подтверждает готовность реального MAX.
+
+Smoke полного Data API через живые PostgreSQL и S3: задайте `MAX_FLEET_SECRETS_DIR`, `DATA_API_URL=http://127.0.0.1:18000`, затем выполните из корня:
+
+```powershell
+Push-Location services/data
+uv run python scripts/smoke.py
+Pop-Location
+```
+
+Опциональная Go-клиентская проверка Python API использует только синтетического сотрудника, создаёт идемпотентный 15-минутный hold и отменяет его:
+
+```powershell
+$env:MAX_FLEET_LIVE_DATA_API = '1'
+$env:MAX_FLEET_LIVE_DATA_API_URL = 'http://127.0.0.1:18000/internal/v1'
+$env:MAX_FLEET_LIVE_DATA_API_TOKEN_FILE = Join-Path $env:MAX_FLEET_SECRETS_DIR 'data_api_token'
+$env:MAX_FLEET_LIVE_DATA_API_ACTOR = '8000000000000000001'
+Push-Location services/gateway
+go test ./internal/dataapi -run '^TestLivePythonDataAPI$' -count=1 -v
+Pop-Location
+```
+
+Тест пропускается, если не включён `MAX_FLEET_LIVE_DATA_API=1`; токен читается из файла и не печатается. Полный Go/MAX диалог, gateway `/health/ready`, реальный MAX, QA и восстановление остаются отдельными проверками.
 
 Для локальной проверки входа webhook используется дополнительный `deploy/compose.backend.webhook.yaml`: он включает `MAX_UPDATE_MODE=webhook` поверх базового Compose, оставляя mock DataAPI и bind на `127.0.0.1`. Файл `MAX_FLEET_MAX_WEBHOOK_SECRET_FILE` должен быть приватным локальным файлом; для синтетического smoke допустим отдельный тестовый secret без настоящего MAX token. На Windows подготовить копии `data_api_token` и `worker_api_token` для Docker Desktop через `scripts/prepare-compose-token.ps1 -Name data_api_token` и `-Name worker_api_token`, затем передать их пути в `MAX_FLEET_DATA_API_TOKEN_FILE` и `MAX_FLEET_WORKER_API_TOKEN_FILE`. Запуск: `docker compose -f deploy/compose.backend.yaml -f deploy/compose.backend.webhook.yaml -p max-fleet-backend up -d --build --wait`. Без `MAX_BOT_TOKEN_FILE` webhook только сохраняет inbox; `/health/ready` остаётся 503. Не включать этот overlay на публичном сервере и не считать такой smoke проверкой реального MAX.
 
