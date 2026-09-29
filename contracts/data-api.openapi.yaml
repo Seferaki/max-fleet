@@ -1,12 +1,14 @@
 openapi: 3.1.0
 info:
   title: MAX Fleet Data API
-  version: '1.7'
+  version: '1.8'
   description: 'Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID
     и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом
     запросе. Версия 1.6 связывает доступные данные admin close с SHA-256 намерения. Версия 1.7 разрешает аудитируемую
-    коррекцию только одометра snapshot активной брони или поездки без изменения inspection и assignment; ODOMETER_ROLLBACK
-    сверяется с текущим snapshot машины. Версии: vehicle растёт при смене доступности, блокировке, issue и коррекции;
+    коррекцию только одометра snapshot активной брони или поездки без изменения inspection и assignment. Версия
+    1.8 публикует в Issue назначение assigned_to, комментарий и автора/время терминального решения; issue.resolve
+    при первом переходе в in_progress устанавливает employee ID из проверенного admin actor, а последующие терминальные
+    переходы сохраняют назначение. Версии: vehicle растёт при смене доступности, блокировке, issue и коррекции;
     checkout при изменении оформления; inspection при ответе, фото и подтверждении; return при месте/отмене/завершении;
     trip при начале возврата, отмене, завершении и admin close; conversation только при save. Фото повышает inspection
     и его родительский checkout/return version. Перед start/complete Go читает актуальный агрегат. Hold равен 15
@@ -45,7 +47,7 @@ components:
       in: header
       required: true
       schema:
-        const: '1.7'
+        const: '1.8'
     RequestID:
       name: X-Request-ID
       in: header
@@ -630,6 +632,10 @@ components:
           $ref: '#/components/schemas/UUID'
         author_id:
           $ref: '#/components/schemas/UUID'
+        assigned_to:
+          oneOf:
+          - $ref: '#/components/schemas/UUID'
+          - type: 'null'
         stage:
           type: string
           enum:
@@ -652,6 +658,19 @@ components:
           - known_nonblocking
         blocks_issuance:
           type: boolean
+        resolution_comment:
+          oneOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+        resolved_by:
+          oneOf:
+          - $ref: '#/components/schemas/UUID'
+          - type: 'null'
+        resolved_at:
+          oneOf:
+          - $ref: '#/components/schemas/Timestamp'
+          - type: 'null'
         trip_id:
           oneOf:
           - $ref: '#/components/schemas/UUID'
@@ -673,11 +692,15 @@ components:
       - id
       - vehicle_id
       - author_id
+      - assigned_to
       - stage
       - category
       - description
       - status
       - blocks_issuance
+      - resolution_comment
+      - resolved_by
+      - resolved_at
       - trip_id
       - inspection_id
       - asset_ids
@@ -787,7 +810,7 @@ components:
       additionalProperties: false
       properties:
         contract_version:
-          const: '1.7'
+          const: '1.8'
         build_sha:
           type: string
           maxLength: 64
@@ -2078,6 +2101,9 @@ components:
           - status
           - comment
           - confirmation
+          description: Операция доступна только администратору. При переходе в in_progress сервер задаёт assigned_to
+            внутренним ID проверенного admin actor; клиент не может указать другого сотрудника. Терминальные переходы
+            сохраняют назначенного, отдельно возвращая resolved_by, resolution_comment и resolved_at.
       required:
       - operation
       - target_id

@@ -25,7 +25,7 @@ func claimInboxRequest(t *testing.T, handler http.Handler, key, worker string, m
 	req.Header.Set("Authorization", "Bearer worker-token")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-ID", "11111111-1111-4111-8111-111111111111")
-	req.Header.Set("X-Contract-Version", "1.7")
+	req.Header.Set("X-Contract-Version", "1.8")
 	req.Header.Set("Idempotency-Key", key)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -76,7 +76,7 @@ func TestInboxClaimPreservesActorOrderAndFencesExpiredLease(t *testing.T) {
 	first, second, third := inboxFixture(t), anotherInboxEvent(t, "demo-message-002", driverID), anotherInboxEvent(t, "demo-message-003", "8000000000000000002")
 	storedIDs := make([]string, 0, 3)
 	for i, body := range [][]byte{first, second, third} {
-		status, response := sendInbox(t, server.Handler(), body, "worker-token", "store-key-00"+string(rune('1'+i)), "1.7")
+		status, response := sendInbox(t, server.Handler(), body, "worker-token", "store-key-00"+string(rune('1'+i)), "1.8")
 		if status != http.StatusOK {
 			t.Fatalf("store %d: %d %s", i, status, response)
 		}
@@ -126,7 +126,7 @@ func TestInboxClaimSaveFailureRollsBackLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	status, response := sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "store-key-001", "1.7")
+	status, response := sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "store-key-001", "1.8")
 	if status != http.StatusOK {
 		t.Fatalf("store: %d %s", status, response)
 	}
@@ -157,7 +157,7 @@ func TestInboxClaimUpgradesVersionEightSequence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	status, response := sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "store-key-001", "1.7")
+	status, response := sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "store-key-001", "1.8")
 	if status != http.StatusOK {
 		t.Fatalf("store: %d %s", status, response)
 	}

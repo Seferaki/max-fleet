@@ -89,8 +89,18 @@ def main():
         ("hold-expired.json", "ErrorResponse"),
         ("previous-inspection.json", "InspectionResponse"),
         ("inbox-photo.json", "NormalizedEvent"),
+        ("issue-assigned.json", "IssueResponse"),
+        ("issue-resolved.json", "IssueResponse"),
     ):
         check_example(data, "examples/" + filename, schema_name)
+    assigned_issue = load_json("examples/issue-assigned.json")["data"]
+    resolved_issue = load_json("examples/issue-resolved.json")["data"]
+    if (assigned_issue["status"] != "in_progress" or assigned_issue["assigned_to"] is None
+            or assigned_issue["resolution_comment"] is not None or assigned_issue["resolved_by"] is not None
+            or resolved_issue["status"] != "resolved" or resolved_issue["assigned_to"] != assigned_issue["assigned_to"]
+            or resolved_issue["resolved_by"] in (None, resolved_issue["assigned_to"])
+            or not resolved_issue["resolution_comment"] or not resolved_issue["resolved_at"]):
+        raise RuntimeError("Issue assignment and terminal resolver must remain distinct")
     for filename, schema_name in (
         ("map-context.json", "ContextResponse"),
         ("map-location-request.json", "LocationRequest"),

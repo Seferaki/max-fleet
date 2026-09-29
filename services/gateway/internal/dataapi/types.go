@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-// DTOs mirror the read projections of contracts/data-api.openapi.yaml v1.7.
+// DTOs mirror the read projections of contracts/data-api.openapi.yaml v1.8.
 // Nullable fields use pointers so absent values remain distinct from zero values.
 type Meta struct {
 	ContractVersion string   `json:"contract_version"`
@@ -134,19 +134,23 @@ type Trip struct {
 }
 
 type Issue struct {
-	ID             string    `json:"id"`
-	VehicleID      string    `json:"vehicle_id"`
-	AuthorID       string    `json:"author_id"`
-	Stage          string    `json:"stage"`
-	Category       string    `json:"category"`
-	Description    string    `json:"description"`
-	Status         string    `json:"status"`
-	BlocksIssuance bool      `json:"blocks_issuance"`
-	TripID         *string   `json:"trip_id"`
-	InspectionID   *string   `json:"inspection_id"`
-	AssetIDs       []string  `json:"asset_ids"`
-	Version        int64     `json:"version"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID                string     `json:"id"`
+	VehicleID         string     `json:"vehicle_id"`
+	AuthorID          string     `json:"author_id"`
+	AssignedTo        *string    `json:"assigned_to"`
+	Stage             string     `json:"stage"`
+	Category          string     `json:"category"`
+	Description       string     `json:"description"`
+	Status            string     `json:"status"`
+	BlocksIssuance    bool       `json:"blocks_issuance"`
+	ResolutionComment *string    `json:"resolution_comment"`
+	ResolvedBy        *string    `json:"resolved_by"`
+	ResolvedAt        *time.Time `json:"resolved_at"`
+	TripID            *string    `json:"trip_id"`
+	InspectionID      *string    `json:"inspection_id"`
+	AssetIDs          []string   `json:"asset_ids"`
+	Version           int64      `json:"version"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 type Return struct {

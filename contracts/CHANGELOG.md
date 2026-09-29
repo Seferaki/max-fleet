@@ -1,5 +1,11 @@
 # Изменения контракта
 
+## 1.8 — BE-09, 29.09.2026
+
+- Причина: среди нескольких администраторов не сохранялось, кто взял замечание в работу; Issue projection также не возвращала уже хранимые resolution_comment/resolved_by/resolved_at.
+- Issue v1.8 возвращает nullable `assigned_to`, `resolution_comment`, `resolved_by`, `resolved_at`. При `issue.resolve` с переходом open→in_progress `assigned_to` назначает сервер из аутентифицированного admin actor; payload не принимает assignee. Терминальное решение сохраняет назначение и отдельно фиксирует resolver/comment/time.
+- Go client/mock реализуют issue.resolve с admin ACL, issue.version CAS, строго заданным payload, one-use idempotency result, audit и восстановлением snapshot; терминальное решение создаёт одно уведомление `issue_resolved` каждому администратору. В Python требуется добавить nullable `assigned_to` FK, DTO-поля и назначение actor в транзакции до INT; `services/data/` этим checkpoint не менялся.
+
 ## 1.7 — BE-09, 29.09.2026
 
 - Причина: одометр snapshot мог быть ошибочным, но прежний vehicle.correct_snapshot разрешал изменения только свободной машины. Проверка возврата при этом опиралась на immutable пробег before-inspection, поэтому правка snapshot не устраняла ODOMETER_ROLLBACK.

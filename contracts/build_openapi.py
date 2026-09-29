@@ -1,4 +1,4 @@
-"""Build the reviewed MAX Fleet v1.7 internal HTTP contract.
+"""Build the reviewed MAX Fleet v1.8 internal HTTP contract.
 
 Run: py contracts/build_openapi.py
 Requires PyYAML. The generated YAML is committed so consumers do not need Python.
@@ -171,16 +171,19 @@ schemas = {
         "after_inspection", "parking_location", "issues", "version", "updated_at")),
     "Issue": obj({
         "id": ref("UUID"), "vehicle_id": ref("UUID"), "author_id": ref("UUID"),
+        "assigned_to": nullable(ref("UUID")),
         "stage": string(enum=["before", "during", "return", "after", "post_return"]),
         "category": ref("IssueCategory"),
         "description": string(1000),
         "status": string(enum=["open", "in_progress", "resolved", "known_nonblocking"]),
         "blocks_issuance": {"type": "boolean"},
+        "resolution_comment": nullable(string(1000)),
+        "resolved_by": nullable(ref("UUID")), "resolved_at": nullable(ref("Timestamp")),
         "trip_id": nullable(ref("UUID")), "inspection_id": nullable(ref("UUID")),
         "asset_ids": array(ref("UUID"), 3), "version": ref("Version"),
         "updated_at": ref("Timestamp"),
-    }, ("id", "vehicle_id", "author_id", "stage", "category", "description", "status",
-        "blocks_issuance",
+    }, ("id", "vehicle_id", "author_id", "assigned_to", "stage", "category", "description", "status",
+        "blocks_issuance", "resolution_comment", "resolved_by", "resolved_at",
         "trip_id", "inspection_id", "asset_ids", "version", "updated_at")),
     "Challenge": obj({
         "id": ref("UUID"), "purpose": ref("ChallengePurpose"),
@@ -204,7 +207,7 @@ schemas = {
         "conversation_version": ref("Version"),
     }, ("checkout", "trip", "return", "next_step", "conversation", "conversation_version")),
     "Meta": obj({
-        "contract_version": {"const": "1.7"}, "build_sha": string(64),
+        "contract_version": {"const": "1.8"}, "build_sha": string(64),
         "mode": string(enum=["mock", "real"]), "capabilities": array(string(80)),
     }, ("contract_version", "build_sha", "mode", "capabilities")),
     "AdminSummary": obj({
@@ -245,8 +248,8 @@ for name in ("Vehicle", "Trip", "Issue", "Employee"):
 
 spec = {
     "openapi": "3.1.0",
-    "info": {"title": "MAX Fleet Data API", "version": "1.7",
-             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.6 связывает доступные данные admin close с SHA-256 намерения. Версия 1.7 разрешает аудитируемую коррекцию только одометра snapshot активной брони или поездки без изменения inspection и assignment; ODOMETER_ROLLBACK сверяется с текущим snapshot машины."},
+    "info": {"title": "MAX Fleet Data API", "version": "1.8",
+             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.6 связывает доступные данные admin close с SHA-256 намерения. Версия 1.7 разрешает аудитируемую коррекцию только одометра snapshot активной брони или поездки без изменения inspection и assignment. Версия 1.8 публикует в Issue назначение assigned_to, комментарий и автора/время терминального решения; issue.resolve при первом переходе в in_progress устанавливает employee ID из проверенного admin actor, а последующие терминальные переходы сохраняют назначение."},
     "servers": [{"url": "http://data-api:8000"}, {"url": "http://data-mock:8000"}],
     "tags": [{"name": name, "description": description} for name, description in (
         ("read", "Чтение доменных данных с проверкой actor и прав"),
@@ -264,7 +267,7 @@ spec = {
         },
         "parameters": {
             "ContractVersion": {"name": "X-Contract-Version", "in": "header", "required": True,
-                                "schema": {"const": "1.7"}},
+                                "schema": {"const": "1.8"}},
             "RequestID": {"name": "X-Request-ID", "in": "header", "required": True,
                           "schema": ref("UUID")},
             "ActorMaxID": {"name": "X-Actor-Max-ID", "in": "header", "required": True,
@@ -465,8 +468,8 @@ schemas["AdminCloseData"] = obj({
 })
 
 
-def payload(fields, required=(), min_properties=None):
-    value = obj(fields, required)
+def payload(fields, required=(), min_properties=None, description=None):
+    value = obj(fields, required, description)
     if min_properties is not None:
         value["minProperties"] = min_properties
     return value
@@ -538,7 +541,7 @@ command_specs = [
     ("issue.resolve", "existing", payload({
         "status": string(enum=["in_progress", "resolved", "known_nonblocking"]),
         "comment": string(1000), "confirmation": {"const": True},
-    }, ("status", "comment", "confirmation")), "Issue"),
+    }, ("status", "comment", "confirmation"), description="Операция доступна только администратору. При переходе в in_progress сервер задаёт assigned_to внутренним ID проверенного admin actor; клиент не может указать другого сотрудника. Терминальные переходы сохраняют назначенного, отдельно возвращая resolved_by, resolution_comment и resolved_at."), "Issue"),
     ("trip.admin_close", "existing", payload({
         "reason": string(1000), "challenge_id": ref("UUID"),
         "available_data": ref("AdminCloseData"),

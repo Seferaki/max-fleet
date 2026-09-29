@@ -257,7 +257,7 @@ func TestVehicleCorrectionAuditUpgradesVersion16Snapshot(t *testing.T) {
 	if err := json.Unmarshal(raw, &persisted); err != nil {
 		t.Fatal(err)
 	}
-	if string(persisted["version"]) != "17" || string(persisted["vehicle_corrections"]) != "[]" {
+	if string(persisted["version"]) != "18" || string(persisted["vehicle_corrections"]) != "[]" {
 		t.Fatalf("snapshot upgrade missing v17 audit list: version=%s audits=%s", persisted["version"], persisted["vehicle_corrections"])
 	}
 }

@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.7",
+  "contract_version": "1.8",
   "examples": [
     {
       "purpose": "vehicle_block",

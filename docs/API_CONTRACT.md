@@ -1,13 +1,13 @@
 # Контракт Go ↔ mock ↔ Python
 
-Контракт v1.7, 29.09.2026. Машинная схема и JSON fixtures: [contracts/data-api.openapi.yaml](../contracts/data-api.openapi.yaml), [внешний API карты](../contracts/map-api.openapi.yaml), [CHANGELOG](../contracts/CHANGELOG.md). Go mock реализуется отдельно от Python; проверка схем и mock не означает проверку Python/MAX. Поведение определяется [PRODUCT_SPEC](../PRODUCT_SPEC.md), модель — [DATABASE](DATABASE.md).
+Контракт v1.8, 29.09.2026. Машинная схема и JSON fixtures: [contracts/data-api.openapi.yaml](../contracts/data-api.openapi.yaml), [внешний API карты](../contracts/map-api.openapi.yaml), [CHANGELOG](../contracts/CHANGELOG.md). Go mock реализуется отдельно от Python; проверка схем и mock не означает проверку Python/MAX. Поведение определяется [PRODUCT_SPEC](../PRODUCT_SPEC.md), модель — [DATABASE](DATABASE.md).
 
 ## 1. Транспорт и доверие
 
 - Внутренняя база URL: `http://data-api:8000/internal/v1`; mock: `http://data-mock:8000/internal/v1`. Go использует один HTTP-клиент; переключается только URL.
 - Authorization: Bearer DATA_API_TOKEN подтверждает сервис Go. Python не публикуется наружу. Между разными хостами нужен TLS; plaintext допустим только в изолированной Docker-сети одного хоста.
 - X-Actor-Max-ID — десятичная строка проверенного MAX ID. Go формирует её после валидации источника; не копирует клиентский заголовок. Python проверяет роль и владение по БД.
-- X-Request-ID — UUID трассировки. X-Contract-Version: 1.7 — версия контракта. Несовместимую версию явно отклонять.
+- X-Request-ID — UUID трассировки. X-Contract-Version: 1.8 — версия контракта. Несовместимую версию явно отклонять.
 - Worker-маршруты требуют отдельный WORKER_API_TOKEN, не пользовательскую авторизацию.
 - Каждая мутация принимает Idempotency-Key; существующий агрегат — expected_version. Тот же логический запрос после timeout получает тот же ключ; изменённый body — новый ключ.
 - Команды из inbox дополнительно передают X-Inbox-Event-ID и X-Inbox-Lease. Python под блокировкой actor проверяет актуальный fencing token до изменения домена; просроченный worker не выполняет новую команду. Запрос карты проходит собственную авторизацию и version check, не притворяется inbox worker.
@@ -89,7 +89,7 @@ Envelope: {"operation":"checkout.create","target_id":"uuid","expected_version":1
 | vehicle.annotate | vehicle / reason, text, confirmation=true | Append-only уточнение в audit, применимо к активной машине |
 | employee.grant | null / max_user_id, display_name, challenge_id | Новый employee; нельзя назначить admin; существующий MAX ID даёт `409 INVALID_STATE` |
 | employee.access | employee / can_start_trip, reason, challenge_id | Запрет новых поездок; holding отменить, active возврат сохранить |
-| issue.resolve | issue / status, comment, confirmation=true | in_progress/resolved/known_nonblocking; исходное сообщение неизменно |
+| issue.resolve | issue / status, comment, confirmation=true | Admin-only; CAS по issue.version; переход в `in_progress` ставит `assigned_to` из аутентифицированного admin actor, payload не может назначить другого; терминальные переходы сохраняют назначенного и записывают `resolved_by`, `resolved_at`, `resolution_comment` |
 | trip.admin_close | trip / reason, challenge_id, available_data? | closed_by_admin, missing_data, needs_review=true; отсутствующие сведения не выдумывать |
 | conversation.save | actor state / flow, step, context, pending_input_kind? | CAS conversation_version; разрешённые flow: `issue_before`, `issue_during`, `issue_after`, `return_location`, `issue_post_return`; навигация не меняет бизнес-права |
 

@@ -55,6 +55,7 @@ type Server struct {
 	trips                   map[string]dataapi.Trip
 	returns                 map[string]dataapi.Return
 	issues                  map[string]dataapi.Issue
+	issueActions            []issueActionAudit
 	conversations           map[string]dataapi.Conversation
 	issueAssets             map[string]stagedIssueAsset
 	stageResults            map[string]stageAttempt

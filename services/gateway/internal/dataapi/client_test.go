@@ -53,7 +53,7 @@ func TestRetry503KeepsRequestID(t *testing.T) {
 		if r.Header.Get("X-Request-ID") != firstID {
 			t.Error("retry changed request ID")
 		}
-		_, _ = w.Write([]byte(`{"data":{"contract_version":"1.7","build_sha":"test","mode":"mock","capabilities":[]},"request_id":"` + testRequestID + `"}`))
+		_, _ = w.Write([]byte(`{"data":{"contract_version":"1.8","build_sha":"test","mode":"mock","capabilities":[]},"request_id":"` + testRequestID + `"}`))
 	})
 	meta, err := c.Meta(context.Background())
 	if err != nil || calls != 2 || meta.Mode != "mock" {

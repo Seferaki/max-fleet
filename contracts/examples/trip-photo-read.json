@@ -4,7 +4,7 @@
   "phase": "before",
   "slot": 3,
   "request_path": "/internal/v1/trips/40000000-0000-4000-8000-000000000001/inspection-photos/before/3",
-  "contract_version": "1.7",
+  "contract_version": "1.8",
   "response": {
     "status": 200,
     "content_type": "image/png",

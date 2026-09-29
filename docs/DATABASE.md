@@ -25,6 +25,7 @@ erDiagram
     vehicles ||--o{ parking_locations : parked
     vehicles ||--o{ issues : has
     employees ||--o{ issues : reports
+    employees o|--o{ issues : assigned_to
     trips o|--o{ issues : during
     inspections o|--o{ issues : observed
     issues ||--o{ issue_photos : contains
@@ -201,9 +202,9 @@ UNIQUE(inspection_id,content_sha256); FK(asset_id,content_sha256) → photo_asse
 
 ### 5.3. issues
 
-Поля: id; `vehicle_id FK vehicles`; `author_id FK employees`; `trip_id uuid? FK trips`; `inspection_id uuid? FK inspections`; `stage text` (before/during/return/after); `category text` (body_damage/mechanical/cleanliness/keys/other); `description text` 1–1000; `status text` (open/in_progress/resolved/known_nonblocking); `blocks_issuance boolean DEFAULT true`; `resolution_comment text?`; `resolved_by uuid? FK employees`; `resolved_at?`; created_at/updated_at/version.
+Поля: id; `vehicle_id FK vehicles`; `author_id FK employees`; `assigned_to uuid? FK employees`; `trip_id uuid? FK trips`; `inspection_id uuid? FK inspections`; `stage text` (before/during/return/after/post_return); `category text` (body_damage/mechanical/cleanliness/keys/parking/car_lock/other); `description text` 1–1000; `status text` (open/in_progress/resolved/known_nonblocking); `blocks_issuance boolean DEFAULT true`; `resolution_comment text?`; `resolved_by uuid? FK employees`; `resolved_at?`; created_at/updated_at/version. `assigned_to` устанавливается сервером из admin actor при первом переходе `open → in_progress` и сохраняется при терминальном решении; `resolved_by` отдельно хранит автора закрытия. ID администратора никогда не принимается из payload.
 
-Resolved/known_nonblocking требуют автора, комментария и времени; blocks_issuance=false. Open/in_progress всегда блокируют новую выдачу. Все переходы пишутся в аудит; первоначальное сообщение не перезаписывается решением. Python проверяет, что trip/inspection принадлежат той же машине. Индексы: (vehicle_id,status,created_at), (status,created_at), (trip_id).
+Resolved/known_nonblocking требуют автора, комментария и времени; blocks_issuance=false. Open/in_progress всегда блокируют новую выдачу. Все переходы пишутся в аудит; первоначальное сообщение не перезаписывается решением. Python проверяет, что trip/inspection принадлежат той же машине. Индексы: (vehicle_id,status,created_at), (status,created_at), (trip_id), (assigned_to,status).
 
 ### 5.4. issue_photos
 

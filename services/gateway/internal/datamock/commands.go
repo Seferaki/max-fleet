@@ -87,7 +87,7 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		return
 	}
 	command, ok := parseCommand(body)
-	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos" && command.Operation != "challenge.create" && command.Operation != "challenge.answer" && command.Operation != "checkout.accept_rules" && command.Operation != "inspection.update" && command.Operation != "checkout.set_no_new_issues" && command.Operation != "checkout.start" && command.Operation != "trip.begin_return" && command.Operation != "return.cancel" && command.Operation != "return.set_location" && command.Operation != "return.complete" && command.Operation != "issue.create" && command.Operation != "vehicle.block" && command.Operation != "vehicle.unblock" && command.Operation != "employee.grant" && command.Operation != "employee.access" && command.Operation != "trip.admin_close" && command.Operation != "vehicle.correct_snapshot" && command.Operation != "conversation.save") {
+	if !ok || (command.Operation != "checkout.create" && command.Operation != "checkout.cancel" && command.Operation != "inspection.confirm_photos" && command.Operation != "challenge.create" && command.Operation != "challenge.answer" && command.Operation != "checkout.accept_rules" && command.Operation != "inspection.update" && command.Operation != "checkout.set_no_new_issues" && command.Operation != "checkout.start" && command.Operation != "trip.begin_return" && command.Operation != "return.cancel" && command.Operation != "return.set_location" && command.Operation != "return.complete" && command.Operation != "issue.create" && command.Operation != "issue.resolve" && command.Operation != "vehicle.block" && command.Operation != "vehicle.unblock" && command.Operation != "employee.grant" && command.Operation != "employee.access" && command.Operation != "trip.admin_close" && command.Operation != "vehicle.correct_snapshot" && command.Operation != "conversation.save") {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
@@ -144,6 +144,8 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request, requestID strin
 		result, ok = s.completeReturn(w, requestID, actor, command)
 	} else if command.Operation == "conversation.save" {
 		result, ok = s.saveConversation(w, requestID, actor, command)
+	} else if command.Operation == "issue.resolve" {
+		result, ok = s.resolveIssue(w, requestID, actor, command)
 	} else if command.Operation == "vehicle.block" || command.Operation == "vehicle.unblock" || command.Operation == "employee.grant" || command.Operation == "employee.access" || command.Operation == "trip.admin_close" || command.Operation == "vehicle.correct_snapshot" {
 		result, ok = s.adminCommand(w, requestID, actor, command)
 	} else {

@@ -148,6 +148,12 @@ type IssueCreateInput struct {
 	AssetIDs     []string `json:"asset_ids"`
 }
 
+type IssueResolveInput struct {
+	Status       string `json:"status"`
+	Comment      string `json:"comment"`
+	Confirmation bool   `json:"confirmation"`
+}
+
 type ConversationSaveInput struct {
 	Flow             string              `json:"flow"`
 	Step             string              `json:"step"`
@@ -319,6 +325,14 @@ func (c *Client) IssueCreate(ctx context.Context, actorMaxID, vehicleID string, 
 		input.AssetIDs = []string{}
 	}
 	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[IssueCreateInput]{"issue.create", vehicleID, vehicleVersion, input})
+}
+
+func (c *Client) IssueResolve(ctx context.Context, actorMaxID, issueID string, version int64, input IssueResolveInput, key string, inbox *InboxLease) (CommandResult, error) {
+	if input.Status != "in_progress" && input.Status != "resolved" && input.Status != "known_nonblocking" ||
+		!validAdminText(input.Comment, 1000) || strings.TrimSpace(input.Comment) == "" || !input.Confirmation {
+		return CommandResult{}, errors.New("data-api: invalid issue resolution input")
+	}
+	return executeCommand(ctx, c, actorMaxID, key, inbox, commandEnvelope[IssueResolveInput]{"issue.resolve", issueID, version, input})
 }
 
 func (c *Client) InspectionConfirmPhotos(ctx context.Context, actorMaxID, inspectionID string, version int64, key string, inbox *InboxLease) (CommandResult, error) {
