@@ -30,6 +30,15 @@ func (c *Client) TripInspectionPhoto(ctx context.Context, actorMaxID, tripID, ph
 	return c.privateImage(ctx, actorMaxID, path)
 }
 
+// PreviousInspectionPhoto retrieves one angle from a vehicle's latest finalized after-inspection.
+func (c *Client) PreviousInspectionPhoto(ctx context.Context, actorMaxID, vehicleID string, slot int) (AssetContent, error) {
+	if !validMaxID(actorMaxID) || !validUUID(vehicleID) || slot < 1 || slot > 8 {
+		return AssetContent{}, errors.New("data-api: invalid previous inspection photo request")
+	}
+	path := fmt.Sprintf("/vehicles/%s/previous-inspection/photos/%d", vehicleID, slot)
+	return c.privateImage(ctx, actorMaxID, path)
+}
+
 func (c *Client) privateImage(ctx context.Context, actorMaxID, path string) (AssetContent, error) {
 	requestID, err := newUUID()
 	if err != nil {
