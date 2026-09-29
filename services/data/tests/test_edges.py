@@ -151,11 +151,23 @@ def test_admin_vehicle_edits(api: Api) -> None:
     annotated = api.agg(api.cmd(ADMIN, "vehicle.annotate", V1, corrected["version"],
                                 {"reason": "Уточнение", "text": "Скол на стекле известен", "confirmation": True}))
     assert annotated["version"] == corrected["version"] + 1
-    take_until_inspection(api, DRIVER, V1)
+    checkout = take_until_inspection(api, DRIVER, V1)
     busy = api.ok(api.get(f"/vehicles/{V1}", ADMIN))
     held = api.cmd(ADMIN, "vehicle.correct_snapshot", V1, busy["version"],
                    {"reason": "x", "fuel_level": 100, "confirmation": True})
-    assert held.status_code == 409  # только свободная машина
+    assert held.status_code == 409  # при активной брони можно менять только одометр
+    denied = api.cmd(DRIVER, "vehicle.correct_snapshot", V1, busy["version"],
+                     {"reason": "x", "odometer_km": 5, "confirmation": True})
+    assert denied.status_code == 403
+    corrected = api.agg(api.cmd(ADMIN, "vehicle.correct_snapshot", V1, busy["version"],
+                                {"reason": "Исправлена запись одометра", "odometer_km": 6, "confirmation": True}))
+    unchanged = api.ok(api.get(f"/checkouts/{checkout['id']}", DRIVER))
+    assert corrected["current_odometer_km"] == 6
+    assert unchanged["status"] == "holding" and unchanged["version"] == checkout["version"]
+    assert unchanged["inspection"]["version"] == checkout["inspection"]["version"]
+    stale = api.cmd(ADMIN, "vehicle.correct_snapshot", V1, busy["version"],
+                    {"reason": "Устаревшая версия", "odometer_km": 7, "confirmation": True})
+    assert stale.status_code == 409 and stale.json()["error"]["code"] == "STALE_VERSION"
 
 
 def test_five_mib_photo_accepted(api: Api) -> None:

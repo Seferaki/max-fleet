@@ -131,6 +131,7 @@ def get_state(session: Session, actor: Actor) -> dict[str, Any]:
         "trip": dto.trip_dto(session, trip) if trip else None,
         "return": dto.return_dto(session, ret) if ret else None,
         "next_step": next_step,
+        "conversation": dto.conversation_dto(conv) if conv else None,
         "conversation_version": conv.version if conv else 1,
     }
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import uuid
+from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -14,6 +15,7 @@ from app.errors import DomainError
 MaxIDStr = Annotated[str, Field(pattern=r"^[1-9][0-9]{0,18}$")]
 Text1000 = Annotated[str, Field(max_length=1000)]
 Fuel = Literal[0, 25, 50, 75, 100]
+IssueCategory = Literal["body_damage", "mechanical", "cleanliness", "keys", "parking", "car_lock", "other"]
 NonNegInt = Annotated[int, Field(ge=0, le=10_000_000)]
 
 
@@ -85,7 +87,7 @@ class LocationInput(Strict):
 
 
 class IssueCreate(Strict):
-    category: Literal["body_damage", "mechanical", "cleanliness", "keys", "other"]
+    category: IssueCategory
     description: Annotated[str, Field(min_length=1, max_length=1000)]
     trip_id: uuid.UUID | None = None
     inspection_id: uuid.UUID | None = None
@@ -157,6 +159,12 @@ class TripAdminClose(Strict):
     available_data: AdminCloseData | None = None
 
 
+ConversationFlow = Literal[
+    "issue_before", "issue_during", "issue_after", "return_location", "issue_post_return",
+    "issue_admin_resolution", "vehicle_odometer_correction", "trip_admin_close",
+]
+
+
 class ConversationContext(Strict):
     target_id: uuid.UUID | None = None
     selected_slot: Annotated[int, Field(ge=1, le=8)] | None = None
@@ -165,12 +173,30 @@ class ConversationContext(Strict):
     trip_id: uuid.UUID | None = None
     return_id: uuid.UUID | None = None
     issue_id: uuid.UUID | None = None
+    issue_version: Annotated[int, Field(ge=1)] | None = None
+    trip_version: Annotated[int, Field(ge=1)] | None = None
     cursor: Annotated[str, Field(max_length=2048)] | None = None
     draft_text: Annotated[str, Field(max_length=1000)] | None = None
+    issue_category: IssueCategory | None = None
+    asset_ids: list[uuid.UUID] = Field(default_factory=list, max_length=3)
+    vehicle_version: Annotated[int, Field(ge=1)] | None = None
+    correction_odometer_km: NonNegInt | None = None
+    admin_close_data: AdminCloseData | None = None
+    challenge_version: Annotated[int, Field(ge=1)] | None = None
+    challenge_question: Annotated[str, Field(max_length=200)] | None = None
+    challenge_options: list[Annotated[int, Field(ge=0, le=18)]] = Field(default_factory=list, max_length=4)
+    challenge_expires_at: datetime | None = None
+
+    @field_validator("asset_ids")
+    @classmethod
+    def asset_ids_are_unique(cls, value: list[uuid.UUID]) -> list[uuid.UUID]:
+        if len(value) != len(set(value)):
+            raise ValueError("asset_ids must be unique")
+        return value
 
 
 class ConversationSave(Strict):
-    flow: Annotated[str, Field(min_length=1, max_length=80)]
+    flow: ConversationFlow
     step: Annotated[str, Field(min_length=1, max_length=80)]
     context: ConversationContext
     pending_input_kind: Literal["text", "photo", "geo", "none"] | None = None

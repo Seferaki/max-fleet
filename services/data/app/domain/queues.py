@@ -270,6 +270,7 @@ def _notification_view(session: Session, row: m.NotificationDelivery) -> dict[st
                   "vehicle_id": event.payload.get("vehicle_id"), "reason": event.payload.get("reason"),
                   "occurred_at": ts(event.occurred_at)},
         "recipient_max_user_id": str(recipient.max_user_id),
+        "enqueued_at": ts(row.created_at),
         "lease_token": row.lease_token,
         "lease_expires_at": ts(row.lease_until),
         "attempt": row.attempt_count,

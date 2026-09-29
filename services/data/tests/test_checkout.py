@@ -125,6 +125,25 @@ def test_challenge_rules(api: Api) -> None:
     replay = api.cmd(DRIVER, "challenge.answer", ch2["id"], ok["aggregate"]["version"], {"selected_option": 0})
     assert replay.status_code == 409  # решённый пример нельзя использовать повторно
     assert api.ok(api.get(f"/checkouts/{checkout['id']}", DRIVER))["step"] == "rules"
+    current = api.ok(api.get(f"/checkouts/{checkout['id']}", DRIVER))
+    rules_required = api.cmd(DRIVER, "checkout.start", current["id"], current["version"], {"attestation": True})
+    assert rules_required.status_code == 422 and rules_required.json()["error"]["code"] == "RULES_REQUIRED"
+
+
+def test_expired_math_challenge_is_422(api: Api, app_and_store: tuple) -> None:
+    vehicle = api.ok(api.get(f"/vehicles/{V1}", DRIVER))
+    checkout = api.agg(api.cmd(DRIVER, "checkout.create", V1, vehicle["version"]))
+    current_vehicle = api.ok(api.get(f"/vehicles/{V1}", DRIVER))
+    challenge = api.agg(api.cmd(DRIVER, "challenge.create", checkout["id"], checkout["version"], {
+        "purpose": "take",
+        "intent_payload": {"operation": "checkout.create", "target_id": V1,
+                           "expected_version": current_vehicle["version"] - 1}}))
+    app, _store = app_and_store
+    with app.state.engine.begin() as connection:
+        connection.execute(text("UPDATE challenges SET expires_at = now() - interval '1 second' WHERE id = :id"),
+                           {"id": challenge["id"]})
+    expired = api.cmd(DRIVER, "challenge.answer", challenge["id"], challenge["version"], {"selected_option": 0})
+    assert expired.status_code == 422 and expired.json()["error"]["code"] == "CHALLENGE_EXPIRED"
 
 
 def test_start_requirements(api: Api) -> None:

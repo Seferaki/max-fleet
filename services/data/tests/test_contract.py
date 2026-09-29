@@ -88,8 +88,14 @@ def test_full_cycle_responses_match_contract(api: Api, spec: dict[str, Any]) -> 
     emp = api.ok(api.get("/me", DRIVER))["employee"]
     check(spec, "EmployeeResponse", api.get(f"/admin/employees/{emp['id']}", ADMIN).json())
     conv = api.cmd(DRIVER, "conversation.save", emp["id"], 1, {
-        "flow": "menu", "step": "main", "context": {"vehicle_id": V1}, "pending_input_kind": None})
+        "flow": "issue_admin_resolution", "step": "confirm",
+        "context": {"vehicle_id": V1, "issue_version": 2, "trip_version": 3, "issue_category": "parking",
+                    "asset_ids": [], "vehicle_version": 4, "correction_odometer_km": 5000,
+                    "challenge_version": 1, "challenge_question": "2 + 2 = ?",
+                    "challenge_options": [2, 3, 4, 5], "challenge_expires_at": "2026-09-30T10:00:00Z"},
+        "pending_input_kind": None})
     check(spec, "CommandResponse", conv.json())
+    check(spec, "CurrentStateResponse", api.get("/state", DRIVER).json())
 
 
 def test_worker_responses_match_contract(api: Api, spec: dict[str, Any]) -> None:

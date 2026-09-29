@@ -30,7 +30,7 @@ def test_health_and_auth(api: Api) -> None:
     del no_version["X-Contract-Version"]
     assert api.client.get("/internal/v1/me", headers=no_version).status_code == 400
     meta = api.ok(api.get("/meta", None))
-    assert meta["contract_version"] == "1.0" and meta["mode"] == "real"
+    assert meta["contract_version"] == "1.13" and meta["mode"] == "real"
 
 
 def test_identity(api: Api) -> None:

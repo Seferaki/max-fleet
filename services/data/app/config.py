@@ -9,7 +9,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-CONTRACT_VERSION = "1.0"
+CONTRACT_VERSION = "1.13"
 
 
 class ConfigError(RuntimeError):

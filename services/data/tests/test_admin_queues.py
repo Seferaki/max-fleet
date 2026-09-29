@@ -140,6 +140,41 @@ def test_issue_resolution_unblocks(api: Api) -> None:
     assert api.get(f"/issues/{issue['id']}", DRIVER2).status_code == 404
 
 
+def test_post_return_issue_categories_and_assignment(api: Api) -> None:
+    trip = start_trip(api, DRIVER, V1)
+    vehicle = api.ok(api.get(f"/vehicles/{V1}", DRIVER))
+    trip_version = trip["version"]
+    corrected_vehicle = api.agg(api.cmd(ADMIN, "vehicle.correct_snapshot", V1, vehicle["version"], {
+        "reason": "Сверка одометра во время поездки", "odometer_km": vehicle["current_odometer_km"],
+        "confirmation": True}))
+    assert corrected_vehicle["current_odometer_km"] == vehicle["current_odometer_km"]
+    assert api.ok(api.get(f"/trips/{trip['id']}", DRIVER))["version"] == trip_version
+    ret = fill_return(api, DRIVER, begin_return(api, DRIVER, trip))
+    api.ok(api.cmd(DRIVER, "return.complete", ret["id"], ret["version"], {"attestation": True}))
+    finished = api.ok(api.get(f"/trips/{trip['id']}", DRIVER))
+    vehicle = api.ok(api.get(f"/vehicles/{V1}", DRIVER))
+    parking_issue = api.agg(api.cmd(DRIVER, "issue.create", V1, vehicle["version"], {
+        "category": "parking", "description": "Не удалось безопасно припарковать", "trip_id": trip["id"],
+        "asset_ids": []}))
+    assert parking_issue["stage"] == "post_return" and parking_issue["assigned_to"] is None
+    vehicle = api.ok(api.get(f"/vehicles/{V1}", DRIVER))
+    lock_issue = api.agg(api.cmd(DRIVER, "issue.create", V1, vehicle["version"], {
+        "category": "car_lock", "description": "Машина не закрывается", "trip_id": trip["id"], "asset_ids": []}))
+    assert lock_issue["category"] == "car_lock" and lock_issue["stage"] == "post_return"
+    assert api.ok(api.get(f"/trips/{trip['id']}", DRIVER))["version"] == finished["version"]
+
+    admin_id = api.ok(api.get("/me", ADMIN))["employee"]["id"]
+    denied = api.cmd(DRIVER, "issue.resolve", parking_issue["id"], parking_issue["version"], {
+        "status": "in_progress", "comment": "Начата проверка", "confirmation": True})
+    assert denied.status_code == 403
+    assigned = api.agg(api.cmd(ADMIN, "issue.resolve", parking_issue["id"], parking_issue["version"], {
+        "status": "in_progress", "comment": "Начата проверка", "confirmation": True}))
+    assert assigned["assigned_to"] == admin_id
+    resolved = api.agg(api.cmd(ADMIN, "issue.resolve", parking_issue["id"], assigned["version"], {
+        "status": "resolved", "comment": "Устранено", "confirmation": True}))
+    assert resolved["assigned_to"] == admin_id and resolved["resolved_by"] == admin_id
+
+
 def _event(key: str, actor: str = DRIVER, text: str = "hi") -> dict[str, Any]:
     return {"integration_key": "demo-bot", "event_key": f"message:{key}:message_created",
             "event_type": "message_created", "actor_max_user_id": actor, "chat_id": actor,

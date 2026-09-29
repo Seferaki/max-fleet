@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import create_engine, text
 
-from app.config import Settings
+from app.config import CONTRACT_VERSION, Settings
 from app.main import create_app
 from app.models import Base
 from app.seed import apply_synthetic
@@ -105,7 +105,7 @@ class Api:
 
     def headers(self, actor: str | None, *, worker: bool = False, key: str | None = None) -> dict[str, str]:
         headers = {"Authorization": f"Bearer {WORKER_TOKEN if worker else DATA_TOKEN}",
-                   "X-Request-ID": str(uuid.uuid4()), "X-Contract-Version": "1.0"}
+                   "X-Request-ID": str(uuid.uuid4()), "X-Contract-Version": CONTRACT_VERSION}
         if actor is not None:
             headers["X-Actor-Max-ID"] = actor
         if key is not None:

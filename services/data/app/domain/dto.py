@@ -181,11 +181,15 @@ def issue_dto(session: Session, issue: m.Issue) -> dict[str, Any]:
         "id": str(issue.id),
         "vehicle_id": str(issue.vehicle_id),
         "author_id": str(issue.author_id),
+        "assigned_to": sid(issue.assigned_to),
         "stage": issue.stage,
         "category": issue.category,
         "description": issue.description,
         "status": issue.status,
         "blocks_issuance": issue.blocks_issuance,
+        "resolution_comment": issue.resolution_comment,
+        "resolved_by": sid(issue.resolved_by),
+        "resolved_at": ts(issue.resolved_at),
         "trip_id": sid(issue.trip_id),
         "inspection_id": sid(issue.inspection_id),
         "asset_ids": [str(a) for a in assets],
@@ -248,8 +252,12 @@ def challenge_dto(ch: m.Challenge) -> dict[str, Any]:
 
 
 EMPTY_CONTEXT: dict[str, Any] = {k: None for k in (
-    "target_id", "selected_slot", "challenge_id", "vehicle_id", "trip_id", "return_id",
-    "issue_id", "cursor", "draft_text")}
+    "target_id", "selected_slot", "challenge_id", "vehicle_id", "trip_id", "return_id", "issue_id",
+    "issue_version", "trip_version", "cursor", "draft_text", "issue_category", "vehicle_version",
+    "correction_odometer_km", "admin_close_data", "challenge_version", "challenge_question",
+    "challenge_expires_at")}
+EMPTY_CONTEXT["asset_ids"] = []
+EMPTY_CONTEXT["challenge_options"] = []
 
 
 def conversation_dto(state: m.ConversationState) -> dict[str, Any]:

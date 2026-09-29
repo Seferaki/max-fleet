@@ -818,7 +818,10 @@ def issue_create(ctx: Ctx) -> dict[str, Any]:
                 or assignment.checkout_attempt_id != attempt.id:
             raise DomainError("INVALID_STATE")
     elif trip is not None:
-        if trip.status not in ("active", "returning") or assignment is None or assignment.trip_id != trip.id:
+        if trip.status in ("active", "returning"):
+            if assignment is None or assignment.trip_id != trip.id:
+                raise DomainError("INVALID_STATE")
+        elif trip.status != "completed" or insp_id is not None:
             raise DomainError("INVALID_STATE")
         if ret is not None:
             assert insp is not None
@@ -840,7 +843,10 @@ def issue_create(ctx: Ctx) -> dict[str, Any]:
         assets.append(asset)
     stage = "before"
     if trip is not None:
-        stage = "after" if ret is not None else ("return" if trip.status == "returning" else "during")
+        if trip.status == "completed":
+            stage = "post_return"
+        else:
+            stage = "after" if ret is not None else ("return" if trip.status == "returning" else "during")
     issue = m.Issue(id=uuid.uuid4(), vehicle_id=vehicle.id, author_id=ctx.actor.id,
                     trip_id=trip.id if trip is not None else None, inspection_id=insp_id, stage=stage,
                     category=data.category, description=data.description, status="open",
@@ -865,7 +871,8 @@ def issue_create(ctx: Ctx) -> dict[str, Any]:
             session.delete(assignment)
     else:
         assert trip is not None
-        touch(trip, now)
+        if trip.status != "completed":
+            touch(trip, now)
         if ret is not None:
             touch(ret, now)
     vehicle.needs_review = True
@@ -892,6 +899,7 @@ def issue_resolve(ctx: Ctx) -> dict[str, Any]:
     before = {"status": issue.status}
     issue.status = data.status
     if data.status == "in_progress":
+        issue.assigned_to = ctx.actor.id
         issue.blocks_issuance = True
     else:
         issue.blocks_issuance = False
@@ -1015,7 +1023,10 @@ def vehicle_correct_snapshot(ctx: Ctx) -> dict[str, Any]:
         raise DomainError("INVALID_REQUEST")
     vehicle = lock_vehicle(session, ctx.target)
     check_version(vehicle, ctx.cmd.expected_version)
-    if lock_assignment_for_vehicle(session, vehicle.id) is not None:
+    assignment = lock_assignment_for_vehicle(session, vehicle.id)
+    if assignment is not None and (
+        data.odometer_km is None or data.fuel_level is not None or data.location is not None
+    ):
         raise DomainError("INVALID_STATE")
     before = {"fuel": vehicle.current_fuel, "odometer_km": vehicle.current_odometer_km,
               "parking_location_id": str(vehicle.current_parking_location_id)
@@ -1203,7 +1214,7 @@ def conversation_save(ctx: Ctx) -> dict[str, Any]:
     current_version = state.version if state is not None else 1
     if ctx.cmd.expected_version != current_version:
         raise DomainError("STALE_VERSION", current_version=current_version)
-    context = dict(dto.EMPTY_CONTEXT)
+    context = {**dto.EMPTY_CONTEXT, "asset_ids": [], "challenge_options": []}
     context.update(ctx.cmd.raw_payload["context"])
     if state is None:
         state = m.ConversationState(employee_id=ctx.actor.id, flow=data.flow, step=data.step, context=context,

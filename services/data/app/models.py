@@ -398,6 +398,7 @@ class Issue(Base):
     author_id: Mapped[uuid.UUID] = fk("employees.id")
     trip_id: Mapped[uuid.UUID | None] = fk("trips.id", nullable=True)
     inspection_id: Mapped[uuid.UUID | None] = fk("inspections.id", nullable=True)
+    assigned_to: Mapped[uuid.UUID | None] = fk("employees.id", nullable=True)
     stage: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -410,9 +411,11 @@ class Issue(Base):
     updated_at: Mapped[datetime] = created()
     version: Mapped[int] = version_col()
     __table_args__ = (
-        CheckConstraint("stage IN ('before', 'during', 'return', 'after')", name="stage"),
-        CheckConstraint("category IN ('body_damage', 'mechanical', 'cleanliness', 'keys', 'other')",
-                        name="category"),
+        CheckConstraint("stage IN ('before', 'during', 'return', 'after', 'post_return')", name="stage"),
+        CheckConstraint(
+            "category IN ('body_damage', 'mechanical', 'cleanliness', 'keys', 'parking', 'car_lock', 'other')",
+            name="category",
+        ),
         CheckConstraint("char_length(description) BETWEEN 1 AND 1000", name="description_len"),
         CheckConstraint("status IN ('open', 'in_progress', 'resolved', 'known_nonblocking')", name="status"),
         CheckConstraint(
