@@ -5,13 +5,13 @@
 ```yaml
 status_schema: 1
 track: backend
-lock_state: HANDOFF
+lock_state: ACTIVE
 owner: B
-session_id: "27659325-800e-4ea6-99ac-3d8edec02849"
+session_id: "30274d30-ee62-4c3e-9df9-08a5c0e1e05e"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T08:43:31Z"
+heartbeat_utc: "2026-09-29T08:53:52Z"
 current_task: BE-08
-current_substep: "BE-08: история/доступ/immutable snapshot проверены; post-return сообщение требует явного расширения контракта"
+current_substep: "BE-08: после handoff проектируется отдельное сообщение после завершённого возврата"
 last_verified_code_commit: "81cd668513b3aeada46d915db008893c8099dc26"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
