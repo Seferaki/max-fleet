@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.11",
+  "contract_version": "1.12",
   "fake_clock_utc": "2026-09-27T09:00:00Z",
   "seed": "../examples/synthetic-seed.json",
   "cases": [
@@ -83,6 +83,7 @@
     {"id":"admin.odometer-active-trip","area":"admin","given":"vehicle is in_trip with exactly one active or returning trip","when":"admin sends vehicle.correct_snapshot with only odometer_km","expect":{"http":200,"error":null,"facts":["vehicle version increments","trip, return, immutable before-inspection and assignment remain unchanged"]}},
     {"id":"admin.odometer-active-extra-field","area":"admin","given":"vehicle has an active hold or trip","when":"admin includes fuel_level or location in the active correction","expect":{"http":409,"error":"INVALID_STATE","facts":["no snapshot or audit mutation","no assignment release"]}},
     {"id":"admin.odometer-correction-conversation","area":"admin","given":"admin enters a corrected value and reason for one active vehicle","when":"conversation.save flow=vehicle_odometer_correction","expect":{"http":200,"error":null,"facts":["only admin actor","vehicle_id and exact current vehicle_version bind the draft","value and reason survive restart until explicit confirmation","stale version, unrelated fields, and negative values are rejected"]}},
+    {"id":"admin.close-conversation","area":"admin","given":"admin records a reason and only known return facts for an active trip","when":"conversation.save flow=trip_admin_close","expect":{"http":200,"error":null,"facts":["trip_id and exact trip_version bind the draft","reason and available_data survive restart","challenge ID/version/question/options/expiry survive restart","missing values remain absent and changed or stale intent is rejected"]}},
     {"id":"return.odometer-after-audited-correction","area":"return","given":"admin corrected the current vehicle odometer snapshot with an audit entry while trip remains active","when":"driver saves and completes return at or above the corrected snapshot","expect":{"http":200,"error":null,"facts":["both ODOMETER_ROLLBACK checks use current vehicle snapshot","original before-inspection and assignment are unchanged until normal return completion"]}}
   ]
 }

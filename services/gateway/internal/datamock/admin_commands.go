@@ -455,16 +455,13 @@ func validMockAdminCloseData(data *dataapi.AdminCloseData) bool {
 		return true
 	}
 	if data.FuelLevel != nil && !(*data.FuelLevel == 0 || *data.FuelLevel == 25 || *data.FuelLevel == 50 || *data.FuelLevel == 75 || *data.FuelLevel == 100) || data.OdometerKM != nil && (*data.OdometerKM < 0 || *data.OdometerKM > 10_000_000) ||
-		(data.Latitude == nil) != (data.Longitude == nil) || data.Latitude != nil && (*data.Latitude < -90 || *data.Latitude > 90) || data.Longitude != nil && (*data.Longitude < -180 || *data.Longitude > 180) || data.Landmark != nil && len([]rune(*data.Landmark)) > 500 {
+		(data.Latitude == nil) != (data.Longitude == nil) || data.Latitude != nil && (*data.Latitude < -90 || *data.Latitude > 90) || data.Longitude != nil && (*data.Longitude < -180 || *data.Longitude > 180) || data.Landmark != nil && (len([]rune(*data.Landmark)) > 500 || data.Latitude == nil) {
 		return false
 	}
 	return true
 }
 
 func validAdminClosePayloadShape(raw json.RawMessage) bool {
-	if hasFields(raw, "reason", "challenge_id") {
-		return true
-	}
 	if !hasExactFields(raw, "reason", "challenge_id", "available_data") {
 		return false
 	}

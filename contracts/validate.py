@@ -105,6 +105,8 @@ def main():
         ("issue-resolved.json", "IssueResponse"),
         ("issue-admin-resolution-conversation.json", "Conversation"),
         ("vehicle-odometer-correction-conversation.json", "Conversation"),
+        ("admin-close-conversation.json", "Conversation"),
+        ("admin-close-challenge-conversation.json", "Conversation"),
     ):
         check_example(data, "examples/" + filename, schema_name)
     assigned_issue = load_json("examples/issue-assigned.json")["data"]
@@ -178,6 +180,34 @@ def main():
     invalid_odometer["context"]["correction_odometer_km"] = -1
     if jsonschema.Draft202012Validator(schema_for(data, "Conversation")).is_valid(invalid_odometer):
         raise RuntimeError("Отрицательное значение одометра было принято")
+    admin_close = check_example(data, "examples/admin-close-conversation.json", "Conversation")
+    close_context = admin_close["context"]
+    if (admin_close["flow"] != "trip_admin_close" or admin_close["step"] != "confirm"
+            or close_context["trip_id"] is None or close_context["trip_version"] is None
+            or not close_context["draft_text"] or close_context["admin_close_data"] is None
+            or admin_close["pending_input_kind"] != "none"):
+        raise RuntimeError("Неверная семантика admin-close conversation")
+    admin_close_challenge = check_example(
+        data, "examples/admin-close-challenge-conversation.json", "Conversation")
+    challenge_context = admin_close_challenge["context"]
+    if (admin_close_challenge["flow"] != "trip_admin_close"
+            or admin_close_challenge["step"] != "challenge"
+            or challenge_context["trip_version"] != close_context["trip_version"]
+            or challenge_context["draft_text"] != close_context["draft_text"]
+            or challenge_context["admin_close_data"] != close_context["admin_close_data"]
+            or challenge_context["challenge_id"] is None
+            or challenge_context["challenge_version"] is None
+            or len(challenge_context["challenge_options"]) != 4
+            or challenge_context["challenge_expires_at"] is None):
+        raise RuntimeError("Admin-close challenge не восстанавливает сохранённый intent")
+    invalid_close = copy.deepcopy(admin_close)
+    invalid_close["context"]["admin_close_data"]["longitude"] = None
+    if jsonschema.Draft202012Validator(schema_for(data, "Conversation")).is_valid(invalid_close):
+        raise RuntimeError("Admin close принял частично заданные координаты")
+    invalid_close_challenge = copy.deepcopy(admin_close_challenge)
+    invalid_close_challenge["context"]["challenge_version"] = 0
+    if jsonschema.Draft202012Validator(schema_for(data, "Conversation")).is_valid(invalid_close_challenge):
+        raise RuntimeError("Admin close принял недопустимую версию challenge")
     issue_categories = load_json("examples/issue-categories.json")
     if (issue_categories["contract_version"] != data["info"]["version"]
             or {request["payload"]["category"] for request in issue_categories["requests"]}
@@ -245,6 +275,10 @@ def main():
     invalid_admin_close["payload"]["intent_payload"]["available_data"] = None
     if jsonschema.Draft202012Validator(create_schema).is_valid(invalid_admin_close):
         raise RuntimeError("Admin challenge с null available_data принят")
+    invalid_admin_close = copy.deepcopy(close_entry["create_command"])
+    del invalid_admin_close["payload"]["intent_payload"]["available_data"]
+    if jsonschema.Draft202012Validator(create_schema).is_valid(invalid_admin_close):
+        raise RuntimeError("Admin challenge без явного available_data принят")
     invalid_flow = copy.deepcopy(post_return_conversation)
     invalid_flow["flow"] = "unknown_flow"
     if jsonschema.Draft202012Validator(schema_for(data, "Conversation")).is_valid(invalid_flow):

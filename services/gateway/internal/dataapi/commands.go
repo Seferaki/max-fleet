@@ -266,7 +266,7 @@ func (c *Client) EmployeeAccess(ctx context.Context, actorMaxID, employeeID stri
 }
 
 func (c *Client) TripAdminClose(ctx context.Context, actorMaxID, tripID string, version int64, reason, challengeID string, availableData *AdminCloseData, key string, inbox *InboxLease) (CommandResult, error) {
-	if !validAdminText(reason, 1000) || !validUUID(challengeID) || !validAdminCloseData(availableData) {
+	if !validAdminText(reason, 1000) || !validUUID(challengeID) || availableData == nil || !validAdminCloseData(availableData) {
 		return CommandResult{}, errors.New("data-api: invalid admin close input")
 	}
 	payload := adminCommandPayload{Reason: reason, ChallengeID: challengeID, AvailableData: availableData}
@@ -389,7 +389,7 @@ func validAdminChallengeIntent(purpose string, intent AdminChallengeIntent) bool
 	case "vehicle_block":
 		return validAdminTextPointer(intent.Reason, 1000) && intent.ReviewCompleted == nil && intent.CanStartTrip == nil && intent.AvailableData == nil
 	case "admin_close":
-		return validAdminTextPointer(intent.Reason, 1000) && intent.ReviewCompleted == nil && intent.CanStartTrip == nil && validAdminCloseData(intent.AvailableData)
+		return validAdminTextPointer(intent.Reason, 1000) && intent.ReviewCompleted == nil && intent.CanStartTrip == nil && intent.AvailableData != nil && validAdminCloseData(intent.AvailableData)
 	case "vehicle_unblock":
 		return validAdminTextPointer(intent.Reason, 1000) && intent.ReviewCompleted != nil && *intent.ReviewCompleted && intent.CanStartTrip == nil && intent.AvailableData == nil
 	case "employee_access":
@@ -409,7 +409,7 @@ func validAdminCloseData(data *AdminCloseData) bool {
 	}
 	if data.FuelLevel != nil && !validFuel(*data.FuelLevel) || data.OdometerKM != nil && (*data.OdometerKM < 0 || *data.OdometerKM > 10_000_000) ||
 		data.Latitude == nil != (data.Longitude == nil) || data.Latitude != nil && (math.IsNaN(*data.Latitude) || math.IsInf(*data.Latitude, 0) || *data.Latitude < -90 || *data.Latitude > 90) ||
-		data.Longitude != nil && (math.IsNaN(*data.Longitude) || math.IsInf(*data.Longitude, 0) || *data.Longitude < -180 || *data.Longitude > 180) || data.Landmark != nil && utf8.RuneCountInString(*data.Landmark) > 500 {
+		data.Longitude != nil && (math.IsNaN(*data.Longitude) || math.IsInf(*data.Longitude, 0) || *data.Longitude < -180 || *data.Longitude > 180) || data.Landmark != nil && (utf8.RuneCountInString(*data.Landmark) > 500 || data.Latitude == nil) {
 		return false
 	}
 	return true

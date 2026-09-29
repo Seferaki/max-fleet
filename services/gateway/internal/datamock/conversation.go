@@ -13,7 +13,7 @@ import (
 
 func validConversationFlow(flow string) bool {
 	switch flow {
-	case "issue_before", "issue_during", "issue_after", "return_location", "issue_post_return", "issue_admin_resolution", "vehicle_odometer_correction":
+	case "issue_before", "issue_during", "issue_after", "return_location", "issue_post_return", "issue_admin_resolution", "vehicle_odometer_correction", "trip_admin_close":
 		return true
 	}
 	return false
@@ -25,8 +25,18 @@ func validConversationContext(context dataapi.ConversationContext) bool {
 			return false
 		}
 	}
-	if context.VehicleVersion != nil && *context.VehicleVersion < 1 || context.IssueVersion != nil && *context.IssueVersion < 1 || context.SelectedSlot != nil && (*context.SelectedSlot < 1 || *context.SelectedSlot > 8) || context.CorrectionOdometerKM != nil && *context.CorrectionOdometerKM < 0 || context.DraftText != nil && utf8.RuneCountInString(*context.DraftText) > 1000 || context.Cursor != nil && len(*context.Cursor) > 2048 || len(context.AssetIDs) > 3 {
+	if context.VehicleVersion != nil && *context.VehicleVersion < 1 || context.IssueVersion != nil && *context.IssueVersion < 1 || context.TripVersion != nil && *context.TripVersion < 1 || context.ChallengeVersion != nil && *context.ChallengeVersion < 1 || context.SelectedSlot != nil && (*context.SelectedSlot < 1 || *context.SelectedSlot > 8) || context.CorrectionOdometerKM != nil && *context.CorrectionOdometerKM < 0 || context.DraftText != nil && utf8.RuneCountInString(*context.DraftText) > 1000 || context.Cursor != nil && len(*context.Cursor) > 2048 || len(context.AssetIDs) > 3 || context.ChallengeQuestion != nil && utf8.RuneCountInString(*context.ChallengeQuestion) > 200 || len(context.ChallengeOptions) > 4 {
 		return false
+	}
+	if context.AdminCloseData != nil && !validMockAdminCloseData(context.AdminCloseData) || context.ChallengeExpiresAt != nil && context.ChallengeID == nil {
+		return false
+	}
+	seenOptions := make(map[int]bool, len(context.ChallengeOptions))
+	for _, option := range context.ChallengeOptions {
+		if option < 0 || option > 18 || seenOptions[option] {
+			return false
+		}
+		seenOptions[option] = true
 	}
 	if context.IssueCategory != nil && !validIssueCategory(*context.IssueCategory) {
 		return false
@@ -61,6 +71,10 @@ func (s *Server) saveConversation(w http.ResponseWriter, requestID, actor string
 		s.failVersion(w, requestID, http.StatusConflict, "STALE_VERSION", currentVersion)
 		return dataapi.CommandResult{}, false
 	}
+	if input.Flow != "trip_admin_close" && (input.Context.TripVersion != nil || input.Context.AdminCloseData != nil || input.Context.ChallengeVersion != nil || input.Context.ChallengeQuestion != nil || len(input.Context.ChallengeOptions) != 0 || input.Context.ChallengeExpiresAt != nil) {
+		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
+		return dataapi.CommandResult{}, false
+	}
 	valid := false
 	switch input.Flow {
 	case "issue_before":
@@ -77,6 +91,8 @@ func (s *Server) saveConversation(w http.ResponseWriter, requestID, actor string
 		valid = s.validAdminIssueResolutionConversation(actor, input)
 	case "vehicle_odometer_correction":
 		valid = s.validVehicleOdometerCorrectionConversation(actor, input)
+	case "trip_admin_close":
+		valid = s.validTripAdminCloseConversation(actor, input)
 	}
 	if !valid {
 		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
@@ -84,9 +100,57 @@ func (s *Server) saveConversation(w http.ResponseWriter, requestID, actor string
 	}
 	context := input.Context
 	context.AssetIDs = append([]string(nil), input.Context.AssetIDs...)
+	context.ChallengeOptions = append([]int(nil), input.Context.ChallengeOptions...)
 	conversation := dataapi.Conversation{Flow: input.Flow, Step: input.Step, Context: context, PendingInputKind: input.PendingInputKind, Version: currentVersion + 1, UpdatedAt: s.now().UTC()}
 	s.conversations[actor] = conversation
 	return commandResult("conversation.save", conversation), true
+}
+
+func (s *Server) validTripAdminCloseConversation(actor string, input dataapi.ConversationSaveInput) bool {
+	employee, found := s.employees[actor]
+	c := input.Context
+	if !found || employee.Role != "admin" || c.TripID == nil || c.TripVersion == nil || *c.TripVersion < 1 ||
+		c.TargetID != nil || c.VehicleID != nil || c.VehicleVersion != nil || c.IssueID != nil || c.IssueVersion != nil ||
+		c.ReturnID != nil || c.IssueCategory != nil || c.SelectedSlot != nil || c.Cursor != nil || c.CorrectionOdometerKM != nil || len(c.AssetIDs) != 0 {
+		return false
+	}
+	trip, exists := s.trips[*c.TripID]
+	if !exists {
+		return false
+	}
+	activeTrip := trip.Status == "active" || trip.Status == "returning"
+	noChallenge := c.ChallengeID == nil && c.ChallengeVersion == nil && c.ChallengeQuestion == nil && len(c.ChallengeOptions) == 0 && c.ChallengeExpiresAt == nil
+	noCloseDraft := c.DraftText == nil && c.AdminCloseData == nil
+	pending := input.PendingInputKind
+	if input.Step == "await_details" {
+		return activeTrip && trip.Version == *c.TripVersion && noCloseDraft && noChallenge && pending != nil && *pending == "text"
+	}
+	if input.Step == "cancelled" {
+		return trip.Status != "closed_by_admin" && trip.Version >= *c.TripVersion && noCloseDraft && noChallenge && pending != nil && *pending == "none"
+	}
+	if input.Step == "done" {
+		return trip.Status == "closed_by_admin" && trip.Version == *c.TripVersion+1 && noCloseDraft && noChallenge && pending != nil && *pending == "none"
+	}
+	if !activeTrip || trip.Version != *c.TripVersion || c.DraftText == nil || strings.TrimSpace(*c.DraftText) == "" || c.AdminCloseData == nil || pending == nil || *pending != "none" {
+		return false
+	}
+	if input.Step == "confirm" {
+		return noChallenge
+	}
+	if input.Step != "challenge" || c.ChallengeID == nil || c.ChallengeVersion == nil || c.ChallengeQuestion == nil ||
+		strings.TrimSpace(*c.ChallengeQuestion) == "" || len(c.ChallengeOptions) != 4 || c.ChallengeExpiresAt == nil {
+		return false
+	}
+	challenge, exists := s.challenges[*c.ChallengeID]
+	if !exists || challenge.Actor != actor || challenge.Public.ID != *c.ChallengeID || challenge.Public.Purpose != "admin_close" ||
+		challenge.Public.Version != *c.ChallengeVersion || challenge.Public.Question != *c.ChallengeQuestion ||
+		!slices.Equal(challenge.Public.Options, c.ChallengeOptions) || !challenge.Public.ExpiresAt.Equal(*c.ChallengeExpiresAt) || challenge.AdminTargetID != *c.TripID {
+		return false
+	}
+	version, reason := *c.TripVersion, *c.DraftText
+	intent := adminChallengeIntent{Operation: "trip.admin_close", TargetID: c.TripID, ExpectedVersion: &version, Reason: &reason, AvailableData: c.AdminCloseData}
+	hash, err := adminIntentHash(intent)
+	return err == nil && hash == challenge.AdminIntentSHA256
 }
 
 func (s *Server) validAdminIssueResolutionConversation(actor string, input dataapi.ConversationSaveInput) bool {

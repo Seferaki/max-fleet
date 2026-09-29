@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-// DTOs mirror the read projections of contracts/data-api.openapi.yaml v1.11.
+// DTOs mirror the read projections of contracts/data-api.openapi.yaml v1.12.
 // Nullable fields use pointers so absent values remain distinct from zero values.
 type Meta struct {
 	ContractVersion string   `json:"contract_version"`
@@ -175,20 +175,26 @@ type CurrentState struct {
 }
 
 type ConversationContext struct {
-	TargetID             *string  `json:"target_id,omitempty"`
-	VehicleID            *string  `json:"vehicle_id,omitempty"`
-	VehicleVersion       *int64   `json:"vehicle_version,omitempty"`
-	IssueCategory        *string  `json:"issue_category,omitempty"`
-	DraftText            *string  `json:"draft_text,omitempty"`
-	AssetIDs             []string `json:"asset_ids,omitempty"`
-	IssueID              *string  `json:"issue_id,omitempty"`
-	IssueVersion         *int64   `json:"issue_version,omitempty"`
-	SelectedSlot         *int     `json:"selected_slot,omitempty"`
-	ChallengeID          *string  `json:"challenge_id,omitempty"`
-	TripID               *string  `json:"trip_id,omitempty"`
-	ReturnID             *string  `json:"return_id,omitempty"`
-	Cursor               *string  `json:"cursor,omitempty"`
-	CorrectionOdometerKM *int64   `json:"correction_odometer_km,omitempty"`
+	TargetID             *string         `json:"target_id,omitempty"`
+	VehicleID            *string         `json:"vehicle_id,omitempty"`
+	VehicleVersion       *int64          `json:"vehicle_version,omitempty"`
+	IssueCategory        *string         `json:"issue_category,omitempty"`
+	DraftText            *string         `json:"draft_text,omitempty"`
+	AssetIDs             []string        `json:"asset_ids,omitempty"`
+	IssueID              *string         `json:"issue_id,omitempty"`
+	IssueVersion         *int64          `json:"issue_version,omitempty"`
+	TripVersion          *int64          `json:"trip_version,omitempty"`
+	SelectedSlot         *int            `json:"selected_slot,omitempty"`
+	ChallengeID          *string         `json:"challenge_id,omitempty"`
+	TripID               *string         `json:"trip_id,omitempty"`
+	ReturnID             *string         `json:"return_id,omitempty"`
+	Cursor               *string         `json:"cursor,omitempty"`
+	CorrectionOdometerKM *int64          `json:"correction_odometer_km,omitempty"`
+	AdminCloseData       *AdminCloseData `json:"admin_close_data,omitempty"`
+	ChallengeVersion     *int64          `json:"challenge_version,omitempty"`
+	ChallengeQuestion    *string         `json:"challenge_question,omitempty"`
+	ChallengeOptions     []int           `json:"challenge_options,omitempty"`
+	ChallengeExpiresAt   *time.Time      `json:"challenge_expires_at,omitempty"`
 }
 
 type Conversation struct {

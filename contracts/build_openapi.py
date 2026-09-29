@@ -1,4 +1,4 @@
-"""Build the reviewed MAX Fleet v1.11 internal HTTP contract.
+"""Build the reviewed MAX Fleet v1.12 internal HTTP contract.
 
 Run: py contracts/build_openapi.py
 Requires PyYAML. The generated YAML is committed so consumers do not need Python.
@@ -63,7 +63,7 @@ schemas = {
     "FuelLevel": {"type": "integer", "enum": [0, 25, 50, 75, 100]},
     "PhotoSlot": integer(1, 8),
     "IssueCategory": string(enum=["body_damage", "mechanical", "cleanliness", "keys", "parking", "car_lock", "other"]),
-    "ConversationFlow": string(enum=["issue_before", "issue_during", "issue_after", "return_location", "issue_post_return", "issue_admin_resolution", "vehicle_odometer_correction"]),
+    "ConversationFlow": string(enum=["issue_before", "issue_during", "issue_after", "return_location", "issue_post_return", "issue_admin_resolution", "vehicle_odometer_correction", "trip_admin_close"]),
     "ErrorCode": string(enum=[
         "INVALID_REQUEST", "UNSUPPORTED_EVENT", "INVALID_SERVICE_TOKEN", "ACCESS_DENIED",
         "ADMIN_REQUIRED", "CANNOT_START_TRIP", "NOT_FOUND", "VEHICLE_UNAVAILABLE",
@@ -220,7 +220,7 @@ schemas = {
         "conversation_version": ref("Version"),
     }, ("checkout", "trip", "return", "next_step", "conversation", "conversation_version")),
     "Meta": obj({
-        "contract_version": {"const": "1.11"}, "build_sha": string(64),
+        "contract_version": {"const": "1.12"}, "build_sha": string(64),
         "mode": string(enum=["mock", "real"]), "capabilities": array(string(80)),
     }, ("contract_version", "build_sha", "mode", "capabilities")),
     "AdminSummary": obj({
@@ -261,8 +261,8 @@ for name in ("Vehicle", "Trip", "Issue", "Employee"):
 
 spec = {
     "openapi": "3.1.0",
-    "info": {"title": "MAX Fleet Data API", "version": "1.11",
-             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.6 связывает доступные данные admin close с SHA-256 намерения. Версия 1.7 разрешает аудитируемую коррекцию только одометра snapshot активной брони или поездки без изменения inspection и assignment. Версия 1.8 публикует в Issue назначение assigned_to, комментарий и автора/время терминального решения; issue.resolve при первом переходе в in_progress устанавливает employee ID из проверенного admin actor, а последующие терминальные переходы сохраняют назначение. Версия 1.9 уточняет, что in_progress принимает только status, а терминальные решения требуют комментарий и подтверждение. Версия 1.10 добавляет проверяемый и восстанавливаемый issue_admin_resolution conversation с CAS по Issue.version. Версия 1.11 добавляет vehicle_odometer_correction conversation с CAS по Vehicle.version и явным подтверждением до аудируемого изменения snapshot."},
+    "info": {"title": "MAX Fleet Data API", "version": "1.12",
+             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.6 связывает доступные данные admin close с SHA-256 намерения. Версия 1.7 разрешает аудитируемую коррекцию только одометра snapshot активной брони или поездки без изменения inspection и assignment. Версия 1.8 публикует в Issue назначение assigned_to, комментарий и автора/время терминального решения; issue.resolve при первом переходе в in_progress устанавливает employee ID из проверенного admin actor, а последующие терминальные переходы сохраняют назначение. Версия 1.9 уточняет, что in_progress принимает только status, а терминальные решения требуют комментарий и подтверждение. Версия 1.10 добавляет проверяемый и восстанавливаемый issue_admin_resolution conversation с CAS по Issue.version. Версия 1.11 добавляет vehicle_odometer_correction conversation с CAS по Vehicle.version и явным подтверждением до аудируемого изменения snapshot. Версия 1.12 добавляет durable trip_admin_close conversation с CAS по Trip.version, причиной, только явно известными available_data и полным состоянием math challenge для восстановления после перезапуска."},
     "servers": [{"url": "http://data-api:8000"}, {"url": "http://data-mock:8000"}],
     "tags": [{"name": name, "description": description} for name, description in (
         ("read", "Чтение доменных данных с проверкой actor и прав"),
@@ -280,7 +280,7 @@ spec = {
         },
         "parameters": {
             "ContractVersion": {"name": "X-Contract-Version", "in": "header", "required": True,
-                                "schema": {"const": "1.11"}},
+                                "schema": {"const": "1.12"}},
             "RequestID": {"name": "X-Request-ID", "in": "header", "required": True,
                           "schema": ref("UUID")},
             "ActorMaxID": {"name": "X-Actor-Max-ID", "in": "header", "required": True,
@@ -396,16 +396,22 @@ schemas["Conversation"] = obj({
                     "return_id": nullable(ref("UUID")),
                     "issue_id": nullable(ref("UUID")),
                     "issue_version": nullable(ref("Version")),
+                    "trip_version": nullable(ref("Version")),
                     "cursor": nullable(string(2048)),
                     "draft_text": nullable(string(1000)),
                     "issue_category": nullable(ref("IssueCategory")),
                     "asset_ids": {**array(ref("UUID"), 3), "uniqueItems": True},
                     "vehicle_version": nullable(ref("Version")),
-                    "correction_odometer_km": nullable(integer())}),
+                    "correction_odometer_km": nullable(integer()),
+                    "admin_close_data": nullable(ref("AdminCloseData")),
+                    "challenge_version": nullable(ref("Version")),
+                    "challenge_question": nullable(string(200)),
+                    "challenge_options": array(integer(0, 18), 4),
+                    "challenge_expires_at": nullable(ref("Timestamp"))}),
     "pending_input_kind": nullable(string(enum=["text", "photo", "geo", "none"])),
     "version": ref("Version"), "updated_at": ref("Timestamp"),
 }, ("flow", "step", "context", "pending_input_kind", "version", "updated_at"),
-    "issue_post_return belongs to the actor's own completed trip. target_id and trip_id are that trip ID; vehicle_id and vehicle_version bind the draft to its vehicle snapshot. draft_text, issue_category and up to three trip-scoped asset_ids survive restart. Saving the issue uses issue.create with trip_id and inspection_id=null; it must not update the completed trip or finalized after-inspection. issue_admin_resolution is admin-only and binds issue_id plus issue_version to the current issue. It stores the resolution comment before confirmation so restart can resume safely; take-work itself remains status-only. vehicle_odometer_correction is admin-only and binds vehicle_id plus vehicle_version to one active holding/in_trip vehicle. It stores correction_odometer_km and the reason in draft_text before explicit confirmation; restart resumes the same proposed value and reason.")
+    "issue_post_return belongs to the actor's own completed trip. target_id and trip_id are that trip ID; vehicle_id and vehicle_version bind the draft to its vehicle snapshot. draft_text, issue_category and up to three trip-scoped asset_ids survive restart. Saving the issue uses issue.create with trip_id and inspection_id=null; it must not update the completed trip or finalized after-inspection. issue_admin_resolution is admin-only and binds issue_id plus issue_version to the current issue. It stores the resolution comment before confirmation so restart can resume safely; take-work itself remains status-only. vehicle_odometer_correction is admin-only and binds vehicle_id plus vehicle_version to one active holding/in_trip vehicle. It stores correction_odometer_km and the reason in draft_text before explicit confirmation; restart resumes the same proposed value and reason. trip_admin_close is admin-only and binds trip_id plus trip_version to one active or returning trip. It stores the required reason and only explicitly known admin_close_data before confirmation; omitted values remain missing. The math challenge ID, version, question, options and expiry are saved so the same confirmation can resume after restart.")
 
 schemas["LocationInput"] = obj({
     "latitude": {"type": "number", "minimum": -90, "maximum": 90},
@@ -446,7 +452,7 @@ schemas["TripAdminCloseIntent"] = obj({
     "operation": {"const": "trip.admin_close"},
     "target_id": ref("UUID"), "expected_version": ref("Version"),
     "reason": string(1000), "available_data": ref("AdminCloseData"),
-}, ("operation", "target_id", "expected_version", "reason"))
+}, ("operation", "target_id", "expected_version", "reason", "available_data"))
 schemas["ChallengeIntent"] = {
     "oneOf": [ref(name) for name in (
         "CheckoutCreateIntent", "TripBeginReturnIntent", "VehicleBlockIntent",
@@ -480,7 +486,16 @@ schemas["AdminCloseData"] = obj({
     "longitude": {"type": "number", "minimum": -180, "maximum": 180},
     "landmark": string(500), "keys_returned": {"type": "boolean"},
     "car_locked": {"type": "boolean"},
-})
+}, description="Only facts explicitly supplied by an administrator. Omitted properties remain unknown. latitude and longitude must be supplied together; landmark requires coordinates.")
+schemas["AdminCloseData"]["allOf"] = [
+    {"if": {"required": ["latitude"], "properties": {"latitude": {}}},
+     "then": {"required": ["longitude"], "properties": {"longitude": {}}}},
+    {"if": {"required": ["longitude"], "properties": {"longitude": {}}},
+     "then": {"required": ["latitude"], "properties": {"latitude": {}}}},
+    {"if": {"required": ["landmark"], "properties": {"landmark": {}}},
+     "then": {"anyOf": [{"required": ["latitude"], "properties": {"latitude": {}}},
+                          {"required": ["longitude"], "properties": {"longitude": {}}}]}},
+]
 
 
 def payload(fields, required=(), min_properties=None, description=None):
@@ -557,7 +572,7 @@ command_specs = [
     ("trip.admin_close", "existing", payload({
         "reason": string(1000), "challenge_id": ref("UUID"),
         "available_data": ref("AdminCloseData"),
-    }, ("reason", "challenge_id")), "Trip"),
+    }, ("reason", "challenge_id", "available_data")), "Trip"),
     ("conversation.save", "existing", payload({
         "flow": ref("ConversationFlow"), "step": string(80),
         "context": schemas["Conversation"]["properties"]["context"],

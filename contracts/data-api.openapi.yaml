@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: MAX Fleet Data API
-  version: '1.11'
+  version: '1.12'
   description: 'Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID
     и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом
     запросе. Версия 1.6 связывает доступные данные admin close с SHA-256 намерения. Версия 1.7 разрешает аудитируемую
@@ -11,12 +11,13 @@ info:
     переходы сохраняют назначение. Версия 1.9 уточняет, что in_progress принимает только status, а терминальные
     решения требуют комментарий и подтверждение. Версия 1.10 добавляет проверяемый и восстанавливаемый issue_admin_resolution
     conversation с CAS по Issue.version. Версия 1.11 добавляет vehicle_odometer_correction conversation с CAS по
-    Vehicle.version и явным подтверждением до аудируемого изменения snapshot. Версии: vehicle растёт при смене доступности,
-    блокировке, issue и коррекции; checkout при изменении оформления; inspection при ответе, фото и подтверждении;
-    return при месте/отмене/завершении; trip при начале возврата, отмене, завершении и admin close; conversation
-    только при save. Фото повышает inspection и его родительский checkout/return version. Перед start/complete Go
-    читает актуальный агрегат. Hold равен 15 минутам серверного времени. Finalized inspection неизменяем, admin
-    close не подставляет отсутствующие данные.'
+    Vehicle.version и явным подтверждением до аудируемого изменения snapshot. Версия 1.12 добавляет durable trip_admin_close
+    conversation с CAS по Trip.version, причиной, только явно известными available_data и полным состоянием math
+    challenge для восстановления после перезапуска. Версии: vehicle растёт при смене доступности, блокировке, issue
+    и коррекции; checkout при изменении оформления; inspection при ответе, фото и подтверждении; return при месте/отмене/завершении;
+    trip при начале возврата, отмене, завершении и admin close; conversation только при save. Фото повышает inspection
+    и его родительский checkout/return version. Перед start/complete Go читает актуальный агрегат. Hold равен 15
+    минутам серверного времени. Finalized inspection неизменяем, admin close не подставляет отсутствующие данные.'
 servers:
 - url: http://data-api:8000
 - url: http://data-mock:8000
@@ -51,7 +52,7 @@ components:
       in: header
       required: true
       schema:
-        const: '1.11'
+        const: '1.12'
     RequestID:
       name: X-Request-ID
       in: header
@@ -142,6 +143,7 @@ components:
       - issue_post_return
       - issue_admin_resolution
       - vehicle_odometer_correction
+      - trip_admin_close
     ErrorCode:
       type: string
       enum:
@@ -847,7 +849,7 @@ components:
       additionalProperties: false
       properties:
         contract_version:
-          const: '1.11'
+          const: '1.12'
         build_sha:
           type: string
           maxLength: 64
@@ -1228,6 +1230,10 @@ components:
               oneOf:
               - $ref: '#/components/schemas/Version'
               - type: 'null'
+            trip_version:
+              oneOf:
+              - $ref: '#/components/schemas/Version'
+              - type: 'null'
             cursor:
               oneOf:
               - type: string
@@ -1257,6 +1263,30 @@ components:
               - type: integer
                 minimum: 0
               - type: 'null'
+            admin_close_data:
+              oneOf:
+              - $ref: '#/components/schemas/AdminCloseData'
+              - type: 'null'
+            challenge_version:
+              oneOf:
+              - $ref: '#/components/schemas/Version'
+              - type: 'null'
+            challenge_question:
+              oneOf:
+              - type: string
+                maxLength: 200
+              - type: 'null'
+            challenge_options:
+              type: array
+              items:
+                type: integer
+                minimum: 0
+                maximum: 18
+              maxItems: 4
+            challenge_expires_at:
+              oneOf:
+              - $ref: '#/components/schemas/Timestamp'
+              - type: 'null'
         pending_input_kind:
           oneOf:
           - type: string
@@ -1285,6 +1315,10 @@ components:
         so restart can resume safely; take-work itself remains status-only. vehicle_odometer_correction is admin-only
         and binds vehicle_id plus vehicle_version to one active holding/in_trip vehicle. It stores correction_odometer_km
         and the reason in draft_text before explicit confirmation; restart resumes the same proposed value and reason.
+        trip_admin_close is admin-only and binds trip_id plus trip_version to one active or returning trip. It stores
+        the required reason and only explicitly known admin_close_data before confirmation; omitted values remain
+        missing. The math challenge ID, version, question, options and expiry are saved so the same confirmation
+        can resume after restart.
     LocationInput:
       type: object
       additionalProperties: false
@@ -1444,6 +1478,7 @@ components:
       - target_id
       - expected_version
       - reason
+      - available_data
     ChallengeIntent:
       oneOf:
       - $ref: '#/components/schemas/CheckoutCreateIntent'
@@ -1581,6 +1616,44 @@ components:
           type: boolean
         car_locked:
           type: boolean
+      description: Only facts explicitly supplied by an administrator. Omitted properties remain unknown. latitude
+        and longitude must be supplied together; landmark requires coordinates.
+      allOf:
+      - if:
+          required:
+          - latitude
+          properties:
+            latitude: {}
+        then:
+          required:
+          - longitude
+          properties:
+            longitude: {}
+      - if:
+          required:
+          - longitude
+          properties:
+            longitude: {}
+        then:
+          required:
+          - latitude
+          properties:
+            latitude: {}
+      - if:
+          required:
+          - landmark
+          properties:
+            landmark: {}
+        then:
+          anyOf:
+          - required:
+            - latitude
+            properties:
+              latitude: {}
+          - required:
+            - longitude
+            properties:
+              longitude: {}
     CheckoutCreateCommand:
       type: object
       additionalProperties: false
@@ -2163,6 +2236,7 @@ components:
           required:
           - reason
           - challenge_id
+          - available_data
       required:
       - operation
       - target_id

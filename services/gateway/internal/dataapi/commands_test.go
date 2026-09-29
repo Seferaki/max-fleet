@@ -234,12 +234,18 @@ func TestAdminCommandClientRejectsInvalidIntentBeforeNetwork(t *testing.T) {
 	if _, err := c.AdminChallengeCreate(context.Background(), "900001", "vehicle_block", AdminChallengeIntent{Operation: "vehicle.block", TargetID: &target, ExpectedVersion: &version, Reason: &reason, AvailableData: &AdminCloseData{FuelLevel: &fuel}}, "admin-challenge-3", nil); err == nil {
 		t.Fatal("admin-close data was accepted for vehicle.block")
 	}
+	if _, err := c.AdminChallengeCreate(context.Background(), "900001", "admin_close", AdminChallengeIntent{Operation: "trip.admin_close", TargetID: &target, ExpectedVersion: &version, Reason: &reason}, "admin-challenge-4", nil); err == nil {
+		t.Fatal("admin close challenge without explicit available_data accepted")
+	}
 	if _, err := c.VehicleUnblock(context.Background(), "900001", target, version, reason, commandVehicleID, false, "vehicle-unblock-2", nil); err == nil {
 		t.Fatal("unblock without completed review accepted")
 	}
 	latitude := 55.75
 	if _, err := c.TripAdminClose(context.Background(), "900001", target, version, reason, commandVehicleID, &AdminCloseData{Latitude: &latitude}, "admin-close-2", nil); err == nil {
 		t.Fatal("partial coordinates accepted")
+	}
+	if _, err := c.TripAdminClose(context.Background(), "900001", target, version, reason, commandVehicleID, nil, "admin-close-3", nil); err == nil {
+		t.Fatal("admin close without explicit available_data accepted")
 	}
 	if calls != 0 {
 		t.Fatalf("sent %d invalid requests", calls)
