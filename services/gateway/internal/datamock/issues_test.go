@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -141,5 +142,88 @@ func TestDuringAndAfterIssuesKeepTripAndRequireReport(t *testing.T) {
 	finish, err := dataapi.DecodeAggregate[dataapi.Return](completed)
 	if err != nil || finish.Status != "completed" || mock.vehicles[0].Status != "unavailable" || !mock.vehicles[0].NeedsReview || len(mock.trips[tripID].Issues) != 2 {
 		t.Fatalf("dirty return released vehicle: %+v %v", finish, err)
+	}
+}
+
+func TestPostReturnIssueKeepsCompletedTripAndBlocksHeldVehicle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	now := time.Date(2026, 9, 29, 9, 0, 0, 0, time.UTC)
+	mock, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	tripID := "20000000-0000-4000-8000-000000000001"
+	beforeID := "40000000-0000-4000-8000-000000000001"
+	afterID := "40000000-0000-4000-8000-000000000002"
+	employee := mock.employees[driverID]
+	finished := dataapi.Trip{
+		ID: tripID, VehicleID: firstVehicleID, EmployeeID: employee.ID,
+		Status: "completed", BeforeInspection: dataapi.Inspection{ID: beforeID, Phase: "before", Status: "finalized", Version: 2},
+		AfterInspection: &dataapi.Inspection{ID: afterID, Phase: "after", Status: "finalized", Version: 3},
+		Issues:          []dataapi.Issue{}, Version: 4, UpdatedAt: now,
+	}
+	mock.trips[tripID] = finished
+	client := commandClient(t, mock)
+	ctx := context.Background()
+	other := "8000000000000000002"
+	heldResult, err := client.CheckoutCreate(ctx, other, firstVehicleID, 1, "later-driver-hold", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := dataapi.DecodeAggregate[dataapi.Checkout](heldResult)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := client.StageIssueAsset(ctx, driverID, dataapi.IssueStageInput{
+		ScopeType: "trip", ScopeID: tripID, SourceEventKey: "post-return-photo", IdempotencyKey: "post-return-stage", ContentType: "image/png", Image: syntheticPNG(t, 71),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := dataapi.IssueCreateInput{Category: "mechanical", Description: "После возврата слышен посторонний звук", TripID: &tripID, AssetIDs: []string{asset.AssetID}}
+	_, err = client.IssueCreate(ctx, other, firstVehicleID, 2, input, "foreign-post-return", nil)
+	expectAPIError(t, err, "NOT_FOUND")
+	_, err = client.IssueCreate(ctx, driverID, firstVehicleID, 3, input, "stale-post-return", nil)
+	expectAPIError(t, err, "STALE_VERSION")
+	save := mock.saveSnapshot
+	mock.saveSnapshot = func(stateSnapshot) error { return errors.New("injected post-return save failure") }
+	_, err = client.IssueCreate(ctx, driverID, firstVehicleID, 2, input, "failed-post-return", nil)
+	expectAPIError(t, err, "TEMPORARY_FAILURE")
+	mock.saveSnapshot = save
+	if len(mock.issues) != 0 || len(mock.notifications) != 0 || !reflect.DeepEqual(mock.trips[tripID], finished) {
+		t.Fatal("failed save changed completed trip, issues or outbox")
+	}
+	result, err := client.IssueCreate(ctx, driverID, firstVehicleID, 2, input, "post-return-issue", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err := dataapi.DecodeAggregate[dataapi.Issue](result)
+	if err != nil || issue.Stage != "post_return" || issue.TripID == nil || *issue.TripID != tripID || issue.InspectionID != nil || len(issue.AssetIDs) != 1 {
+		t.Fatalf("post-return issue: %+v %v", issue, err)
+	}
+	if !reflect.DeepEqual(mock.trips[tripID], finished) || mock.vehicles[0].Status != "unavailable" || !mock.vehicles[0].NeedsReview || len(mock.notifications) != 1 {
+		t.Fatal("post-return changed snapshot or failed to block and notify")
+	}
+	currentHold, err := client.Checkout(ctx, other, held.ID)
+	if err != nil || currentHold.Status != "rejected" {
+		t.Fatalf("later hold remained active: %+v %v", currentHold, err)
+	}
+	projected, err := client.Trip(ctx, driverID, tripID)
+	if err != nil || projected.Version != finished.Version || len(projected.Issues) != 1 || projected.Issues[0].ID != issue.ID {
+		t.Fatalf("history projection: %+v %v", projected, err)
+	}
+	_, err = client.Trip(ctx, other, tripID)
+	expectAPIError(t, err, "NOT_FOUND")
+	replay, err := client.IssueCreate(ctx, driverID, firstVehicleID, 2, input, "post-return-issue", nil)
+	if err != nil || replay.Operation != "issue.create" || len(mock.issues) != 1 || len(mock.notifications) != 1 {
+		t.Fatalf("idempotent replay: %+v %v", replay, err)
+	}
+	restarted, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := commandClient(t, restarted).Trip(ctx, driverID, tripID)
+	if err != nil || restored.Version != finished.Version || len(restored.Issues) != 1 || !reflect.DeepEqual(restarted.trips[tripID], finished) {
+		t.Fatalf("restart projection: %+v %v", restored, err)
 	}
 }

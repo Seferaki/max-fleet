@@ -122,7 +122,7 @@ func (s *Server) stageScopeOwned(actor, scopeType, scopeID string) bool {
 		}
 	case "trip":
 		trip := s.trips[scopeID]
-		return trip.ID != "" && trip.EmployeeID == employee.ID && (trip.Status == "active" || trip.Status == "returning")
+		return trip.ID != "" && trip.EmployeeID == employee.ID && (trip.Status == "active" || trip.Status == "returning" || trip.Status == "completed")
 	case "vehicle":
 		for _, checkout := range s.checkouts {
 			if checkout.VehicleID == scopeID && checkout.EmployeeID == employee.ID && checkout.Status == "holding" {

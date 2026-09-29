@@ -476,6 +476,35 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 			return err
 		},
+		"return.post-return-issue": func(s scenarioContext) error {
+			trip, draft := s.readyReturn(false, true)
+			if _, err := s.client.ReturnComplete(s.ctx, driverID, draft.ID, draft.Version, "scenario-post-complete", nil); err != nil {
+				return err
+			}
+			completed := s.mock.trips[trip.ID]
+			result, err := s.client.IssueCreate(s.ctx, driverID, firstVehicleID, s.mock.vehicles[0].Version,
+				dataapi.IssueCreateInput{Category: "mechanical", Description: "Позднее замечен звук", TripID: &trip.ID}, "scenario-post-issue", nil)
+			if err != nil {
+				return err
+			}
+			issue, err := dataapi.DecodeAggregate[dataapi.Issue](result)
+			if err == nil && (issue.Stage != "post_return" || s.mock.trips[trip.ID].Version != completed.Version || s.mock.trips[trip.ID].AfterInspection.Version != completed.AfterInspection.Version || !s.mock.vehicles[0].NeedsReview || s.mock.vehicles[0].Status != "unavailable" || len(s.mock.notifications) != 2) {
+				s.t.Fatal("post-return issue changed completed snapshot or missed review/notification")
+			}
+			return err
+		},
+		"return.post-return-foreign": func(s scenarioContext) error {
+			trip, draft := s.readyReturn(false, true)
+			if _, err := s.client.ReturnComplete(s.ctx, driverID, draft.ID, draft.Version, "scenario-foreign-complete", nil); err != nil {
+				return err
+			}
+			_, err := s.client.IssueCreate(s.ctx, "8000000000000000002", firstVehicleID, s.mock.vehicles[0].Version,
+				dataapi.IssueCreateInput{Category: "mechanical", Description: "Чужая поездка", TripID: &trip.ID}, "scenario-foreign-issue", nil)
+			if len(s.mock.issues) != 0 || len(s.mock.notifications) != 1 {
+				s.t.Fatal("foreign issue changed state or sent notification")
+			}
+			return err
+		},
 		"return.unsafe": func(s scenarioContext) error {
 			trip, draft := s.readyReturn(false, false)
 			_, err := s.client.ReturnComplete(s.ctx, driverID, draft.ID, draft.Version, "scenario-return-unsafe", nil)
@@ -673,7 +702,7 @@ func TestContractScenarioSubsetAgainstHTTPMock(t *testing.T) {
 			}
 		})
 	}
-	if len(runs) != 34 {
+	if len(runs) != 36 {
 		t.Fatal("scenario runner count changed")
 	}
 	for id := range runs {

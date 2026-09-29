@@ -395,7 +395,7 @@ func (s *Server) trip(w http.ResponseWriter, r *http.Request, requestID string) 
 		s.fail(w, requestID, http.StatusNotFound, "NOT_FOUND")
 		return
 	}
-	s.success(w, requestID, current)
+	s.success(w, requestID, s.projectTrip(current))
 }
 
 func (s *Server) checkout(w http.ResponseWriter, r *http.Request, requestID string) {
