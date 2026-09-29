@@ -188,9 +188,9 @@ func TestLivePythonReturnDialog(t *testing.T) {
 		}
 		return stored
 	}
-	deliverCallback := func(payload string) {
+	deliverCallback := func(payload string) dataapi.InboxStored {
 		t.Helper()
-		deliver(callbackItem(actorID, key(), payload, time.Now().UTC()).Event)
+		return deliver(callbackItem(actorID, key(), payload, time.Now().UTC()).Event)
 	}
 	menu := func() {
 		t.Helper()
@@ -394,8 +394,13 @@ func TestLivePythonReturnDialog(t *testing.T) {
 	if !strings.Contains(latest().Text, "Фото после: 8/8") || !strings.Contains(latest().Text, "manual_map") {
 		t.Fatalf("return summary does not include photos and manual map: %+v", latest())
 	}
+	state, err = client.State(ctx, actorID)
+	if err != nil || state.Return == nil || state.Return.Step != "checklist" {
+		t.Fatalf("return state before completion is unavailable: state=%+v err=%v", state, err)
+	}
+	completeReturnID, completeReturnVersion := state.Return.ID, state.Return.Version
 	processor = Bootstrap{Data: client, Commands: retryingClient, MAX: sender, Photos: fetcher, PhotoStore: client, Location: time.UTC}
-	deliverCallback(button("return-complete:"))
+	completionEvent := deliverCallback(button("return-complete:"))
 	if !strings.Contains(latest().Text, "Возврат подтверждён") {
 		t.Fatalf("Go dialog did not confirm completion: %+v", latest())
 	}
@@ -408,6 +413,22 @@ func TestLivePythonReturnDialog(t *testing.T) {
 		len(completed.BeforeInspection.OccupiedSlots) != 8 || len(completed.AfterInspection.OccupiedSlots) != 8 ||
 		completed.ParkingLocation == nil || completed.ParkingLocation.Source != "manual_map" {
 		t.Fatalf("Python trip lacks completed 8+8/manual-map evidence: trip=%+v err=%v", completed, err)
+	}
+	completionKey, err := inboxworker.CommandKey(dataapi.InboxClaimItem{ID: completionEvent.ID}, "return.complete")
+	if err != nil {
+		t.Fatalf("derive return-complete replay key: %v", err)
+	}
+	replayedComplete, err := client.ReturnComplete(ctx, actorID, completeReturnID, completeReturnVersion, completionKey, nil)
+	if err != nil {
+		t.Fatalf("replay committed return.complete: %v", err)
+	}
+	replayedReturn, err := dataapi.DecodeAggregate[dataapi.Return](replayedComplete)
+	if err != nil || replayedReturn.ID != completeReturnID || replayedReturn.Status != "completed" || replayedReturn.Version <= completeReturnVersion {
+		t.Fatalf("return.complete replay did not return saved completion: return=%+v err=%v", replayedReturn, err)
+	}
+	afterReplay, err := client.Trip(ctx, actorID, trip.ID)
+	if err != nil || afterReplay.Status != "completed" || afterReplay.Version != completed.Version {
+		t.Fatalf("return.complete replay mutated the completed trip: before=%+v after=%+v err=%v", completed, afterReplay, err)
 	}
 	vehicle, err = client.Vehicle(ctx, actorID, trip.VehicleID)
 	if err != nil || vehicle.Status != "available" {
