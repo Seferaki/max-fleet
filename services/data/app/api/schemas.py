@@ -6,9 +6,9 @@ import json
 import math
 import uuid
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from app.errors import DomainError
 
@@ -139,8 +139,24 @@ class EmployeeAccess(Strict):
 
 class IssueResolve(Strict):
     status: Literal["in_progress", "resolved", "known_nonblocking"]
-    comment: Annotated[str, Field(min_length=1, max_length=1000)]
-    confirmation: Literal[True]
+    comment: Annotated[str, Field(min_length=1, max_length=1000)] | None = None
+    confirmation: Literal[True] | None = None
+
+    @model_validator(mode="after")
+    def validate_transition_payload(self) -> Self:
+        if self.status == "in_progress":
+            if self.model_fields_set != {"status"}:
+                raise ValueError("in_progress accepts only status")
+            return self
+        terminal_payload = {"status", "comment", "confirmation"}
+        if (
+            self.model_fields_set != terminal_payload
+            or not self.comment
+            or not self.comment.strip()
+            or self.confirmation is not True
+        ):
+            raise ValueError("terminal issue resolution requires comment and confirmation")
+        return self
 
 
 class AdminCloseData(Strict):

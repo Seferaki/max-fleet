@@ -165,10 +165,13 @@ def test_post_return_issue_categories_and_assignment(api: Api) -> None:
 
     admin_id = api.ok(api.get("/me", ADMIN))["employee"]["id"]
     denied = api.cmd(DRIVER, "issue.resolve", parking_issue["id"], parking_issue["version"], {
-        "status": "in_progress", "comment": "Начата проверка", "confirmation": True})
+        "status": "in_progress"})
     assert denied.status_code == 403
+    stale_take_payload = api.cmd(ADMIN, "issue.resolve", parking_issue["id"], parking_issue["version"], {
+        "status": "in_progress", "comment": "Начата проверка", "confirmation": True})
+    assert stale_take_payload.status_code == 400
     assigned = api.agg(api.cmd(ADMIN, "issue.resolve", parking_issue["id"], parking_issue["version"], {
-        "status": "in_progress", "comment": "Начата проверка", "confirmation": True}))
+        "status": "in_progress"}))
     assert assigned["assigned_to"] == admin_id
     resolved = api.agg(api.cmd(ADMIN, "issue.resolve", parking_issue["id"], assigned["version"], {
         "status": "resolved", "comment": "Устранено", "confirmation": True}))
