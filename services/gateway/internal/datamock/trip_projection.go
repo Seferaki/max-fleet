@@ -6,11 +6,16 @@ import (
 	"github.com/Seferaki/max-fleet/services/gateway/internal/dataapi"
 )
 
-// projectTrip adds linked reports without changing the finalized trip snapshot.
-// Call while holding s.mu.
+// projectTrip refreshes mutable issue fields and adds linked post-return reports
+// without changing the finalized trip snapshot. Call while holding s.mu.
 func (s *Server) projectTrip(trip dataapi.Trip) dataapi.Trip {
 	if trip.Status != "completed" {
 		return trip
+	}
+	for index, issue := range trip.Issues {
+		if current, found := s.issues[issue.ID]; found {
+			trip.Issues[index] = current
+		}
 	}
 	linked := make([]dataapi.Issue, 0)
 	for _, issue := range s.issues {
