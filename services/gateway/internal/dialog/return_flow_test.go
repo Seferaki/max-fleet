@@ -19,7 +19,7 @@ func TestFullReturnThroughDialogOnMock(t *testing.T) {
 	const driver = "8000000000000000001"
 	ctx := context.Background()
 	draft := readyChecklistDraft(t, actor, driver)
-	sender := &maxsdk.RecordingTransport{}
+	sender := &recordedPreviousImage{RecordingTransport: &maxsdk.RecordingTransport{}}
 	fetcher := &syntheticPhotoFetcher{}
 	processor := Bootstrap{Data: actor, Commands: actor, MAX: sender, Photos: fetcher, PhotoStore: actor, Location: time.UTC}
 	worker := inboxworker.Worker{ID: "full-return-worker", Store: store, Processor: &processor, Now: func() time.Time { return now }}
@@ -119,6 +119,32 @@ func TestFullReturnThroughDialogOnMock(t *testing.T) {
 	vehicle, err := actor.Vehicle(ctx, driver, trip.VehicleID)
 	if err != nil || vehicle.Status != "available" {
 		t.Fatalf("vehicle was not released after confirmed complete: %+v %v", vehicle, err)
+	}
+	card := menuItem(driver, "previous-flow-car", now)
+	carCommand := "/car " + trip.VehicleID
+	card.Event.Payload.Text = &carCommand
+	if err := processor.Handle(ctx, card); err != nil {
+		t.Fatal(err)
+	}
+	callback("previous-flow-open", button("prev:"))
+	if !strings.Contains(latest().Text, "Предыдущий завершённый осмотр") {
+		t.Fatalf("completed after-inspection not shown: %+v", latest())
+	}
+	callback("previous-flow-photo-menu", button("prev-photos:"))
+	if !strings.Contains(latest().Text, "ракурс предыдущего осмотра") || len(latest().Buttons) != 9 {
+		t.Fatalf("previous photo choices missing: %+v", latest())
+	}
+	previousPhotoPayload := button("prev-photo:" + trip.VehicleID + ":")
+	callback("previous-flow-photo", previousPhotoPayload)
+	expectedFirstAfterPhoto := samplePhoto(t, 151)
+	if len(sender.images) != 1 || !strings.Contains(sender.images[0], "1/8") || !strings.Contains(sender.images[0], "image/png") || !strings.Contains(sender.images[0], string(expectedFirstAfterPhoto)) {
+		t.Fatalf("latest after photo was not privately delivered: %+v", sender.images)
+	}
+	if strings.Contains(latest().Text, trip.ID) || strings.Contains(sender.images[0], trip.ID) || strings.Contains(sender.images[0], driver) {
+		t.Fatalf("previous photo view exposed trip/driver identity: %+v %+v", latest(), sender.images)
+	}
+	if err := processor.Handle(ctx, callbackItem("8000000000000000009", "previous-flow-unknown-actor", previousPhotoPayload, now)); err != nil || len(sender.images) != 1 || !strings.Contains(latest().Text, "Доступ ещё не выдан") {
+		t.Fatalf("unknown actor read previous inspection photo: %v %+v %+v", err, latest(), sender.images)
 	}
 	changedFuel := 25
 	if _, err := actor.InspectionUpdate(ctx, driver, trip.AfterInspection.ID, trip.AfterInspection.Version, dataapi.InspectionUpdateInput{FuelLevel: &changedFuel}, "completed-trip-must-not-change-fuel", nil); err == nil {
