@@ -322,15 +322,7 @@ func (p Bootstrap) confirmAdminOdometerCorrection(ctx context.Context, item data
 			dataapi.VehicleSnapshotCorrectionInput{Reason: *conversation.Context.DraftText, OdometerKM: conversation.Context.CorrectionOdometerKM, Confirmation: true},
 			key, &dataapi.InboxLease{EventID: item.ID, Token: item.LeaseToken})
 		if err != nil {
-			var apiErr *dataapi.APIError
-			if errors.As(err, &apiErr) && (apiErr.Status == 404 || apiErr.Status == 409) {
-				current, currentErr := p.Data.Vehicle(ctx, actor, vehicleID)
-				if currentErr == nil {
-					return p.cancelStaleAdminOdometerCorrection(ctx, item, actor, maxID, employee, state, vehicleID, current.Version)
-				}
-				return p.sendView(ctx, maxID, "Машина изменилась или коррекция больше недоступна. Старое подтверждение не применено; откройте /adminodo.", nil)
-			}
-			return err
+			return p.adminOdometerCommandError(ctx, item, actor, maxID, employee, state, vehicleID, version, err)
 		}
 	}
 	corrected, err := dataapi.DecodeAggregate[dataapi.Vehicle](result)
@@ -346,6 +338,40 @@ func (p Bootstrap) confirmAdminOdometerCorrection(ctx context.Context, item data
 	}
 	return p.sendView(ctx, maxID, fmt.Sprintf("Пробег исправлен: %s км. Причина сохранена в аудите.", formatOdometer(corrected.CurrentOdometerKM)),
 		[][]maxsdk.Button{{{Text: "Активные машины", Payload: "admin-odo:list:1"}}})
+}
+
+func (p Bootstrap) adminOdometerCommandError(ctx context.Context, item dataapi.InboxClaimItem, actor string, maxID int64, employee dataapi.Employee, state dataapi.CurrentState, vehicleID string, version int64, err error) error {
+	var apiErr *dataapi.APIError
+	if !errors.As(err, &apiErr) {
+		return err
+	}
+	switch apiErr.Status {
+	case 400, 422:
+		return p.sendView(ctx, maxID, "API не принял исправление. Машина не изменена; проверьте данные, затем повторно подтвердите или отмените сохранённый черновик.", [][]maxsdk.Button{
+			{{Text: "Повторно проверить", Payload: fmt.Sprintf("admin-odo:resume:%s:%d", vehicleID, version)},
+				{Text: "Отменить", Payload: fmt.Sprintf("admin-odo:cancel:%s:%d", vehicleID, version)}},
+		})
+	case 403:
+		return p.sendView(ctx, maxID, "Право администратора изменилось. Коррекция не применена; проверьте доступ перед новой попыткой.", nil)
+	case 404:
+		return p.sendView(ctx, maxID, "Машина больше недоступна. Коррекция не применена; обновите список через /adminodo.", [][]maxsdk.Button{{
+			{Text: "Отменить черновик", Payload: fmt.Sprintf("admin-odo:cancel:%s:%d", vehicleID, version)},
+		}})
+	case 409:
+		current, currentErr := p.Data.Vehicle(ctx, actor, vehicleID)
+		if currentErr != nil {
+			var readAPIError *dataapi.APIError
+			if errors.As(currentErr, &readAPIError) && readAPIError.Status == 404 {
+				return p.sendView(ctx, maxID, "Машина больше недоступна. Коррекция не применена; отмените сохранённый черновик.", [][]maxsdk.Button{{
+					{Text: "Отменить черновик", Payload: fmt.Sprintf("admin-odo:cancel:%s:%d", vehicleID, version)},
+				}})
+			}
+			return currentErr
+		}
+		return p.cancelStaleAdminOdometerCorrection(ctx, item, actor, maxID, employee, state, vehicleID, current.Version)
+	default:
+		return err
+	}
 }
 
 func (p Bootstrap) recoverAdminOdometerCommand(ctx context.Context, actor, key, vehicleID string, version, value int64) (dataapi.CommandResult, bool, error) {
