@@ -219,6 +219,9 @@ func (p Bootstrap) showTripDetail(ctx context.Context, actor string, maxID int64
 	if trip.EmployeeID == employee.ID && trip.Status == "completed" {
 		rows = append(rows, []maxsdk.Button{{Text: "Сообщить о проблеме после поездки", Payload: fmt.Sprintf("trip-post-issue:%s:%d", trip.ID, trip.Version)}})
 	}
+	if employee.Role == "admin" && (trip.Status == "active" || trip.Status == "returning") {
+		rows = append(rows, []maxsdk.Button{{Text: "Закрыть поездку администратором", Payload: fmt.Sprintf("admin-close:start:%s:%d", trip.ID, trip.Version)}})
+	}
 	if _, ok := visibleTripInspection(trip, "before"); ok {
 		rows = append(rows, []maxsdk.Button{{Text: "Фото до", Payload: fmt.Sprintf("photo-phase:%s:%d:before", trip.ID, trip.Version)}})
 	}
