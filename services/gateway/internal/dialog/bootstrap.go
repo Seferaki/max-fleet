@@ -87,6 +87,7 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	issueKindID, issueKindVersion, issueKind, issueKindPrompt := issueCategoryTarget(item.Event)
 	issueDraftText, issueDraftCommand := issueDraftInput(item.Event)
 	tripIssueID, tripIssueVersion, tripIssueCategory, tripIssuePrompt := tripIssueTarget(item.Event)
+	tripIssuePhotoID, tripIssuePhotoVersion, tripIssuePhotoHelp := vehicleActionTarget(item.Event, "trip-issue-photos:")
 	issuePhotoID, issuePhotoVersion, issuePhotoHelp := vehicleActionTarget(item.Event, "issue-photos:")
 	issueReviewID, issueReviewVersion, issueReview := vehicleActionTarget(item.Event, "issue-review:")
 	issueSubmitID, issueSubmitVersion, issueSubmit := vehicleActionTarget(item.Event, "issue-submit:")
@@ -111,7 +112,7 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !tripIssuePhotoHelp && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -251,6 +252,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	if issuePhotoHelp {
 		return p.issuePhotoHelp(ctx, maxID, state, issuePhotoID, issuePhotoVersion)
 	}
+	if tripIssuePhotoHelp {
+		return p.issuePhotoHelp(ctx, maxID, state, tripIssuePhotoID, tripIssuePhotoVersion)
+	}
 	if issueReview || issueSubmit {
 		inspectionID, version := issueReviewID, issueReviewVersion
 		if issueSubmit {
@@ -275,7 +279,7 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 		return p.requestReplacement(ctx, maxID, state, replaceSlotCheckoutID, replaceSlotVersion, selectedSlot)
 	}
 	if photoMessage {
-		if state.Conversation != nil && state.Conversation.Flow == "issue_before" && state.Conversation.Step == "collect_photos" {
+		if state.Conversation != nil && (state.Conversation.Flow == "issue_before" || state.Conversation.Flow == "issue_during") && state.Conversation.Step == "collect_photos" {
 			return p.issuePhotoStage(ctx, item, actor, maxID, state)
 		}
 		if state.Return != nil && state.Trip != nil && state.Trip.Status == "returning" {
@@ -944,6 +948,9 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 	}
 	if state.Trip != nil && state.Trip.Status == "active" {
 		rows = append([][]maxsdk.Button{{{Text: "Текущая поездка", Payload: "trip:" + state.Trip.ID}}}, rows...)
+		if draft, ok := issuePhotoDraft(state); ok && draft.Flow == "issue_during" {
+			rows = append(rows, []maxsdk.Button{{Text: "Фото проблемы", Payload: fmt.Sprintf("trip-issue-photos:%s:%d", state.Trip.ID, draft.Version)}})
+		}
 	}
 	if employee.CanStartTrip && state.Trip == nil && state.Checkout == nil {
 		rows = append([][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}}, rows...)

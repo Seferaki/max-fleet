@@ -12,7 +12,14 @@ import (
 
 func issuePhotoDraft(state dataapi.CurrentState) (*dataapi.Conversation, bool) {
 	checkout, draft := state.Checkout, state.Conversation
-	if checkout == nil || checkout.Status != "holding" || checkout.Step != "inspection" || !inspectionReadyForIssueQuestion(checkout.Inspection) || checkout.Inspection.NewDamage == nil || !*checkout.Inspection.NewDamage || draft == nil || draft.Flow != "issue_before" || draft.Step != "collect_photos" || draft.Context.TargetID == nil || *draft.Context.TargetID != checkout.Inspection.ID || draft.Context.VehicleID == nil || *draft.Context.VehicleID != checkout.VehicleID || draft.Context.DraftText == nil || draft.Context.IssueCategory == nil || len(draft.Context.AssetIDs) > 3 {
+	if draft == nil || draft.Step != "collect_photos" || draft.Context.TargetID == nil || draft.Context.VehicleID == nil || draft.Context.DraftText == nil || draft.Context.IssueCategory == nil || len(draft.Context.AssetIDs) > 3 {
+		return nil, false
+	}
+	if draft.Flow == "issue_during" {
+		trip := state.Trip
+		return draft, trip != nil && trip.Status == "active" && state.Return == nil && draft.Context.TripID != nil && *draft.Context.TripID == trip.ID && *draft.Context.TargetID == trip.ID && *draft.Context.VehicleID == trip.VehicleID
+	}
+	if draft.Flow != "issue_before" || checkout == nil || checkout.Status != "holding" || checkout.Step != "inspection" || !inspectionReadyForIssueQuestion(checkout.Inspection) || checkout.Inspection.NewDamage == nil || !*checkout.Inspection.NewDamage || *draft.Context.TargetID != checkout.Inspection.ID || *draft.Context.VehicleID != checkout.VehicleID {
 		return nil, false
 	}
 	return draft, true
@@ -64,7 +71,13 @@ func (p Bootstrap) issuePhotoStage(ctx context.Context, item dataapi.InboxClaimI
 	if err != nil {
 		return err
 	}
-	staged, err := p.PhotoStore.StageIssueAsset(ctx, actor, dataapi.IssueStageInput{ScopeType: "inspection", ScopeID: *draft.Context.TargetID, SourceEventKey: item.Event.EventKey, IdempotencyKey: stageKey, ContentType: photo.ContentType, Image: photo.Bytes})
+	scopeType, employeeID := "inspection", ""
+	if draft.Flow == "issue_during" {
+		scopeType, employeeID = "trip", state.Trip.EmployeeID
+	} else {
+		employeeID = state.Checkout.EmployeeID
+	}
+	staged, err := p.PhotoStore.StageIssueAsset(ctx, actor, dataapi.IssueStageInput{ScopeType: scopeType, ScopeID: *draft.Context.TargetID, SourceEventKey: item.Event.EventKey, IdempotencyKey: stageKey, ContentType: photo.ContentType, Image: photo.Bytes})
 	if err != nil {
 		var apiErr *dataapi.APIError
 		if errors.As(err, &apiErr) && apiErr.Status == 422 && apiErr.Code == "DUPLICATE_PHOTO" {
@@ -83,7 +96,7 @@ func (p Bootstrap) issuePhotoStage(ctx context.Context, item dataapi.InboxClaimI
 	if err != nil {
 		return err
 	}
-	result, err := p.Commands.ConversationSave(ctx, actor, state.Checkout.EmployeeID, state.ConversationVersion, dataapi.ConversationSaveInput{Flow: "issue_before", Step: "collect_photos", Context: context, PendingInputKind: &kind}, saveKey, &dataapi.InboxLease{EventID: item.ID, Token: item.LeaseToken})
+	result, err := p.Commands.ConversationSave(ctx, actor, employeeID, state.ConversationVersion, dataapi.ConversationSaveInput{Flow: draft.Flow, Step: "collect_photos", Context: context, PendingInputKind: &kind}, saveKey, &dataapi.InboxLease{EventID: item.ID, Token: item.LeaseToken})
 	if err != nil {
 		var apiErr *dataapi.APIError
 		if errors.As(err, &apiErr) && apiErr.Status == 404 {
