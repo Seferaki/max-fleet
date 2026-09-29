@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "27659325-800e-4ea6-99ac-3d8edec02849"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T03:14:26Z"
+heartbeat_utc: "2026-09-29T03:16:43Z"
 current_task: BE-07
-current_substep: "BE-07 WIP: issue_during отправлен на Go/mock с outbox и recovery; issue_after впереди"
-last_verified_code_commit: "c3bb54c96967e923481b45785f6014b6e893d344"
+current_substep: "BE-07 WIP: mock проверяет issue_after по текущему return/inspection/actor"
+last_verified_code_commit: "c374d81d6f2a9aee8950f28c97861baece4541c2"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-07: issue_after для проблем чеклиста, затем подтверждённая парковка и безопасный return.complete; UI-01 React карта P0; реальный MAX/Python только INT"
+next_step: "BE-07: диалог issue_after для damage/dirty/unsafe, фото и submit; затем подтверждённая парковка и безопасный complete; UI-01 React карта P0"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-07 code `c374d81d6f2a9aee8950f28c97861baece4541c2`: mock conversation.save для issue_after требует owned current return/after-inspection и проверяет stage-фото scope inspection. Тест проверил чужого actor, подмену return ID, stale CAS и cancelled return. `go test ./internal/datamock -run '^TestAfterIssueConversationRequiresCurrentOwnedReturn$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Диалог и submit issue_after впереди, реальный MAX/Python не проверены, BE-07 WIP.
 
 - BE-07 code `c3bb54c96967e923481b45785f6014b6e893d344`: итог issue_during и `issue.create` из Go с CAS/inbox key; после domain commit conversation фиксирует done, повтор не создаёт второй issue/outbox. Тест проверил чужого actor, stale кнопку, отсутствие lease, прерывание после commit, active trip, needs_review и ровно одно уведомление mock outbox. `go test ./internal/dialog -run '^TestTripIssueSubmitNotifiesAfterCommitAndRecovers$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Реальная доставка MAX и Python не проверены, BE-07 WIP.
 
