@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "27659325-800e-4ea6-99ac-3d8edec02849"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T03:16:43Z"
+heartbeat_utc: "2026-09-29T03:19:39Z"
 current_task: BE-07
-current_substep: "BE-07 WIP: mock проверяет issue_after по текущему return/inspection/actor"
-last_verified_code_commit: "c374d81d6f2a9aee8950f28c97861baece4541c2"
+current_substep: "BE-07 WIP: диалог issue_after сохраняет черновик; фото и submit впереди"
+last_verified_code_commit: "d04683e3445945bf07992f2e06dd2e85106aaff6"
 checkpoint_state: WIP
 contract_commit: "da3931879aeb663dd529c8c5af8cdb1e744d9cdd"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-07: диалог issue_after для damage/dirty/unsafe, фото и submit; затем подтверждённая парковка и безопасный complete; UI-01 React карта P0"
+next_step: "BE-07: фото issue_after, submit/recovery для damage/dirty/unsafe, затем парковка и безопасный complete; UI-01 React карта P0"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-07 code `d04683e3445945bf07992f2e06dd2e85106aaff6`: меню return предлагает issue_after; категория/описание сохраняются как conversation CAS/lease для текущих return/inspection. Текст различает черновик и отправку, предупреждает об отдельном damage/dirty issue и небезопасном самостоятельном complete. Тест проверил owner, stale callback, отсутствие lease, durable save и повтор без роста версии. `go test ./internal/dialog -run '^TestReturnIssueDraftOwnedReturnAndDurableSave$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Фото/submit впереди, реальный MAX/Python не проверены, BE-07 WIP.
 
 - BE-07 code `c374d81d6f2a9aee8950f28c97861baece4541c2`: mock conversation.save для issue_after требует owned current return/after-inspection и проверяет stage-фото scope inspection. Тест проверил чужого actor, подмену return ID, stale CAS и cancelled return. `go test ./internal/datamock -run '^TestAfterIssueConversationRequiresCurrentOwnedReturn$' -count=1 -v` → PASS; `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go test/vet/build OK; staged diff/secret scan → exit 0. Диалог и submit issue_after впереди, реальный MAX/Python не проверены, BE-07 WIP.
 
