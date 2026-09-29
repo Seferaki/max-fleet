@@ -165,12 +165,12 @@ $env:APP_ENV = 'development'
 $env:MAX_UPDATE_MODE = 'webhook'
 $env:MAX_INTEGRATION_KEY = 'demo-bot'
 $env:SEED_SYNTHETIC = '1'
-$env:WEB_PORT = '8083'
-$env:DATA_API_PORT = '18002'
-docker compose -f deploy/compose.full.yaml -p max-fleet-int-dialog up -d --build --wait --wait-timeout 360
+$env:WEB_PORT = '8084'
+$env:DATA_API_PORT = '18003'
+docker compose -f deploy/compose.full.yaml -p max-fleet-int-recovery up -d --build --wait --wait-timeout 360
 
 $env:MAX_FLEET_LIVE_DIALOG = '1'
-$env:MAX_FLEET_LIVE_DATA_API_URL = 'http://127.0.0.1:18002/internal/v1'
+$env:MAX_FLEET_LIVE_DATA_API_URL = 'http://127.0.0.1:18003/internal/v1'
 $env:MAX_FLEET_LIVE_DATA_API_ACTOR = '8000000000000000002'
 $env:MAX_FLEET_LIVE_DATA_API_TOKEN_FILE = Join-Path $env:MAX_FLEET_SECRETS_DIR 'data_api_token'
 $env:MAX_FLEET_LIVE_DATA_API_WORKER_TOKEN_FILE = Join-Path $env:MAX_FLEET_SECRETS_DIR 'worker_api_token'

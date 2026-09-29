@@ -8,13 +8,13 @@ track: data-integration-audit
 owner: A
 branch: codex/integration
 current_task: INT-03
-current_substep: "INT-02 synthetic live Go dialog → Python/PostgreSQL/S3 gate опубликован в 84ad9b51d732787a8e6057577ed7048f209a4015 (status 1766bccdb9ec4f8ec46c79c95b4b2d668670a57e); DE-09 functional gate закрыт, начинаются recovery/restart проверки"
-last_verified_code_commit: "84ad9b51d732787a8e6057577ed7048f209a4015"
+current_substep: "DE-09/INT-02 опубликован в 84ad9b51d732787a8e6057577ed7048f209a4015. INT-03 recovery test e6888015088d4e4feff391efaf3af17d3d7e4452 прошёл локально: Go worker reconstruction на 4/8, durable progress из Python, replay возвращает ту же inbox row; push ожидается"
+last_verified_code_commit: "e6888015088d4e4feff391efaf3af17d3d7e4452"
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 migration_head: "0002"
 data_ready_for_integration: true
 checkpoint_state: WIP
-next_step: "DE-09 готов к интеграции. Поддержать INT-03: проверить durable recovery Go dialog после пересоздания inbox worker и повтора события, затем lost response/restart/concurrency; QA NOT RUN, Linux host-secret permissions не проверены"
+next_step: "Проверить очередь/секреты, опубликовать code e6888015088d4e4feff391efaf3af17d3d7e4452 + progress обычным push и подтвердить SHA. Затем продолжить INT-03 lost response/restart/concurrency; QA NOT RUN, Linux host-secret permissions не проверены"
 human_required: []
 ```
 
@@ -41,7 +41,7 @@ human_required: []
 - Integration code `09a11b3689740bd5fce26a10d4f417587db6472e`: Python `IssueResolve` теперь принимает только `status` для `in_progress`; терминальные решения по-прежнему требуют непустой комментарий и подтверждение. `ruff check app/api/schemas.py tests/test_admin_queues.py`, `mypy app`, полный `pytest -q` на отдельном PostgreSQL 17.6 — PASS, 43 теста; регрессия проверяет отказ старого payload, 403 сотруднику и сохранение `assigned_to`/`resolved_by`.
 - runtime-роль БД не может менять схему; анонимный запрос к S3 → 403.
 
-Контрактные вопросы сопоставлены с OpenAPI v1.13, Go client/mock и Python. Data API готов для интеграции: Go v1.13 integration test `84ad9b51d732787a8e6057577ed7048f209a4015` прошёл против PostgreSQL/S3 и опубликован вместе с status checkpoint `1766bccdb9ec4f8ec46c79c95b4b2d668670a57e`. Сотрудник подал замечание через Go post-return dialog и получил 403 на admin action; Go admin dialog назначил `assigned_to` и разрешил его с `resolved_by`. Это синтетический actor/MAX transport; реальный MAX, Bridge, Linux host-secret permissions и QA этим не проверялись. INT-03 продолжает тесты восстановления/отказов.
+Контрактные вопросы сопоставлены с OpenAPI v1.13, Go client/mock и Python. Data API готов для интеграции: Go v1.13 integration test `84ad9b51d732787a8e6057577ed7048f209a4015` прошёл против PostgreSQL/S3 и опубликован вместе с status checkpoint `1766bccdb9ec4f8ec46c79c95b4b2d668670a57e`. Сотрудник подал замечание через Go post-return dialog и получил 403 на admin action; Go admin dialog назначил `assigned_to` и разрешил его с `resolved_by`. INT-03 recovery code `e6888015088d4e4feff391efaf3af17d3d7e4452` локально проверил восстановление 4/8 фото после пересоздания Go worker, повтор события ссылается на ту же inbox row. Code и status ожидают push. Это синтетический actor/MAX transport; реальный MAX, Bridge, Linux host-secret permissions, сервисные отказы, backup/restore и QA не проверялись.
 
 Найдено при нагрузке: в контейнере с read-only ФС Starlette не мог буферизовать multipart > 1 MiB во временный файл (400 на фото 5 MiB) — добавлен tmpfs `/tmp` 128 MiB для data-api.
 

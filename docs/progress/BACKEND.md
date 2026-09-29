@@ -1,6 +1,6 @@
 # Прогресс backend и финальной интеграции
 
-Единственный текущий статус backend. BE-12 и обязательный UI-01 закрыты только в Go/mock; backend gate true, full stack false. INT-02 опубликована и закрыта как синтетический integration gate: code `84ad9b51d732787a8e6057577ed7048f209a4015`, status checkpoint `1766bccdb9ec4f8ec46c79c95b4b2d668670a57e`. Проверены Go inbox/dialog → Python v1.13/PostgreSQL/S3, 15-минутный hold, 8+8 фото, manual_map, история, admin issue ACL и resolution; Go test/vet/build PASS. QA пропускается по решению пользователя и не считается PASS. Текущая задача — INT-03. Исходная `codex/data` сохранена на SHA `9eb2211b29e48fce8a6afc410bc986fa98a4988e`; интеграционные исправления делаются в `codex/integration`.
+Единственный текущий статус backend. BE-12 и обязательный UI-01 закрыты только в Go/mock; backend gate true, full stack false. INT-02 опубликована и закрыта как синтетический integration gate: code `84ad9b51d732787a8e6057577ed7048f209a4015`, status checkpoint `1766bccdb9ec4f8ec46c79c95b4b2d668670a57e`. Проверены Go inbox/dialog → Python v1.13/PostgreSQL/S3, 15-минутный hold, 8+8 фото, manual_map, история, admin issue ACL и resolution; Go test/vet/build PASS. В INT-03 recovery substep `e6888015088d4e4feff391efaf3af17d3d7e4452` локально проверено восстановление 4/8 после пересоздания Go worker и отсутствие второй обработки того же event. Code commit ждёт публикации. QA пропускается по решению пользователя и не считается PASS. Исходная `codex/data` сохранена на SHA `9eb2211b29e48fce8a6afc410bc986fa98a4988e`; интеграционные исправления делаются в `codex/integration`.
 
 ```yaml
 status_schema: 1
@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-29T23:36:09Z"
+heartbeat_utc: "2026-09-29T23:44:57Z"
 current_task: INT-03
-current_substep: "INT-02 synthetic integration gate published: code 84ad9b51d732787a8e6057577ed7048f209a4015; status checkpoint 1766bccdb9ec4f8ec46c79c95b4b2d668670a57e. Begin recovery substep: reconstruct Go inbox worker after 4/8 after photos and verify durable dialog resume/idempotent replay."
-last_verified_code_commit: "84ad9b51d732787a8e6057577ed7048f209a4015"
+current_substep: "INT-03 code e6888015088d4e4feff391efaf3af17d3d7e4452 passed local Go tests and live Python/PostgreSQL/S3 run: reinitialize worker after 4/8, query restored state, replay same photo event with a new request key, assert same inbox row and no second processing. Push pending."
+last_verified_code_commit: "e6888015088d4e4feff391efaf3af17d3d7e4452"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "INT-03 малый шаг: в live test пересоздать Go inbox worker на 4/8 after-фото, проверить durable resume и повтор того же inbox event без дубликата; прогнать Go unit/live и релевантные Python tests, сохранить code commit, записать SHA/команды/результат в progress и push после проверки очереди/секретов. Затем отдельно проверить lost response, двойной complete и сервисный restart. QA NOT RUN; реальный MAX требует H-01; full_stack_accepted=false."
+next_step: "Проверить owner очереди и staged/outgoing diff, обычным push опубликовать e6888015088d4e4feff391efaf3af17d3d7e4452 и этот progress checkpoint, подтвердить SHA через ls-remote. Затем INT-03 продолжает отдельные lost-response-after-commit, double-complete и service restart/down проверки; не выдавать им общий PASS по unit tests. QA NOT RUN; реальный MAX требует H-01; full_stack_accepted=false."
 human_required: [H-01]
 ```
 
@@ -43,7 +43,7 @@ human_required: [H-01]
 | BE-12 | DONE (Go/mock gate) | Code 1d175d7120c6c7021e68800b22e824d4871b8a9b, contract caa134ddffcc0edd501851ae82f12020c992e75a, published checkpoint 085768d39f3c22d64a06e2e763c1ba4686f0d884; local Go/contract checks and Actions #292 successful, all five jobs. | backend_ready_for_integration=true; INT-01 начата после takeover, QA пропущена по решению владельца и не PASS. |
 | INT-01 | DONE (synthetic configuration) | Compose `fe43bebeaaa80f79b2bfa626114cf77a6fc4437b`; `docker compose -f deploy/compose.full.yaml -p max-fleet-int-full config --quiet` PASS; `up -d --build --wait --wait-timeout 360` PASS. PostgreSQL, S3, Python API, Go live, web healthy; migration job exit 0, worker running. Data `/health/ready`, web ready/live и internal gateway→data-api health — 200. Go live test in Compose network/UID 10001 checked Python `Meta=real v1.13`, employee/admin ACL, rules/state, checkout create/replay/cancel. Gateway `/health/ready` returns 503 `dialog flows incomplete`; MAX/UI product readiness is not claimed. Go image receives no DB/S3 credentials. | INT-02; QA and real MAX are separate gates. |
 | INT-02 | DONE (synthetic integration gate) | Published code `84ad9b51d732787a8e6057577ed7048f209a4015`; published status `1766bccdb9ec4f8ec46c79c95b4b2d668670a57e`. Remote `codex/integration` confirmed at status SHA. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock`, live Go inbox/dialog → Python v1.13/PostgreSQL/S3 PASS. Проверены 15-minute hold, 8+8, return/manual_map replay/history/S3 recovery, issue ACL и admin assignment/resolution. | Gate ограничен синтетическим MAX transport/Go handler; MAX Bridge/production не проверены. QA NOT RUN, gateway readiness partial. INT-03. |
-| INT-03 | IN_PROGRESS (WIP) | Из плана: restart/recovery/concurrency; первый подшаг — Go worker reconstruction на середине after-photo flow, durable resume и duplicate event. | Код и live тест ещё не изменены; проверять на INT-02 synthetic project; не ставить DONE до проверок и push. |
+| INT-03 | IN_PROGRESS (verified, push pending) | Code `e6888015088d4e4feff391efaf3af17d3d7e4452`: Go worker reconstruction после 4/8 after-фото; durable Python state возвращает 4 слота, повтор того же `event_key` с новым Idempotency-Key возвращает тот же inbox row, очередь не запускает повторную обработку, Go dialog продолжает с 4/8. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock`, live `TestLivePythonReturnDialog` PASS. | Публиковать code + status обычным push после проверки очереди/секретов; далее lost response after commit, double-complete, сервисный restart/down/restore. Это не заменяет весь INT-03. |
 | INT-04 | TODO | — | См. план |
 | INT-05 | TODO | — | См. план |
 | INT-06 | TODO | — | См. план |
@@ -53,7 +53,7 @@ human_required: [H-01]
 - Code commit `84ad9b51d732787a8e6057577ed7048f209a4015` добавляет `services/gateway/internal/dialog/live_integration_test.go` и точную команду запуска в `docs/OPERATIONS.md`. В изолированном Compose project `max-fleet-int-dialog` пять основных сервисов были healthy, worker работал; Go test отправил synthetic inbox events через dialog processor к живому Python Data API, PostgreSQL и S3.
 - `go test ./...` → PASS; `go vet ./...` → PASS; `go build ./cmd/gateway ./cmd/data-mock` → PASS. `MAX_FLEET_LIVE_DIALOG=1 ... go test ./internal/dialog -run '^TestLivePythonReturnDialog$' -count=1 -v` → PASS. Тест проверяет Python `meta=real`/v1.13 и ACL, hold в диапазоне 14–16 минут, 8 before + 8 after, challenge/rules/start, полный Go return dialog, checklist, fuel/odometer, Go `mapapi.Handler` (неподтверждённая точка отклонена, повтор ключа не увеличил версию), completed/history, безопасное освобождение машины, exact S3 photo recovery, post-return parking issue, employee 403 и Go admin take/resolve с `assigned_to`/`resolved_by`.
 - MAX callbacks/actor/photo сгенерированы тестом; map handler вызывается через httptest, реальный MAX/Bridge, внешняя HTTPS доставка и браузерный MAX UI не проверялись. `/health/ready` остаётся 503 `dialog flows incomplete`; QA — NOT RUN. Не считать это подтверждением пилотной готовности.
-- Обычный push code + progress подтверждён: remote `codex/integration` = `1766bccdb9ec4f8ec46c79c95b4b2d668670a57e`; code artifact `84ad9b51d732787a8e6057577ed7048f209a4015` находится в опубликованной истории. Следующий подшаг INT-03 — durable resume при пересоздании Go inbox worker посреди 8 after-фото и повторе inbox event; затем lost response, двойной complete и фактический restart/down сценарий.
+- Обычный push code + progress INT-02 подтверждён: remote `codex/integration` = `12a60e4ad7b6fc31c61a861adb000f4d07da9a8c`; code artifact `84ad9b51d732787a8e6057577ed7048f209a4015` находится в опубликованной истории. Recovery substep INT-03 code `e6888015088d4e4feff391efaf3af17d3d7e4452` прошёл локально и ожидает публикации: worker пересоздаётся после четырёх after-фото; повторное событие не создаёт новую inbox row/повторную обработку; диалог восстанавливает 4/8. Затем проверить lost response, двойной complete и реальный service restart/down.
 
 ## Готовность организационных входов
 
