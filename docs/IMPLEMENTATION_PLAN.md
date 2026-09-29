@@ -303,7 +303,7 @@ Durable inbox, single-actor claim, leases/expiry, integration marker, transactio
 
 Зависимости: DE-08.
 
-Проверить полный контракт fixtures без Go и MAX, pytest с PostgreSQL/S3, ruff/type checker, cold start. Документировать migrations head, contract SHA, ограничения/таймауты, фиксированные image versions и готовые curl/клиентские примеры без secret значений. Готово: gate=true в progress/DATA.md, все P0 Python-задачи DONE; ветка опубликована для INT.
+Проверить полный контракт fixtures без Go и MAX, pytest с PostgreSQL/S3, ruff/type checker, cold start. Синхронизировать реализацию/fixtures с текущим `contracts/data-api.openapi.yaml` v1.13 и решениями backend по контрактным вопросам 1–5 из progress/BACKEND.md; оба направления должны фиксировать один contract SHA. Документировать migrations head, contract SHA, ограничения/таймауты, фиксированные image versions и готовые curl/клиентские примеры без secret значений. Готово: gate=true в progress/DATA.md, все P0 Python-задачи DONE; ветка опубликована для INT.
 
 ## 7. QA — один основной документ требований
 
