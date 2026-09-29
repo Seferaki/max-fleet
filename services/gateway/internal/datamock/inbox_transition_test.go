@@ -31,7 +31,7 @@ func transitionRequest(t *testing.T, handler http.Handler, id, action, key, toke
 	req.Header.Set("Authorization", "Bearer worker-token")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-ID", "11111111-1111-4111-8111-111111111111")
-	req.Header.Set("X-Contract-Version", "1.10")
+	req.Header.Set("X-Contract-Version", "1.11")
 	req.Header.Set("Idempotency-Key", key)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -62,7 +62,7 @@ func TestInboxAckFencesAndRestores(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	status, body := sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "store-key-001", "1.10")
+	status, body := sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "store-key-001", "1.11")
 	if status != http.StatusOK {
 		t.Fatalf("store: %d %s", status, body)
 	}
@@ -107,7 +107,7 @@ func TestInboxRetryAndDomainCommandFencing(t *testing.T) {
 		if i == 1 {
 			key = "store-key-002"
 		}
-		status, body := sendInbox(t, server.Handler(), event, "worker-token", key, "1.10")
+		status, body := sendInbox(t, server.Handler(), event, "worker-token", key, "1.11")
 		if status != http.StatusOK {
 			t.Fatalf("store: %d %s", status, body)
 		}
@@ -170,7 +170,7 @@ func TestInboxAckFailedSnapshotRollsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "store-key-001", "1.10")
+	_, _ = sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "store-key-001", "1.11")
 	_, body := claimInboxRequest(t, server.Handler(), "claim-key-001", "worker-a", 1)
 	lease := claimedInbox(t, body).Items[0]
 	save := server.saveSnapshot
@@ -193,7 +193,7 @@ func TestInboxRetryBecomesDeadAfterFiveAttempts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "store-key-001", "1.10")
+	_, _ = sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "store-key-001", "1.11")
 	for attempt := 1; attempt <= maxInboxAttempts; attempt++ {
 		status, body := claimInboxRequest(t, server.Handler(), fmt.Sprintf("claim-key-%03d", attempt), "worker-a", 1)
 		claim := claimedInbox(t, body)
@@ -219,7 +219,7 @@ func TestInboxAckLoadsVersionNineSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "store-key-001", "1.10")
+	_, _ = sendInbox(t, server.Handler(), inboxFixture(t), "worker-token", "store-key-001", "1.11")
 	_, body := claimInboxRequest(t, server.Handler(), "claim-key-001", "worker-a", 1)
 	lease := claimedInbox(t, body).Items[0]
 	previous := server.snapshot()

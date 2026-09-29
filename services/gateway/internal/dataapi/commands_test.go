@@ -72,6 +72,14 @@ func TestInvalidCommandNeverSent(t *testing.T) {
 	if _, err := c.ReturnSetLocation(context.Background(), "900001", commandVehicleID, 1, "stable-key-5", nil, LocationInput{Latitude: 55, Longitude: 37, Source: "manual_map", Confirmed: false}); err == nil {
 		t.Fatal("unconfirmed map point accepted")
 	}
+	negativeOdometer := int64(-1)
+	vehicleID, vehicleVersion := commandVehicleID, int64(1)
+	if _, err := c.ConversationSave(context.Background(), "900001", commandVehicleID, 1,
+		ConversationSaveInput{Flow: "vehicle_odometer_correction", Step: "confirm",
+			Context: ConversationContext{VehicleID: &vehicleID, VehicleVersion: &vehicleVersion, CorrectionOdometerKM: &negativeOdometer}},
+		"odometer-negative", nil); err == nil {
+		t.Fatal("negative correction odometer reached server")
+	}
 }
 
 func TestOwnCommandResultUsesActorAndOperation(t *testing.T) {

@@ -13,7 +13,7 @@ import (
 
 func validConversationFlow(flow string) bool {
 	switch flow {
-	case "issue_before", "issue_during", "issue_after", "return_location", "issue_post_return", "issue_admin_resolution":
+	case "issue_before", "issue_during", "issue_after", "return_location", "issue_post_return", "issue_admin_resolution", "vehicle_odometer_correction":
 		return true
 	}
 	return false
@@ -25,7 +25,7 @@ func validConversationContext(context dataapi.ConversationContext) bool {
 			return false
 		}
 	}
-	if context.VehicleVersion != nil && *context.VehicleVersion < 1 || context.IssueVersion != nil && *context.IssueVersion < 1 || context.SelectedSlot != nil && (*context.SelectedSlot < 1 || *context.SelectedSlot > 8) || context.DraftText != nil && utf8.RuneCountInString(*context.DraftText) > 1000 || context.Cursor != nil && len(*context.Cursor) > 2048 || len(context.AssetIDs) > 3 {
+	if context.VehicleVersion != nil && *context.VehicleVersion < 1 || context.IssueVersion != nil && *context.IssueVersion < 1 || context.SelectedSlot != nil && (*context.SelectedSlot < 1 || *context.SelectedSlot > 8) || context.CorrectionOdometerKM != nil && *context.CorrectionOdometerKM < 0 || context.DraftText != nil && utf8.RuneCountInString(*context.DraftText) > 1000 || context.Cursor != nil && len(*context.Cursor) > 2048 || len(context.AssetIDs) > 3 {
 		return false
 	}
 	if context.IssueCategory != nil && !validIssueCategory(*context.IssueCategory) {
@@ -75,6 +75,8 @@ func (s *Server) saveConversation(w http.ResponseWriter, requestID, actor string
 		valid = s.validReturnLocationConversation(actor, input)
 	case "issue_admin_resolution":
 		valid = s.validAdminIssueResolutionConversation(actor, input)
+	case "vehicle_odometer_correction":
+		valid = s.validVehicleOdometerCorrectionConversation(actor, input)
 	}
 	if !valid {
 		s.fail(w, requestID, http.StatusConflict, "INVALID_STATE")
@@ -91,7 +93,7 @@ func (s *Server) validAdminIssueResolutionConversation(actor string, input dataa
 	employee, found := s.employees[actor]
 	c := input.Context
 	if !found || employee.Role != "admin" || c.IssueID == nil || c.IssueVersion == nil ||
-		c.TargetID != nil || c.VehicleID != nil || c.VehicleVersion != nil || c.IssueCategory != nil || c.SelectedSlot != nil ||
+		c.TargetID != nil || c.VehicleID != nil || c.VehicleVersion != nil || c.CorrectionOdometerKM != nil || c.IssueCategory != nil || c.SelectedSlot != nil ||
 		c.ChallengeID != nil || c.TripID != nil || c.ReturnID != nil || c.Cursor != nil || len(c.AssetIDs) != 0 {
 		return false
 	}
@@ -114,9 +116,40 @@ func (s *Server) validAdminIssueResolutionConversation(actor string, input dataa
 	}
 }
 
+func (s *Server) validVehicleOdometerCorrectionConversation(actor string, input dataapi.ConversationSaveInput) bool {
+	employee, found := s.employees[actor]
+	c := input.Context
+	if !found || employee.Role != "admin" || c.VehicleID == nil || c.VehicleVersion == nil || *c.VehicleVersion < 1 ||
+		c.TargetID != nil || c.IssueID != nil || c.IssueVersion != nil || c.IssueCategory != nil || c.SelectedSlot != nil ||
+		c.ChallengeID != nil || c.TripID != nil || c.ReturnID != nil || c.Cursor != nil || len(c.AssetIDs) != 0 {
+		return false
+	}
+	index := s.vehicleIndex(*c.VehicleID)
+	if index < 0 {
+		return false
+	}
+	vehicle := s.vehicles[index]
+	pending := input.PendingInputKind
+	noPending := pending != nil && *pending == "none"
+	switch input.Step {
+	case "await_value":
+		_, active, consistent := s.vehicleCorrectionAssignment(vehicle)
+		return active && consistent && vehicle.Version == *c.VehicleVersion && c.CorrectionOdometerKM == nil && c.DraftText == nil &&
+			pending != nil && *pending == "text"
+	case "confirm":
+		_, active, consistent := s.vehicleCorrectionAssignment(vehicle)
+		return active && consistent && vehicle.Version == *c.VehicleVersion && c.CorrectionOdometerKM != nil && c.DraftText != nil &&
+			strings.TrimSpace(*c.DraftText) != "" && noPending
+	case "done", "cancelled":
+		return vehicle.Version >= *c.VehicleVersion && c.CorrectionOdometerKM == nil && c.DraftText == nil && noPending
+	default:
+		return false
+	}
+}
+
 func (s *Server) validPostReturnIssueConversation(actor string, input dataapi.ConversationSaveInput) bool {
 	c := input.Context
-	if c.TargetID == nil || c.TripID == nil || *c.TargetID != *c.TripID || c.VehicleID == nil || c.VehicleVersion == nil || *c.VehicleVersion < 1 || c.IssueCategory == nil || !validIssueCategory(*c.IssueCategory) || c.ReturnID != nil {
+	if c.TargetID == nil || c.TripID == nil || *c.TargetID != *c.TripID || c.VehicleID == nil || c.VehicleVersion == nil || *c.VehicleVersion < 1 || c.IssueCategory == nil || !validIssueCategory(*c.IssueCategory) || c.ReturnID != nil || c.CorrectionOdometerKM != nil {
 		return false
 	}
 	trip, found := s.trips[*c.TripID]
@@ -171,7 +204,7 @@ func parseDraftCoordinates(value string) (float64, float64, bool) {
 
 func (s *Server) validReturnLocationConversation(actor string, input dataapi.ConversationSaveInput) bool {
 	c := input.Context
-	if c.TargetID == nil || c.ReturnID == nil || *c.TargetID != *c.ReturnID || c.TripID == nil || c.VehicleID == nil || c.DraftText == nil || c.IssueID != nil || c.IssueCategory != nil || len(c.AssetIDs) != 0 {
+	if c.TargetID == nil || c.ReturnID == nil || *c.TargetID != *c.ReturnID || c.TripID == nil || c.VehicleID == nil || c.DraftText == nil || c.IssueID != nil || c.IssueCategory != nil || c.CorrectionOdometerKM != nil || len(c.AssetIDs) != 0 {
 		return false
 	}
 	lat, lon, valid := parseDraftCoordinates(*c.DraftText)
@@ -194,7 +227,7 @@ func (s *Server) validReturnLocationConversation(actor string, input dataapi.Con
 
 func (s *Server) validAfterIssueConversation(actor string, input dataapi.ConversationSaveInput) bool {
 	c := input.Context
-	if c.TargetID == nil || c.TripID == nil || c.ReturnID == nil || c.VehicleID == nil || c.VehicleVersion == nil || c.IssueCategory == nil || c.DraftText == nil || strings.TrimSpace(*c.DraftText) == "" {
+	if c.TargetID == nil || c.TripID == nil || c.ReturnID == nil || c.VehicleID == nil || c.VehicleVersion == nil || c.IssueCategory == nil || c.DraftText == nil || strings.TrimSpace(*c.DraftText) == "" || c.CorrectionOdometerKM != nil {
 		return false
 	}
 	draft, found := s.returns[*c.ReturnID]
@@ -226,7 +259,7 @@ func (s *Server) validAfterIssueConversation(actor string, input dataapi.Convers
 
 func (s *Server) validDuringIssueConversation(actor string, input dataapi.ConversationSaveInput) bool {
 	c := input.Context
-	if c.TargetID == nil || c.TripID == nil || *c.TargetID != *c.TripID || c.VehicleID == nil || c.VehicleVersion == nil || c.IssueCategory == nil || c.DraftText == nil || strings.TrimSpace(*c.DraftText) == "" || c.ReturnID != nil {
+	if c.TargetID == nil || c.TripID == nil || *c.TargetID != *c.TripID || c.VehicleID == nil || c.VehicleVersion == nil || c.IssueCategory == nil || c.DraftText == nil || strings.TrimSpace(*c.DraftText) == "" || c.ReturnID != nil || c.CorrectionOdometerKM != nil {
 		return false
 	}
 	trip, found := s.trips[*c.TripID]
@@ -254,7 +287,7 @@ func (s *Server) validDuringIssueConversation(actor string, input dataapi.Conver
 
 func (s *Server) validBeforeIssueConversation(actor string, input dataapi.ConversationSaveInput) bool {
 	context := input.Context
-	if context.TargetID == nil || context.VehicleID == nil || context.VehicleVersion == nil || context.IssueCategory == nil || context.DraftText == nil || strings.TrimSpace(*context.DraftText) == "" {
+	if context.TargetID == nil || context.VehicleID == nil || context.VehicleVersion == nil || context.IssueCategory == nil || context.DraftText == nil || strings.TrimSpace(*context.DraftText) == "" || context.CorrectionOdometerKM != nil {
 		return false
 	}
 	if input.Step == "done" {

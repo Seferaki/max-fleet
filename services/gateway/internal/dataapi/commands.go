@@ -164,6 +164,7 @@ type ConversationSaveInput struct {
 func (c *Client) ConversationSave(ctx context.Context, actorMaxID, employeeID string, version int64, input ConversationSaveInput, key string, inbox *InboxLease) (CommandResult, error) {
 	if strings.TrimSpace(input.Flow) == "" || len(input.Flow) > 80 || strings.TrimSpace(input.Step) == "" || len(input.Step) > 80 ||
 		input.Context.DraftText != nil && utf8.RuneCountInString(*input.Context.DraftText) > 1000 || len(input.Context.AssetIDs) > 3 ||
+		input.Context.CorrectionOdometerKM != nil && *input.Context.CorrectionOdometerKM < 0 ||
 		input.Context.VehicleVersion != nil && *input.Context.VehicleVersion < 1 ||
 		input.Context.IssueVersion != nil && *input.Context.IssueVersion < 1 ||
 		input.PendingInputKind != nil && *input.PendingInputKind != "text" && *input.PendingInputKind != "photo" && *input.PendingInputKind != "geo" && *input.PendingInputKind != "none" {

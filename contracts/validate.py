@@ -104,6 +104,7 @@ def main():
         ("issue-assigned.json", "IssueResponse"),
         ("issue-resolved.json", "IssueResponse"),
         ("issue-admin-resolution-conversation.json", "Conversation"),
+        ("vehicle-odometer-correction-conversation.json", "Conversation"),
     ):
         check_example(data, "examples/" + filename, schema_name)
     assigned_issue = load_json("examples/issue-assigned.json")["data"]
@@ -162,6 +163,21 @@ def main():
             or post_context["vehicle_version"] is None
             or len(post_context["asset_ids"]) > 3):
         raise RuntimeError("Неверная семантика post-return conversation")
+    odometer_conversation = check_example(
+        data, "examples/vehicle-odometer-correction-conversation.json", "Conversation")
+    odometer_context = odometer_conversation["context"]
+    if (odometer_conversation["flow"] != "vehicle_odometer_correction"
+            or odometer_conversation["step"] != "confirm"
+            or odometer_context["vehicle_id"] is None
+            or odometer_context["vehicle_version"] is None
+            or odometer_context["correction_odometer_km"] is None
+            or odometer_context["draft_text"] is None
+            or odometer_conversation["pending_input_kind"] != "none"):
+        raise RuntimeError("Неверная семантика vehicle odometer correction conversation")
+    invalid_odometer = copy.deepcopy(odometer_conversation)
+    invalid_odometer["context"]["correction_odometer_km"] = -1
+    if jsonschema.Draft202012Validator(schema_for(data, "Conversation")).is_valid(invalid_odometer):
+        raise RuntimeError("Отрицательное значение одометра было принято")
     issue_categories = load_json("examples/issue-categories.json")
     if (issue_categories["contract_version"] != data["info"]["version"]
             or {request["payload"]["category"] for request in issue_categories["requests"]}

@@ -141,6 +141,92 @@ func TestAdminIssueResolutionConversationRequiresCurrentAdminAndSurvivesRestart(
 	}
 }
 
+func TestVehicleOdometerCorrectionConversationIsAdminBoundAndRecoverable(t *testing.T) {
+	now := time.Date(2026, 9, 29, 18, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "state.json")
+	mock, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := commandClient(t, mock)
+	ctx := context.Background()
+	created, err := client.CheckoutCreate(ctx, driverID, firstVehicleID, 1, "odometer-conversation-hold", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hold, err := dataapi.DecodeAggregate[dataapi.Checkout](created)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vehicle, err := client.Vehicle(ctx, adminActorID, firstVehicleID)
+	if err != nil || vehicle.Status != "holding" {
+		t.Fatalf("active hold not created: %+v %v", vehicle, err)
+	}
+
+	admin := mock.employees[adminActorID]
+	value, vehicleVersion, pending := int64(42150), vehicle.Version, "text"
+	input := dataapi.ConversationSaveInput{
+		Flow: "vehicle_odometer_correction", Step: "await_value", PendingInputKind: &pending,
+		Context: dataapi.ConversationContext{VehicleID: &vehicle.ID, VehicleVersion: &vehicleVersion},
+	}
+	driver := mock.employees[driverID]
+	if _, err := client.ConversationSave(ctx, driverID, driver.ID, 1, input, "odometer-conversation-driver", nil); err == nil {
+		t.Fatal("employee saved an admin odometer correction flow")
+	}
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 1, input, "odometer-conversation-await", nil); err != nil {
+		t.Fatalf("admin could not save correction input step: %v", err)
+	}
+	reason, none := "Сверили ошибочную запись с фотографией панели", "none"
+	confirmed := dataapi.ConversationSaveInput{
+		Flow: "vehicle_odometer_correction", Step: "confirm", PendingInputKind: &none,
+		Context: dataapi.ConversationContext{VehicleID: &vehicle.ID, VehicleVersion: &vehicleVersion, CorrectionOdometerKM: &value, DraftText: &reason},
+	}
+	staleVehicleVersion := vehicleVersion + 1
+	stale := confirmed
+	stale.Context.VehicleVersion = &staleVehicleVersion
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 2, stale, "odometer-conversation-stale", nil); err == nil {
+		t.Fatal("conversation accepted a stale vehicle version")
+	}
+	if _, err := client.ConversationSave(ctx, adminActorID, admin.ID, 2, confirmed, "odometer-conversation-confirm", nil); err != nil {
+		t.Fatalf("admin could not persist correction before confirmation: %v", err)
+	}
+
+	restarted, err := NewWithSnapshot("test-service-token", path, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	restartedClient := commandClient(t, restarted)
+	state, err := restartedClient.State(ctx, adminActorID)
+	if err != nil || state.Conversation == nil || state.Conversation.Flow != "vehicle_odometer_correction" ||
+		state.Conversation.Step != "confirm" || state.Conversation.Context.VehicleVersion == nil || *state.Conversation.Context.VehicleVersion != vehicleVersion ||
+		state.Conversation.Context.CorrectionOdometerKM == nil || *state.Conversation.Context.CorrectionOdometerKM != value ||
+		state.Conversation.Context.DraftText == nil || *state.Conversation.Context.DraftText != reason {
+		t.Fatalf("restart lost correction value, reason, or CAS version: %+v %v", state.Conversation, err)
+	}
+
+	corrected, err := restartedClient.VehicleCorrectSnapshot(ctx, adminActorID, firstVehicleID, vehicleVersion,
+		dataapi.VehicleSnapshotCorrectionInput{Reason: reason, OdometerKM: &value, Confirmation: true}, "odometer-conversation-apply", nil)
+	if err != nil {
+		t.Fatalf("saved correction could not be applied: %v", err)
+	}
+	correctedVehicle, err := dataapi.DecodeAggregate[dataapi.Vehicle](corrected)
+	if err != nil || correctedVehicle.Version != vehicleVersion+1 || correctedVehicle.Status != "holding" ||
+		correctedVehicle.CurrentOdometerKM == nil || *correctedVehicle.CurrentOdometerKM != value {
+		t.Fatalf("correction changed unexpected vehicle state: %+v %v", correctedVehicle, err)
+	}
+	if checkout := restarted.checkouts[hold.ID]; checkout.Status != "holding" || checkout.Version != hold.Version {
+		t.Fatalf("correction changed active checkout: %+v", checkout)
+	}
+	correctedVersion := correctedVehicle.Version
+	done := dataapi.ConversationSaveInput{
+		Flow: "vehicle_odometer_correction", Step: "done", PendingInputKind: &none,
+		Context: dataapi.ConversationContext{VehicleID: &vehicle.ID, VehicleVersion: &correctedVersion},
+	}
+	if _, err := restartedClient.ConversationSave(ctx, adminActorID, admin.ID, 3, done, "odometer-conversation-done", nil); err != nil {
+		t.Fatalf("completed correction did not clear its durable draft: %v", err)
+	}
+}
+
 func TestDuringIssueConversationRequiresOwnedActiveTrip(t *testing.T) {
 	now := time.Date(2026, 9, 29, 3, 0, 0, 0, time.UTC)
 	mock, err := NewWithClock("test-service-token", func() time.Time { return now })
