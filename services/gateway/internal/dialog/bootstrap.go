@@ -143,7 +143,8 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	geoMessage := returnGeoEvent(item.Event)
 	tripView := parseTripView(item.Event)
 	adminIssue := parseAdminIssueEvent(item.Event)
-	if !catalog && !card && !previous && !previousPhoto.recognized && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !returnOdometerConfirm && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !postReturnIssueOpen && !postReturnCategoryPrompt && !postReturnPhotoHelp && !postReturnReview && !postReturnSend && !returnIssuePrompt && !tripIssuePhotoHelp && !returnIssuePhotoHelp && !tripIssueReview && !tripIssueSend && !returnIssueReview && !returnIssueSend && !returnGeoConfirm && !returnSummary && !returnComplete && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !geoMessage && !tripView.recognized && !adminIssue.recognized && !isMenuEvent(item.Event) {
+	adminOdometer := parseAdminOdometerEvent(item.Event)
+	if !catalog && !card && !previous && !previousPhoto.recognized && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !returnOdometerConfirm && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !postReturnIssueOpen && !postReturnCategoryPrompt && !postReturnPhotoHelp && !postReturnReview && !postReturnSend && !returnIssuePrompt && !tripIssuePhotoHelp && !returnIssuePhotoHelp && !tripIssueReview && !tripIssueSend && !returnIssueReview && !returnIssueSend && !returnGeoConfirm && !returnSummary && !returnComplete && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !geoMessage && !tripView.recognized && !adminIssue.recognized && !adminOdometer.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -173,6 +174,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	}
 	if adminIssue.recognized {
 		return p.handleAdminIssueRequest(ctx, item, actor, maxID, *me.Employee, state, adminIssue)
+	}
+	if adminOdometer.recognized {
+		return p.handleAdminOdometerRequest(ctx, item, actor, maxID, *me.Employee, state, adminOdometer)
 	}
 	if postReturnIssueOpen {
 		return p.startPostReturnIssue(ctx, actor, maxID, *me.Employee, postReturnIssueID, postReturnIssueVersion)
@@ -1128,7 +1132,12 @@ func adminMenuRows(rows [][]maxsdk.Button, employee dataapi.Employee, state data
 	if employee.Role != "admin" {
 		return rows
 	}
-	adminButtons := []maxsdk.Button{{Text: "Поездки автопарка", Payload: "trip-list:admin:1"}, {Text: "Замечания", Payload: "admin-issues:open:1"}}
+	odometerButton := maxsdk.Button{Text: "Исправить пробег", Payload: "admin-odo:list:1"}
+	if conversation := state.Conversation; conversation != nil && conversation.Flow == adminOdometerCorrectionFlow && conversation.Step != "done" && conversation.Step != "cancelled" &&
+		conversation.Context.VehicleID != nil && conversation.Context.VehicleVersion != nil {
+		odometerButton = maxsdk.Button{Text: "Продолжить коррекцию", Payload: fmt.Sprintf("admin-odo:resume:%s:%d", *conversation.Context.VehicleID, *conversation.Context.VehicleVersion)}
+	}
+	adminButtons := []maxsdk.Button{{Text: "Поездки автопарка", Payload: "trip-list:admin:1"}, {Text: "Замечания", Payload: "admin-issues:open:1"}, odometerButton}
 	if len(rows) >= 10 {
 		attached := false
 		for index := range rows {
