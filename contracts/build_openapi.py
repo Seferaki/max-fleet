@@ -1,4 +1,4 @@
-"""Build the reviewed MAX Fleet v1.5 internal HTTP contract.
+"""Build the reviewed MAX Fleet v1.6 internal HTTP contract.
 
 Run: py contracts/build_openapi.py
 Requires PyYAML. The generated YAML is committed so consumers do not need Python.
@@ -204,7 +204,7 @@ schemas = {
         "conversation_version": ref("Version"),
     }, ("checkout", "trip", "return", "next_step", "conversation", "conversation_version")),
     "Meta": obj({
-        "contract_version": {"const": "1.5"}, "build_sha": string(64),
+        "contract_version": {"const": "1.6"}, "build_sha": string(64),
         "mode": string(enum=["mock", "real"]), "capabilities": array(string(80)),
     }, ("contract_version", "build_sha", "mode", "capabilities")),
     "AdminSummary": obj({
@@ -245,8 +245,8 @@ for name in ("Vehicle", "Trip", "Issue", "Employee"):
 
 spec = {
     "openapi": "3.1.0",
-    "info": {"title": "MAX Fleet Data API", "version": "1.5",
-             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.5 фиксирует operation-specific math intent административных команд и одноразовый proof с SHA-256 полного canonical intent."},
+    "info": {"title": "MAX Fleet Data API", "version": "1.6",
+             "description": "Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом запросе. Версия 1.6 связывает доступные данные admin close с SHA-256 намерения, поэтому proof подтверждает все изменения поездки и snapshot."},
     "servers": [{"url": "http://data-api:8000"}, {"url": "http://data-mock:8000"}],
     "tags": [{"name": name, "description": description} for name, description in (
         ("read", "Чтение доменных данных с проверкой actor и прав"),
@@ -264,7 +264,7 @@ spec = {
         },
         "parameters": {
             "ContractVersion": {"name": "X-Contract-Version", "in": "header", "required": True,
-                                "schema": {"const": "1.5"}},
+                                "schema": {"const": "1.6"}},
             "RequestID": {"name": "X-Request-ID", "in": "header", "required": True,
                           "schema": ref("UUID")},
             "ActorMaxID": {"name": "X-Actor-Max-ID", "in": "header", "required": True,
@@ -427,7 +427,7 @@ schemas["EmployeeAccessIntent"] = obj({
 schemas["TripAdminCloseIntent"] = obj({
     "operation": {"const": "trip.admin_close"},
     "target_id": ref("UUID"), "expected_version": ref("Version"),
-    "reason": string(1000),
+    "reason": string(1000), "available_data": ref("AdminCloseData"),
 }, ("operation", "target_id", "expected_version", "reason"))
 schemas["ChallengeIntent"] = {
     "oneOf": [ref(name) for name in (

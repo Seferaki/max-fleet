@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.5",
+  "contract_version": "1.6",
   "examples": [
     {
       "purpose": "vehicle_block",
@@ -137,7 +137,8 @@
         "operation": "trip.admin_close",
         "target_id": "40000000-0000-4000-8000-000000000001",
         "expected_version": 9,
-        "reason": "Телефон водителя повреждён"
+        "reason": "Телефон водителя повреждён",
+        "available_data": {"fuel_level": 50}
       },
       "create_command": {
         "operation": "challenge.create",
@@ -149,7 +150,8 @@
             "operation": "trip.admin_close",
             "target_id": "40000000-0000-4000-8000-000000000001",
             "expected_version": 9,
-            "reason": "Телефон водителя повреждён"
+            "reason": "Телефон водителя повреждён",
+            "available_data": {"fuel_level": 50}
           }
         }
       },

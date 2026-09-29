@@ -2,6 +2,7 @@ package dataapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -139,5 +140,100 @@ func TestTakeChallengeAndRulesCommands(t *testing.T) {
 	}
 	if _, err := c.ChallengeAnswer(ctx, "900001", commandVehicleID, 1, 4, "invalid-answer", nil); err == nil {
 		t.Fatal("invalid option accepted")
+	}
+}
+
+func TestAdminCommandClientPayloads(t *testing.T) {
+	wantOperations := []string{"challenge.create", "vehicle.block", "vehicle.unblock", "employee.grant", "employee.access", "trip.admin_close"}
+	var calls int
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var envelope map[string]json.RawMessage
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			t.Fatal(err)
+		}
+		var operation string
+		if err := json.Unmarshal(envelope["operation"], &operation); err != nil {
+			t.Fatal(err)
+		}
+		if calls > len(wantOperations) || operation != wantOperations[calls-1] {
+			t.Fatalf("request %d operation %q", calls, operation)
+		}
+		if calls == 1 {
+			var challengePayload map[string]json.RawMessage
+			var intent map[string]json.RawMessage
+			if json.Unmarshal(envelope["payload"], &challengePayload) != nil || json.Unmarshal(challengePayload["intent_payload"], &intent) != nil || len(intent) != 5 || intent["available_data"] == nil || len(challengePayload) != 2 {
+				t.Fatalf("admin challenge was not operation-specific: %s", body)
+			}
+		}
+		if operation == "employee.grant" {
+			if string(envelope["target_id"]) != "null" || string(envelope["expected_version"]) != "null" {
+				t.Fatalf("grant must use null target/version: %s", body)
+			}
+		}
+		if operation == "trip.admin_close" {
+			var payload map[string]json.RawMessage
+			if json.Unmarshal(envelope["payload"], &payload) != nil || payload["available_data"] == nil || payload["challenge_id"] == nil || payload["reason"] == nil {
+				t.Fatalf("admin close lost its independent available_data: %s", body)
+			}
+		}
+		_, _ = io.WriteString(w, `{"data":{"operation":"`+operation+`","aggregate":{"id":"`+commandVehicleID+`"},"correct":null,"attempts_remaining":null,"challenge_proof_id":null},"request_id":"`+testRequestID+`"}`)
+	})
+	ctx := context.Background()
+	target, version := commandVehicleID, int64(7)
+	reason, challengeID := "Проверка тормозов", commandVehicleID
+	odometer, fuel := int64(12500), 50
+	available := &AdminCloseData{OdometerKM: &odometer, FuelLevel: &fuel}
+	intent := AdminChallengeIntent{Operation: "trip.admin_close", TargetID: &target, ExpectedVersion: &version, Reason: &reason, AvailableData: available}
+	if _, err := c.AdminChallengeCreate(ctx, "900001", "admin_close", intent, "admin-challenge-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.VehicleBlock(ctx, "900001", target, version, reason, challengeID, "vehicle-block-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	reviewCompleted := true
+	if _, err := c.VehicleUnblock(ctx, "900001", target, version, "Проверка пройдена", challengeID, reviewCompleted, "vehicle-unblock-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.EmployeeGrant(ctx, "900001", "900002", "Сотрудник", challengeID, "employee-grant-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	canStart := false
+	if _, err := c.EmployeeAccess(ctx, "900001", commandVehicleID, version, canStart, "Пауза доступа", challengeID, "employee-access-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.TripAdminClose(ctx, "900001", commandVehicleID, version, "Водитель недоступен", challengeID, available, "admin-close-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if calls != len(wantOperations) {
+		t.Fatalf("sent %d requests, want %d", calls, len(wantOperations))
+	}
+}
+
+func TestAdminCommandClientRejectsInvalidIntentBeforeNetwork(t *testing.T) {
+	var calls int
+	c := newTestClient(t, func(http.ResponseWriter, *http.Request) { calls++ })
+	target, version := commandVehicleID, int64(1)
+	reason := "Причина"
+	if _, err := c.AdminChallengeCreate(context.Background(), "900001", "vehicle_block", AdminChallengeIntent{Operation: "vehicle.unblock", TargetID: &target, ExpectedVersion: &version, Reason: &reason}, "admin-challenge-2", nil); err == nil {
+		t.Fatal("purpose/operation mismatch accepted")
+	}
+	fuel := 50
+	if _, err := c.AdminChallengeCreate(context.Background(), "900001", "vehicle_block", AdminChallengeIntent{Operation: "vehicle.block", TargetID: &target, ExpectedVersion: &version, Reason: &reason, AvailableData: &AdminCloseData{FuelLevel: &fuel}}, "admin-challenge-3", nil); err == nil {
+		t.Fatal("admin-close data was accepted for vehicle.block")
+	}
+	if _, err := c.VehicleUnblock(context.Background(), "900001", target, version, reason, commandVehicleID, false, "vehicle-unblock-2", nil); err == nil {
+		t.Fatal("unblock without completed review accepted")
+	}
+	latitude := 55.75
+	if _, err := c.TripAdminClose(context.Background(), "900001", target, version, reason, commandVehicleID, &AdminCloseData{Latitude: &latitude}, "admin-close-2", nil); err == nil {
+		t.Fatal("partial coordinates accepted")
+	}
+	if calls != 0 {
+		t.Fatalf("sent %d invalid requests", calls)
 	}
 }

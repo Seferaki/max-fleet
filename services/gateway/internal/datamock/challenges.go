@@ -43,14 +43,15 @@ type takeChallengeIntent struct {
 }
 
 type adminChallengeIntent struct {
-	Operation       string  `json:"operation"`
-	TargetID        *string `json:"target_id"`
-	ExpectedVersion *int64  `json:"expected_version"`
-	Reason          *string `json:"reason,omitempty"`
-	ReviewCompleted *bool   `json:"review_completed,omitempty"`
-	MaxUserID       *string `json:"max_user_id,omitempty"`
-	DisplayName     *string `json:"display_name,omitempty"`
-	CanStartTrip    *bool   `json:"can_start_trip,omitempty"`
+	Operation       string                  `json:"operation"`
+	TargetID        *string                 `json:"target_id"`
+	ExpectedVersion *int64                  `json:"expected_version"`
+	Reason          *string                 `json:"reason,omitempty"`
+	ReviewCompleted *bool                   `json:"review_completed,omitempty"`
+	MaxUserID       *string                 `json:"max_user_id,omitempty"`
+	DisplayName     *string                 `json:"display_name,omitempty"`
+	CanStartTrip    *bool                   `json:"can_start_trip,omitempty"`
+	AvailableData   *dataapi.AdminCloseData `json:"available_data,omitempty"`
 }
 
 type answerPayload struct {
@@ -140,6 +141,31 @@ func (intent adminChallengeIntent) asMap() map[string]any {
 	if intent.CanStartTrip != nil {
 		fields["can_start_trip"] = *intent.CanStartTrip
 	}
+	if intent.AvailableData != nil {
+		data := make(map[string]any)
+		if intent.AvailableData.FuelLevel != nil {
+			data["fuel_level"] = *intent.AvailableData.FuelLevel
+		}
+		if intent.AvailableData.OdometerKM != nil {
+			data["odometer_km"] = *intent.AvailableData.OdometerKM
+		}
+		if intent.AvailableData.Latitude != nil {
+			data["latitude"] = *intent.AvailableData.Latitude
+		}
+		if intent.AvailableData.Longitude != nil {
+			data["longitude"] = *intent.AvailableData.Longitude
+		}
+		if intent.AvailableData.Landmark != nil {
+			data["landmark"] = *intent.AvailableData.Landmark
+		}
+		if intent.AvailableData.KeysReturned != nil {
+			data["keys_returned"] = *intent.AvailableData.KeysReturned
+		}
+		if intent.AvailableData.CarLocked != nil {
+			data["car_locked"] = *intent.AvailableData.CarLocked
+		}
+		fields["available_data"] = data
+	}
 	return fields
 }
 
@@ -162,18 +188,20 @@ func validAdminIntent(purpose string, intent adminChallengeIntent) bool {
 		return false
 	}
 	if purpose == "employee_grant" {
-		return intent.TargetID == nil && intent.ExpectedVersion == nil && intent.MaxUserID != nil && validMaxID(*intent.MaxUserID) && intent.DisplayName != nil && len([]rune(*intent.DisplayName)) >= 1 && len([]rune(*intent.DisplayName)) <= 200
+		return intent.TargetID == nil && intent.ExpectedVersion == nil && intent.AvailableData == nil && intent.MaxUserID != nil && validMaxID(*intent.MaxUserID) && intent.DisplayName != nil && len([]rune(*intent.DisplayName)) >= 1 && len([]rune(*intent.DisplayName)) <= 200
 	}
 	if intent.TargetID == nil || !validUUID(*intent.TargetID) || intent.ExpectedVersion == nil || *intent.ExpectedVersion < 1 {
 		return false
 	}
 	switch purpose {
-	case "vehicle_block", "admin_close":
-		return intent.Reason != nil && len([]rune(*intent.Reason)) >= 1 && len([]rune(*intent.Reason)) <= 1000
+	case "vehicle_block":
+		return intent.Reason != nil && len([]rune(*intent.Reason)) >= 1 && len([]rune(*intent.Reason)) <= 1000 && intent.AvailableData == nil
+	case "admin_close":
+		return intent.Reason != nil && len([]rune(*intent.Reason)) >= 1 && len([]rune(*intent.Reason)) <= 1000 && validMockAdminCloseData(intent.AvailableData)
 	case "vehicle_unblock":
-		return intent.Reason != nil && len([]rune(*intent.Reason)) >= 1 && len([]rune(*intent.Reason)) <= 1000 && intent.ReviewCompleted != nil && *intent.ReviewCompleted
+		return intent.Reason != nil && len([]rune(*intent.Reason)) >= 1 && len([]rune(*intent.Reason)) <= 1000 && intent.ReviewCompleted != nil && *intent.ReviewCompleted && intent.AvailableData == nil
 	case "employee_access":
-		return intent.CanStartTrip != nil && intent.Reason != nil && len([]rune(*intent.Reason)) >= 1 && len([]rune(*intent.Reason)) <= 1000
+		return intent.CanStartTrip != nil && intent.Reason != nil && len([]rune(*intent.Reason)) >= 1 && len([]rune(*intent.Reason)) <= 1000 && intent.AvailableData == nil
 	default:
 		return false
 	}
@@ -196,6 +224,10 @@ func hasExactAdminIntentPointers(purpose string, intent adminChallengeIntent) bo
 		"max_user_id":      intent.MaxUserID != nil,
 		"display_name":     intent.DisplayName != nil,
 		"can_start_trip":   intent.CanStartTrip != nil,
+		"available_data":   intent.AvailableData != nil,
+	}
+	if purpose == "admin_close" && intent.AvailableData != nil {
+		expected["available_data"] = true
 	}
 	for field, value := range present {
 		if field == "target_id" || field == "expected_version" {
@@ -211,6 +243,14 @@ func hasExactAdminIntentPointers(purpose string, intent adminChallengeIntent) bo
 		}
 	}
 	return true
+}
+
+func validAdminIntentPayloadShape(purpose string, raw json.RawMessage, fields []string) bool {
+	if purpose != "admin_close" || hasExactFields(raw, fields...) {
+		return hasExactFields(raw, fields...)
+	}
+	withData := append(append([]string(nil), fields...), "available_data")
+	return hasFields(raw, withData...)
 }
 
 func (s *Server) createChallenge(w http.ResponseWriter, requestID, actor string, command mockCommand) (dataapi.CommandResult, bool) {
@@ -344,7 +384,7 @@ func newMathChallenge(purpose string, expires, now time.Time) (dataapi.Challenge
 func (s *Server) createAdminChallenge(w http.ResponseWriter, requestID, actor string, command mockCommand, payload challengeCreatePayload) (dataapi.CommandResult, bool) {
 	fields := adminIntentFields(payload.Purpose)
 	var intent adminChallengeIntent
-	if !hasExactFields(payload.IntentPayload, fields...) || !strictPayload(payload.IntentPayload, &intent) || !validAdminIntent(payload.Purpose, intent) {
+	if !validAdminIntentPayloadShape(payload.Purpose, payload.IntentPayload, fields) || !strictPayload(payload.IntentPayload, &intent) || !validAdminIntent(payload.Purpose, intent) {
 		s.fail(w, requestID, http.StatusBadRequest, "INVALID_REQUEST")
 		return dataapi.CommandResult{}, false
 	}

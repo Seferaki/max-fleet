@@ -1,11 +1,11 @@
 openapi: 3.1.0
 info:
   title: MAX Fleet Data API
-  version: '1.5'
+  version: '1.6'
   description: 'Внутренний контракт Go ↔ mock ↔ Python. Весь SQL и бизнес-транзакции принадлежат Python. JSON UUID
     и MAX ID — строки. Неизвестные поля отклоняются. Время RFC3339 UTC. GET проверяет actor и ownership при каждом
-    запросе. Версия 1.5 фиксирует operation-specific math intent административных команд и одноразовый proof с SHA-256
-    полного canonical intent. Версии: vehicle растёт при смене доступности, блокировке, issue и коррекции; checkout
+    запросе. Версия 1.6 связывает доступные данные admin close с SHA-256 намерения, поэтому proof подтверждает все
+    изменения поездки и snapshot. Версии: vehicle растёт при смене доступности, блокировке, issue и коррекции; checkout
     при изменении оформления; inspection при ответе, фото и подтверждении; return при месте/отмене/завершении; trip
     при начале возврата, отмене, завершении и admin close; conversation только при save. Фото повышает inspection
     и его родительский checkout/return version. Перед start/complete Go читает актуальный агрегат. Hold равен 15
@@ -44,7 +44,7 @@ components:
       in: header
       required: true
       schema:
-        const: '1.5'
+        const: '1.6'
     RequestID:
       name: X-Request-ID
       in: header
@@ -786,7 +786,7 @@ components:
       additionalProperties: false
       properties:
         contract_version:
-          const: '1.5'
+          const: '1.6'
         build_sha:
           type: string
           maxLength: 64
@@ -1363,6 +1363,8 @@ components:
         reason:
           type: string
           maxLength: 1000
+        available_data:
+          $ref: '#/components/schemas/AdminCloseData'
       required:
       - operation
       - target_id

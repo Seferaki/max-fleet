@@ -112,6 +112,7 @@ func TestAdminChallengeIntentRequiresExactFieldsAndMatchingTarget(t *testing.T) 
 		{name: "missing required reason", actor: adminActorID, target: firstVehicleID, version: 1, intent: map[string]any{"operation": "vehicle.block", "target_id": firstVehicleID, "expected_version": 1}, status: http.StatusBadRequest, code: "INVALID_REQUEST"},
 		{name: "reject extra key", actor: adminActorID, target: firstVehicleID, version: 1, intent: map[string]any{"operation": "vehicle.block", "target_id": firstVehicleID, "expected_version": 1, "reason": "Проверка", "unexpected": true}, status: http.StatusBadRequest, code: "INVALID_REQUEST"},
 		{name: "purpose operation mismatch", purpose: "vehicle_unblock", actor: adminActorID, target: firstVehicleID, version: 1, intent: map[string]any{"operation": "vehicle.block", "target_id": firstVehicleID, "expected_version": 1, "reason": "Проверка", "review_completed": true}, status: http.StatusBadRequest, code: "INVALID_REQUEST"},
+		{name: "admin close rejects null available data", purpose: "admin_close", actor: adminActorID, target: "50000000-0000-4000-8000-000000000001", version: 1, intent: map[string]any{"operation": "trip.admin_close", "target_id": "50000000-0000-4000-8000-000000000001", "expected_version": 1, "reason": "Проверка", "available_data": nil}, status: http.StatusBadRequest, code: "INVALID_REQUEST"},
 		{name: "outer target mismatch", actor: adminActorID, target: "10000000-0000-4000-8000-000000000002", version: 1, intent: base, status: http.StatusBadRequest, code: "INVALID_REQUEST"},
 		{name: "outer version mismatch", actor: adminActorID, target: firstVehicleID, version: 2, intent: base, status: http.StatusBadRequest, code: "INVALID_REQUEST"},
 		{name: "stale object version", actor: adminActorID, target: firstVehicleID, version: 2, intent: map[string]any{"operation": "vehicle.block", "target_id": firstVehicleID, "expected_version": 2, "reason": "Проверка"}, status: http.StatusConflict, code: "STALE_VERSION"},
@@ -163,5 +164,22 @@ func TestAdminIntentHashMatchesPythonCanonicalJSON(t *testing.T) {
 	const want = "31e423b9ca2878be6b48263dd2dcf1d68049464d84bde64a547c5783163222d6"
 	if got != want {
 		t.Fatalf("canonical intent hash = %s, want %s", got, want)
+	}
+	tripID, tripVersion := "50000000-0000-4000-8000-000000000001", int64(7)
+	closeReason := "Водитель недоступен"
+	fuel, odometer := 75, int64(42149)
+	keysReturned, carLocked := false, false
+	latitude, longitude, landmark := 55.75, 37.61, "У ворот"
+	closeIntent := adminChallengeIntent{
+		Operation: "trip.admin_close", TargetID: &tripID, ExpectedVersion: &tripVersion, Reason: &closeReason,
+		AvailableData: &dataapi.AdminCloseData{FuelLevel: &fuel, OdometerKM: &odometer, KeysReturned: &keysReturned, CarLocked: &carLocked, Latitude: &latitude, Longitude: &longitude, Landmark: &landmark},
+	}
+	got, err = adminIntentHash(closeIntent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const wantClose = "17e43ca8d7820e2d23415ed25e0de5974d9d9e40c1a46ebc70890defe59b9c47"
+	if got != wantClose {
+		t.Fatalf("canonical admin-close intent hash = %s, want %s", got, wantClose)
 	}
 }

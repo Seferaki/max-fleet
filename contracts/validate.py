@@ -187,6 +187,8 @@ def main():
         for field in ("reason", "review_completed", "max_user_id", "display_name", "can_start_trip"):
             if field in intent and admin_command["payload"].get(field) != intent[field]:
                 raise RuntimeError(f"Admin-команда расходится с proof: {entry['purpose']}/{field}")
+        if intent.get("available_data") != admin_command["payload"].get("available_data"):
+            raise RuntimeError(f"Admin close data расходится с proof: {entry['purpose']}")
     invalid_admin = copy.deepcopy(admin_intents["examples"][0]["create_command"])
     del invalid_admin["payload"]["intent_payload"]["reason"]
     if jsonschema.Draft202012Validator(create_schema).is_valid(invalid_admin):
@@ -199,6 +201,11 @@ def main():
     invalid_admin["payload"]["purpose"] = "employee_grant"
     if jsonschema.Draft202012Validator(create_schema).is_valid(invalid_admin):
         raise RuntimeError("Purpose, не соответствующий operation intent, принят")
+    close_entry = next(entry for entry in admin_intents["examples"] if entry["purpose"] == "admin_close")
+    invalid_admin_close = copy.deepcopy(close_entry["create_command"])
+    invalid_admin_close["payload"]["intent_payload"]["available_data"] = None
+    if jsonschema.Draft202012Validator(create_schema).is_valid(invalid_admin_close):
+        raise RuntimeError("Admin challenge с null available_data принят")
     invalid_flow = copy.deepcopy(post_return_conversation)
     invalid_flow["flow"] = "unknown_flow"
     if jsonschema.Draft202012Validator(schema_for(data, "Conversation")).is_valid(invalid_flow):
