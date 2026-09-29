@@ -9,15 +9,15 @@ lock_state: ACTIVE
 owner: B
 session_id: "30274d30-ee62-4c3e-9df9-08a5c0e1e05e"
 branch: codex/backend
-heartbeat_utc: "2026-09-29T09:07:02Z"
+heartbeat_utc: "2026-09-29T09:12:02Z"
 current_task: BE-08
-current_substep: "BE-08: контракт post-return issue v1.3 опубликован; реализовать mock с immutable completed trip"
-last_verified_code_commit: "1aa6ebfab72f403d0dc96294ed88ff6f9945e629"
+current_substep: "BE-08: post-return mock реализован; добавить Go диалог сообщения из карточки"
+last_verified_code_commit: "e87e23bbaf770dc42b677cdfaa65cc707cdfa086"
 checkpoint_state: WIP
 contract_commit: "1aa6ebfab72f403d0dc96294ed88ff6f9945e629"
 backend_ready_for_integration: false
 full_stack_accepted: false
-next_step: "BE-08: реализовать post-return issue в mock, проверить owner/IDOR, CAS, идемпотентность, immutable trip и admin notification; затем Go диалог. Python ветка ещё v1.2, синхронизация обязательна до INT"
+next_step: "BE-08: добавить Go диалог post-return сообщения из собственной завершённой карточки, фото/ошибки/recovery; затем завершить IDOR и mock приёмку. Python ветка ещё v1.2, синхронизация обязательна до INT"
 human_required: [H-01]
 ```
 
@@ -60,6 +60,8 @@ human_required: [H-01]
 Архитектура Go → Python API → PostgreSQL и последовательная работа двух ноутбуков подтверждены заказчиком. ADR-07…10 остаются рабочими defaults без изменения бизнес-правил.
 
 ## Последний checkpoint
+
+- BE-08 mock code `e87e23bbaf770dc42b677cdfaa65cc707cdfa086`: `issue.create` для собственной completed trip создаёт отдельный `post_return` Issue, не меняя сохранённый Trip/after-inspection и их версии. Машина получает `needs_review`; уже действующий hold другой поездки отклоняется; admin notification сохраняется в одной транзакции mock. GET истории присоединяет Issue как проекцию, включая restart. `go test ./internal/datamock -run '^Test(PostReturnIssueKeepsCompletedTripAndBlocksHeldVehicle|ContractScenarioSubsetAgainstHTTPMock)$' -count=1` → PASS; 36 исполняемых mock-сценариев, включая 2 новых. Тест проверил owner/404, stale version, фото, failed snapshot rollback, idempotent replay, приватное чтение и restart. `contracts/validate.py` → 2 OpenAPI, 37 routes, 24 command examples, 9 other examples, 52 scenarios; `scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS. Только Go/mock; Go диалог и Python ещё WIP.
 
 - BE-08 contract code `1aa6ebfab72f403d0dc96294ed88ff6f9945e629`: Data API v1.3 задаёт отдельный post-return Issue собственной completed trip без изменения trip/after-inspection, блокировку новой выдачи и admin notification. Добавлены OpenAPI enum/описание, JSON-пример и 2 сценария; уточнены `return.complete` → Return и повышение checkout/return version при фото согласно существующему mock/Python. `.local/contract-venv/Scripts/python.exe contracts/validate.py` → OK (2 OpenAPI, 37 data routes, 24 command examples, 9 other examples, 52 scenarios); `scripts/verify.ps1 -Direction gateway` → Go test/vet/build PASS. Redocly 2.54.3 сообщил обе схемы valid, но процесс завершился с Node/Windows assertion и exit 1; чистый lint exit 0 не заявлен. Сценарии post-return пока только описаны, не исполнены; mock/Python бизнес-операция не реализована. Python ветка DE-09 всё ещё v1.2, до INT нужно согласовать новый контракт. BE-08 WIP.
 
