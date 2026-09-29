@@ -37,6 +37,7 @@ type CheckoutCommander interface {
 	CheckoutStart(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	TripBeginReturn(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	ChallengeCreateReturn(context.Context, string, string, int64, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
+	ReturnCancel(context.Context, string, string, int64, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	ConversationSave(context.Context, string, string, int64, dataapi.ConversationSaveInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 	IssueCreate(context.Context, string, string, int64, dataapi.IssueCreateInput, string, *dataapi.InboxLease) (dataapi.CommandResult, error)
 }
@@ -93,12 +94,14 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	returnIntentID, returnIntentVersion, returnIntent := vehicleActionTarget(item.Event, "return-intent:")
 	returnConfirmID, returnConfirmVersion, returnConfirm := vehicleActionTarget(item.Event, "return-confirm:")
 	returnMathID, returnMathVersion, returnMath := vehicleActionTarget(item.Event, "return-math:")
+	returnCancelIntentID, returnCancelIntentVersion, returnCancelIntent := vehicleActionTarget(item.Event, "return-cancel-intent:")
+	returnCancelID, returnCancelVersion, returnCancel := vehicleActionTarget(item.Event, "return-cancel:")
 	confirmInspectionID, confirmInspectionVersion, confirmPhotos := vehicleActionTarget(item.Event, "confirm-photos:")
 	replaceCheckoutID, replaceVersion, replacePhotos := vehicleActionTarget(item.Event, "replace-photos:")
 	replaceSlotCheckoutID, replaceSlotVersion, selectedSlot, replaceSlot := replacePhotoSlotTarget(item.Event)
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	if !catalog && !card && !previous && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -135,6 +138,13 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 			tripID, version = returnConfirmID, returnConfirmVersion
 		}
 		return p.beginReturn(ctx, item, actor, maxID, *me.Employee, state, tripID, version, returnConfirm)
+	}
+	if returnCancelIntent || returnCancel {
+		returnID, version := returnCancelIntentID, returnCancelIntentVersion
+		if returnCancel {
+			returnID, version = returnCancelID, returnCancelVersion
+		}
+		return p.cancelReturn(ctx, item, actor, maxID, *me.Employee, state, returnID, version, returnCancel)
 	}
 	if intent || confirm {
 		vehicleID, version := actionVehicleID, actionVersion
@@ -871,6 +881,7 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.
 			rows = append([][]maxsdk.Button{{{Text: "Продолжить возврат · проверка", Payload: fmt.Sprintf("return-math:%s:%d", state.Return.ID, state.Return.Version)}}}, rows...)
 		}
 		rows = append(rows, []maxsdk.Button{{Text: "Текущая поездка", Payload: "trip:" + state.Trip.ID}})
+		rows = append(rows, []maxsdk.Button{{Text: "Вернуться к поездке", Payload: fmt.Sprintf("return-cancel-intent:%s:%d", state.Return.ID, state.Return.Version)}})
 	}
 	if state.Trip != nil && state.Trip.Status == "active" {
 		rows = append([][]maxsdk.Button{{{Text: "Текущая поездка", Payload: "trip:" + state.Trip.ID}}}, rows...)
