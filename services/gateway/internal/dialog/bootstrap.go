@@ -142,7 +142,8 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	photoMessage := item.Event.EventType == "message_created" && item.Event.Payload.Kind == "photo" && item.Event.Payload.AttachmentCount == 1 && item.Event.Payload.PhotoSourceKey != nil
 	geoMessage := returnGeoEvent(item.Event)
 	tripView := parseTripView(item.Event)
-	if !catalog && !card && !previous && !previousPhoto.recognized && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !returnOdometerConfirm && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !postReturnIssueOpen && !postReturnCategoryPrompt && !postReturnPhotoHelp && !postReturnReview && !postReturnSend && !returnIssuePrompt && !tripIssuePhotoHelp && !returnIssuePhotoHelp && !tripIssueReview && !tripIssueSend && !returnIssueReview && !returnIssueSend && !returnGeoConfirm && !returnSummary && !returnComplete && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !geoMessage && !tripView.recognized && !isMenuEvent(item.Event) {
+	adminIssue := parseAdminIssueEvent(item.Event)
+	if !catalog && !card && !previous && !previousPhoto.recognized && !intent && !confirm && !cancelIntent && !confirmedCancel && !math && !answer && !rules && !acceptRules && !photos && !fuel && !setFuel && !odometerPrompt && !odometerCommand && !returnOdometerPrompt && !returnOdometerConfirm && !issueQuestion && !issueAnswer && !issueDraftPrompt && !issueKindPrompt && !issueDraftCommand && !tripIssuePrompt && !postReturnIssueOpen && !postReturnCategoryPrompt && !postReturnPhotoHelp && !postReturnReview && !postReturnSend && !returnIssuePrompt && !tripIssuePhotoHelp && !returnIssuePhotoHelp && !tripIssueReview && !tripIssueSend && !returnIssueReview && !returnIssueSend && !returnGeoConfirm && !returnSummary && !returnComplete && !issuePhotoHelp && !issueReview && !issueSubmit && !summary && !start && !returnIntent && !returnConfirm && !returnMath && !returnCancelIntent && !returnCancel && !returnCheck && !returnSet && !returnPhotos && !returnConfirmPhotos && !returnReplace && !returnReplaceSlot && !returnFuel && !returnFuelSet && !confirmPhotos && !replacePhotos && !replaceSlot && !photoMessage && !geoMessage && !tripView.recognized && !adminIssue.recognized && !isMenuEvent(item.Event) {
 		return inboxworker.ErrDeferred
 	}
 	if p.Data == nil || p.MAX == nil {
@@ -169,6 +170,9 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	state, err := p.Data.State(ctx, actor)
 	if err != nil {
 		return err
+	}
+	if adminIssue.recognized {
+		return p.handleAdminIssueRequest(ctx, item, actor, maxID, *me.Employee, state, adminIssue)
 	}
 	if postReturnIssueOpen {
 		return p.startPostReturnIssue(ctx, actor, maxID, *me.Employee, postReturnIssueID, postReturnIssueVersion)
@@ -1050,7 +1054,8 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState, mapBotName 
 				rows = append(rows, []maxsdk.Button{{Text: "Проверить итог перед выездом", Payload: fmt.Sprintf("checkout-summary:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
 			}
 		}
-		return append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
+		rows = append(rows, []maxsdk.Button{{Text: "Отменить оформление", Payload: fmt.Sprintf("cancel-intent:%s:%d", state.Checkout.ID, state.Checkout.Version)}})
+		return adminMenuRows(rows, employee, state)
 	}
 	rows := [][]maxsdk.Button{{{Text: "Мои поездки", Payload: "trip-list:mine:1"}}}
 	if state.Return != nil && state.Trip != nil && state.Trip.Status == "returning" {
@@ -1116,18 +1121,31 @@ func menuRows(employee dataapi.Employee, state dataapi.CurrentState, mapBotName 
 	if employee.CanStartTrip && state.Trip == nil && state.Checkout == nil {
 		rows = append([][]maxsdk.Button{{{Text: "Доступные автомобили", Payload: "cars:1"}}}, rows...)
 	}
-	if employee.Role == "admin" {
-		adminButton := maxsdk.Button{Text: "Поездки автопарка", Payload: "trip-list:admin:1"}
-		if len(rows) >= 10 {
-			for index := range rows {
-				if len(rows[index]) == 1 && rows[index][0].Payload == "trip-list:mine:1" {
-					rows[index] = append(rows[index], adminButton)
-					break
-				}
+	return adminMenuRows(rows, employee, state)
+}
+
+func adminMenuRows(rows [][]maxsdk.Button, employee dataapi.Employee, state dataapi.CurrentState) [][]maxsdk.Button {
+	if employee.Role != "admin" {
+		return rows
+	}
+	adminButtons := []maxsdk.Button{{Text: "Поездки автопарка", Payload: "trip-list:admin:1"}, {Text: "Замечания", Payload: "admin-issues:open:1"}}
+	if len(rows) >= 10 {
+		attached := false
+		for index := range rows {
+			if len(rows[index]) == 1 && rows[index][0].Payload == "trip-list:mine:1" {
+				rows[index] = append(rows[index], adminButtons...)
+				attached = true
+				break
 			}
-		} else {
-			rows = append(rows, []maxsdk.Button{adminButton})
 		}
+		if !attached {
+			rows = append(rows, adminButtons)
+		}
+	} else {
+		rows = append(rows, adminButtons)
+	}
+	if conversation := state.Conversation; conversation != nil && conversation.Flow == adminIssueResolutionFlow && conversation.Step != "done" && conversation.Step != "cancelled" && conversation.Context.IssueID != nil && conversation.Context.IssueVersion != nil {
+		rows = append(rows, []maxsdk.Button{{Text: "Продолжить решение замечания", Payload: fmt.Sprintf("admin-issue-resume:%s:%d", *conversation.Context.IssueID, *conversation.Context.IssueVersion)}})
 	}
 	return rows
 }
