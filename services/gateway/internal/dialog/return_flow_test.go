@@ -59,7 +59,7 @@ func TestFullReturnThroughDialogOnMock(t *testing.T) {
 		}
 	}
 
-	for index, field := range []string{"damage", "clean", "parking", "keys", "locked"} {
+	for index, field := range []string{"damage", "clean", "parking", "keys_lock"} {
 		menu(fmt.Sprintf("return-flow-check-menu-%d", index))
 		callback(fmt.Sprintf("return-flow-check-open-%d", index), button("return-check:"))
 		answer := latest().Buttons[0][0].Payload

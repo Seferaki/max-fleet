@@ -126,7 +126,7 @@ func (p Bootstrap) Handle(ctx context.Context, item dataapi.InboxClaimItem) erro
 	returnCancelIntentID, returnCancelIntentVersion, returnCancelIntent := vehicleActionTarget(item.Event, "return-cancel-intent:")
 	returnCancelID, returnCancelVersion, returnCancel := vehicleActionTarget(item.Event, "return-cancel:")
 	returnCheckID, returnCheckVersion, returnCheck := vehicleActionTarget(item.Event, "return-check:")
-	returnSetID, returnSetVersion, returnField, returnValue, returnSet := returnCheckAnswerTarget(item.Event)
+	returnSetID, returnSetVersion, returnField, returnValue, _, returnSet := returnCheckAnswerTarget(item.Event)
 	returnPhotosID, returnPhotosVersion, returnPhotos := vehicleActionTarget(item.Event, "return-photos:")
 	returnConfirmPhotosID, returnConfirmPhotosVersion, returnConfirmPhotos := vehicleActionTarget(item.Event, "return-confirm-photos:")
 	returnReplaceID, returnReplaceVersion, returnReplace := vehicleActionTarget(item.Event, "return-replace:")
