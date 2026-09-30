@@ -11,11 +11,11 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T03:27:26Z"
+heartbeat_utc: "2026-09-30T03:33:22Z"
 current_task: INT-04
-current_substep: "Code 9e1f05878b356f7d0470df9c72fe01aaf2231ac5 добавляет opt-in /usr/local/bin/max-setup: проверяет MAX_UPDATE_MODE=webhook, внешний HTTPS readiness, отсутствие существующих subscriptions, регистрирует 3 update types и сверяет GET после POST. Gateway verify, Compose config base/MAX overlay, Docker image build и secret scan PASS; реальная MAX подписка не изменялась. Следующий шаг — повтор TLS после rate-limit окна, затем MAX setup только при всех preflight."
+current_substep: "Для code 9e1f05878b356f7d0470df9c72fe01aaf2231ac5 повторён scripts/verify.ps1 -Direction all: contract, Go, web и три Docker image build PASS. Read-only Data API синтетического demo подтвердил 1.13/10 машин/4 сотрудника/rules; контейнерный max-setup default guard также PASS. Реальная MAX подписка не менялась; продолжаю INT-03 и жду TLS retry window."
 last_verified_code_commit: "9e1f05878b356f7d0470df9c72fe01aaf2231ac5"
-last_pushed_checkpoint: "77a11469b270619112460041b72dd9d0cb8107f9"
+last_pushed_checkpoint: "c7ba1b61da6b8ad8fa766a652e885a84b6bdfb96"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
@@ -26,6 +26,7 @@ human_required: ["H-03: приватно передать MAX user ID перво
 
 ### INT-04 / MVP checkpoint 2026-09-30
 
+- Повторная проверка после публикации code: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` → contract/OpenAPI, Go tests/vet/build, web typecheck + 6 tests + build и Docker gateway/data-mock/web image builds PASS. Host Node 22.13.1 дал engine-version warnings (web Docker build использует pinned Node 22.22.2 и прошёл). Через read-only Python Data API контейнера max-fleet-docwait-data-api-1 подтверждены synthetic demo contract 1.13, 10 vehicles, 4 employees, rules present; SQL не использовался, production seed не менялся. `docker run --rm --entrypoint /usr/local/bin/max-setup max-fleet-gateway:scaffold` без явного флага ожидаемо отказал; default guard PASS.
 - Code commit `9e1f05878b356f7d0470df9c72fe01aaf2231ac5` добавляет /usr/local/bin/max-setup в gateway image. Настройка доступна только при явном `MAX_FLEET_CONFIGURE_MAX_WEBHOOK=1` и `MAX_UPDATE_MODE=webhook`; проверяет HTTPS /health/ready, отказывается менять любую найденную подписку, после успешного POST сверяет URL/update_types повторным GET. Документированы runtime prerequisites и команда. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → все Go tests/vet/build PASS; base Compose и MAX overlay config → PASS; `docker build -f services/gateway/Dockerfile.gateway -t max-fleet-gateway:scaffold services/gateway` → PASS; `py scripts/check-secrets.py --staged` → 9 staged files, matches 0; `git diff --cached --check` → PASS. MAX POST не выполнялся, так как TLS ещё не восстановлен.
 - README сверено с разделом «Формат сдачи» приложенного PDF, стр. 9: присутствуют назначение, сценарий, архитектура, команда запуска, env/dependencies/ports, тестовые данные, ожидаемый результат, ограничения и stop/restart-порядок. `docker compose stop`, `start`, `up --build --wait` и `down` описаны с сохранением volumes; `down -v` явно исключён из обычной эксплуатации. Изменение `README.md` — commit `d79c1588bc6bb269f2f21f541abf4cb19a2bacc0`, status commit `ef752736ef2912c1e9f2ca484ef953684d1285c2`; обычный push обеих веток и `git ls-remote` подтвердили SHA `ef75273`. Команды остановки/обновления добавлены в документацию, но отдельно не запускались.
 
