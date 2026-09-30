@@ -36,7 +36,7 @@ MAX Fleet помогает организациям с общим автопар
 
 ```powershell
 Copy-Item .env.example .env
-$env:MAX_FLEET_SECRETS_DIR = Join-Path $env:LOCALAPPDATA 'MAXFleet\secrets'
+$env:MAX_FLEET_SECRETS_DIR = 'C:\MAXFleet\secrets'
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 ```
 
@@ -48,7 +48,7 @@ docker compose --env-file .env -f deploy/compose.full.yaml -p max-fleet-demo up 
 
 Откройте `http://127.0.0.1:8081`. Страница карты требует действительный подписанный контекст MAX и идентификатор возврата, поэтому обычное открытие URL в браузере подтверждает доступность web-контейнера, но не заменяет запуск карты из чата MAX.
 
-Compose поднимает Go gateway, React web, Python API и worker, Alembic migration, PostgreSQL и S3. Сервисы готовы, когда Compose сообщает healthy для gateway, web, data-api, PostgreSQL и S3; одно лишь состояние контейнера gateway проверяет его liveness, а не завершённость всех диалогов.
+Compose поднимает Go gateway, React web, Python API и worker, Alembic migration, PostgreSQL и S3. Команда ждёт healthy для gateway, web, data-api, worker, PostgreSQL и S3. Проверка worker подтверждает, что его процесс запущен; готовность Python API отдельно проверяется через `/health/ready`. Состояние gateway подтверждает liveness, а не завершённость всех диалогов.
 
 ### Переменные и секреты
 
@@ -66,7 +66,7 @@ Compose поднимает Go gateway, React web, Python API и worker, Alembic 
 | `COMPANY_MAP_LAT`, `COMPANY_MAP_LON` | Необязательный центр карты | Пустые значения допустимы |
 | `MAX_BOT_NAME`, `MAX_PHOTO_HOSTS` | Имя бота и разрешённые хосты медиа | Пустые в синтетическом режиме; задать для live-подключения |
 | `S3_BUCKET`, `S3_REGION` | Настройки хранилища | Внутренний bucket `max-fleet-photos`, регион `us-east-1` |
-| `MAX_FLEET_SECRETS_DIR` | Путь к приватным файлам секретов, задаётся в оболочке | `$env:LOCALAPPDATA\MAXFleet\secrets` |
+| `MAX_FLEET_SECRETS_DIR` | Путь к приватным файлам секретов, задаётся в оболочке | `C:\MAXFleet\secrets` (ASCII-путь для Docker Desktop при профиле Windows с кириллицей) |
 
 `bootstrap.ps1` создаёт случайные локальные секреты сервисов, PostgreSQL и S3; он не создаёт MAX bot token и не добавляет секреты в `.env`. Для настоящего MAX используются приватные файлы `max_bot_token` и `max_webhook_secret`, TLS и внешний HTTPS reverse proxy. Не помещайте значения секретов в Git, README, презентацию или чат.
 
@@ -80,7 +80,7 @@ Compose поднимает Go gateway, React web, Python API и worker, Alembic 
 | `data-api:8000` | Только Compose network | Python Data API |
 | PostgreSQL `5432`, S3 `8333` | Только Compose network | Не публикуются на хост |
 
-Зависимости зафиксированы в `services/gateway/go.mod`/`go.sum`, `web/package-lock.json` и `services/data/uv.lock`; Docker-образы и версии PostgreSQL зафиксированы в Docker-конфигурации. В live-режиме внешние зависимости — платформа MAX и её HTTPS API. Для отображения карты браузеру нужен настроенный tile-сервис; по умолчанию указан OpenStreetMap. В локальном стенде фотографиями управляет Python, S3 реализует SeaweedFS.
+Зависимости зафиксированы в `services/gateway/go.mod`/`go.sum`, `web/package-lock.json` и `services/data/uv.lock`; Docker-образы и версии PostgreSQL зафиксированы в Docker-конфигурации. Для дополнительного smoke с хоста также нужен `uv`; он не требуется для старта Compose. В live-режиме внешние зависимости — платформа MAX и её HTTPS API. Для отображения карты браузеру нужен настроенный tile-сервис; по умолчанию указан OpenStreetMap. В локальном стенде фотографиями управляет Python, S3 реализует SeaweedFS.
 
 ### Тестовые данные и проверка
 
@@ -91,7 +91,7 @@ Compose поднимает Go gateway, React web, Python API и worker, Alembic 
 Для воспроизводимой проверки Python API используйте отдельный свежий Compose project с `SEED_SYNTHETIC=1`, затем из корня репозитория выполните в PowerShell:
 
 ```powershell
-$env:MAX_FLEET_SECRETS_DIR = Join-Path $env:LOCALAPPDATA 'MAXFleet\secrets'
+$env:MAX_FLEET_SECRETS_DIR = 'C:\MAXFleet\secrets'
 $env:DATA_API_URL = 'http://127.0.0.1:18000'
 uv run --project services/data python services/data/scripts/smoke.py
 ```
@@ -107,6 +107,7 @@ Smoke использует локальные service-token файлы, не п�
 ## Остановка и повторный запуск
 
 ```powershell
+$env:MAX_FLEET_SECRETS_DIR = 'C:\MAXFleet\secrets'
 docker compose --env-file .env -f deploy/compose.full.yaml -p max-fleet-demo down
 ```
 

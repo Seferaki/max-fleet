@@ -84,7 +84,7 @@ HUMAN_REQUIRED: H-01
 6. При смене ноутбука человек один раз заполняет локальные secrets либо пользуется согласованным приватным менеджером; Git переносит только код.
 7. При подозрении на попадание токена в Git/лог сначала отозвать/заменить у провайдера, затем убрать источник утечки. Простое удаление последнего файла не удаляет историю.
 
-На Windows `scripts/bootstrap.ps1` создаёт восемь случайных service/DB/storage секретов с ACL текущего пользователя; существующие файлы не перезаписываются, значения не выводятся. Если `%LOCALAPPDATA%` содержит кириллицу и Docker Desktop не может смонтировать его, задайте перед запуском `MAX_FLEET_SECRETS_DIR` абсолютным ASCII-путём вне репозитория, например `C:\MAXFleet\secrets`. Backend Compose получает пути только к двум локальным файлам `data_api_token` и `worker_api_token`; в PowerShell после bootstrap их можно задать без копирования значений:
+На Windows `scripts/bootstrap.ps1` создаёт восемь случайных service/DB/storage секретов с ACL текущего пользователя; существующие файлы не перезаписываются, значения не выводятся. Задайте `MAX_FLEET_SECRETS_DIR` абсолютным ASCII-путём вне репозитория, например `C:\MAXFleet\secrets`: Docker Desktop на этом устройстве смонтировал файлы из профиля с кириллицей как каталоги. Backend Compose получает пути только к двум локальным файлам `data_api_token` и `worker_api_token`; в PowerShell после bootstrap их можно задать без копирования значений:
 
 ```powershell
 $env:MAX_FLEET_SECRETS_DIR = 'C:\MAXFleet\secrets'
@@ -109,6 +109,8 @@ docker compose -f deploy/compose.backend.yaml up --build -d --wait
 | deploy/compose.full.yaml | gateway, web/proxy, data-api, worker, migrate, postgres, s3 | Только финальный INT |
 
 Full и data конфигурации переиспользуют одинаковые pinned images/настройки сервисов; не поддерживать несовместимые копии миграций. Root .env.example — общий список имён. У каждого контура отдельное имя Compose project и volumes, чтобы тесты не затронули демо.
+
+`data-worker` имеет Compose healthcheck процесса для поддержки `up --wait`; healthy подтверждает наличие дочернего процесса worker, но не проверяет обработку очереди. Для readiness API используйте `/health/ready`, а для поведения очереди — отдельный synthetic smoke.
 
 Целевые команды:
 
