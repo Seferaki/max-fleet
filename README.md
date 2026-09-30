@@ -152,8 +152,10 @@ docker compose --env-file .env -f deploy/compose.full.yaml -p max-fleet-demo dow
 | [API_CONTRACT.md](docs/API_CONTRACT.md) | DTO, команды, ошибки и версии |
 | [DATABASE.md](docs/DATABASE.md) | Схема и бизнес-инварианты, реализованные Python-сервисом |
 | [OPERATIONS.md](docs/OPERATIONS.md) | MAX, секреты, Docker, HTTPS, backup/restore |
+| [Политики MVP](docs/policies/README.md) | Эксплуатация машин, доступ, данные, backup/restore и инциденты |
 | [HANDOFF.md](docs/HANDOFF.md) | Передача backend-очереди и checkpoint |
 | [Документация синтетических фото](docs/demo/vehicle-inspections/README.md) | Состав тестовых изображений и сценарии |
+| [Синтетический набор данных](docs/demo/SYNTHETIC_DATASET.md) | Состав seed и граница demo/production |
 | [Прогресс backend](docs/progress/BACKEND.md) | Проверки, опубликованные commits и оставшиеся задачи |
 
 Для сдачи по треку «Эффективный бизнес» отдельно подготовьте PDF-презентацию и укажите в служебной части доступ к боту и точный commit hash. Рабочие токены, пароли и другие значения секретов остаются вне репозитория и передаются проверяющим только по разрешённому защищённому каналу.
