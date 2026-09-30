@@ -9,9 +9,9 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T00:32:19Z"
+heartbeat_utc: "2026-09-30T00:38:06Z"
 current_task: INT-03
-current_substep: "Code d5b6e7aeea6fb83ccc5809082af20efb9e500b51 passed full Go gates and live same-key completion replay. Data API restart, Compose down/up without -v, backup/restore after migration 0002 (21 tables/2020 rows/96 S3 hashes/0 broken links), and PostgreSQL/S3 outage-readiness checks passed; outage returned readiness 503, recovery 200, and live Go dialog passed afterward. MAX 429, notification restart recovery and inbox lease/idempotency targeted tests PASS."
+current_substep: "Code d5b6e7aeea6fb83ccc5809082af20efb9e500b51 passed full Go gates and live same-key completion replay. Data API restart, Compose down/up without -v, backup/restore after migration 0002 (21 tables/2020 rows/96 S3 hashes/0 broken links), and PostgreSQL/S3 outage-readiness checks passed; outage returned readiness 503, recovery 200, and live Go dialog passed afterward. MAX 429, notification restart recovery and inbox lease/idempotency targeted tests PASS. Local MAX token file is present; a fresh safe /me retry still failed at network/transport, no HTTP response."
 last_verified_code_commit: "d5b6e7aeea6fb83ccc5809082af20efb9e500b51"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
@@ -60,6 +60,8 @@ human_required: [H-02]
 - Проверяемый Go code commit — `d5b6e7aeea6fb83ccc5809082af20efb9e500b51`; status commit `4de054801045a8d76026e05500a3fcabe826a9f6` локально создан, но на момент записи не опубликован из-за недоступности GitHub: TCP 443 timeout. Нового Go-кода в этом подшаге нет.
 - На изолированном `max-fleet-int-recovery` выполнены `docker compose -p max-fleet-int-recovery -f deploy/compose.full.yaml stop postgres`, запрос `curl.exe -sS -o NUL -w '%{http_code}' http://127.0.0.1:18003/health/ready` → 503, затем `up -d --wait --wait-timeout 180` → readiness 200. То же выполнено для `s3`; стек снова healthy.
 - После восстановления выполнена сквозная проверка: из `services/gateway` заданы только пути к приватным synthetic Data API token-файлам и `MAX_FLEET_LIVE_DIALOG=1`; `& ..\..\.local\go-dist\go\bin\go.exe test ./internal/dialog -run '^TestLivePythonReturnDialog$' -count=1 -v` → PASS. Значения файлов не выводились.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/enter-max-token.ps1 -Check` → `True`; helper `.local/max-me/main.go` через pinned MAX Go SDK `GetMyInfo` → `MAX /me failed: network/transport error`. HTTP response не получен; helper не печатает token/body. Повторно просить секрет не нужно.
+- Документальный recovery checkpoint `dbac4da9074fdad69cf034d61ed754cf70552e9e` отправлен обычным `git push origin HEAD:refs/heads/codex/integration`; `git ls-remote origin refs/heads/codex/integration` подтвердил тот же SHA. На момент проверки удалённый lock оставался `ACTIVE`, owner A, session `01046daa-671d-40fb-bc02-45c1263a9705`.
 - Эти тесты проверяют readiness/recovery, но не транзакцию, оборванную посреди команды. Ещё не проверены реальный restart Go-контейнера между событиями возврата и Python/PostgreSQL/S3 outage во время активной операции. См. воспроизводимые команды в [OPERATIONS](../OPERATIONS.md).
 
 ## Готовность организационных входов
