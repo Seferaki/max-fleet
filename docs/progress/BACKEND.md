@@ -2,6 +2,8 @@
 
 Единственный текущий статус backend. BE-12 и обязательный UI-01 закрыты только в Go/mock; backend gate true, full stack false. INT-02 опубликована и закрыта как синтетический integration gate: code `84ad9b51d732787a8e6057577ed7048f209a4015`, status checkpoint `1766bccdb9ec4f8ec46c79c95b4b2d668670a57e`. Проверены Go inbox/dialog → Python v1.13/PostgreSQL/S3, 15-минутный hold, 8+8 фото, manual_map, история, admin issue ACL и resolution; Go test/vet/build PASS. В INT-03 recovery substep `e6888015088d4e4feff391efaf3af17d3d7e4452` опубликован вместе с checkpoint `6b8f033255fd8229020987883d09e71fd3d70370`. Response-loss code `94ff2fb74500b14aa4598d019e06a4cd8862363a` опубликован в checkpoint `1a51d5ad59ea87357e13345fcaf5d36524bf4658`: после фактического Python commit тест отбросил 200 и возвратил synthetic 503; Go повторил тот же X-Request-ID/Idempotency-Key/body, Python отдал сохранённый результат, поездка завершилась один раз. Новый код `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` проверяет повтор завершённого `return.complete` с тем же ключом и стабильность версии Trip; статусный checkpoint `a4e2bab9b950e7cc114eb6a12c048fdbb60ecc9f` опубликован, `git ls-remote` подтвердил remote branch на этом SHA. QA пропускается по решению пользователя и не считается PASS. Исходная `codex/data` сохранена на SHA `9eb2211b29e48fce8a6afc410bc986fa98a4988e`; интеграционные исправления делаются в `codex/integration`.
 
+Последний проверенный code commit `07bd48131d516a3fb046169812f4fda1b637d0eb`: Go MAX client локально доверяет Russian Trusted Root CA только для MAX API; есть opt-in smoke `/me` без вывода токена. `scripts/verify.ps1 -Direction gateway`, реальный `MAX /me`, Docker build gateway, `git diff --check` и staged secret scan прошли. MAX `/me` подтвердил бота; outbound TLS к API v2 проверен цепочкой с pinned root. VPS пока не изменялся; обнаружен ISPmanager с активными Nginx/Apache, поэтому установка требует отдельного loopback-прокси и не должна перезаписывать конфиги панели.
+
 ```yaml
 status_schema: 1
 track: backend
@@ -9,16 +11,16 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T01:02:10Z"
+heartbeat_utc: "2026-09-30T01:20:02Z"
 current_task: INT-03
-current_substep: "Code 12af084fa94eb00b0ef04fbd378c8b5f26bc1654 adds a live MAX token secret overlay, honors MAX_FLEET_SECRETS_DIR in the hidden Windows token input, and makes Linux file-backed Compose secrets readable by UID 10001 under a private 0700 directory. Base/live Compose config, token path override, Linux permissions (0444), staged secret scan, and git diff check passed. Current local MAX token presence is true; its value was not read. Read-only VPS check over strict SSH confirmed Ubuntu 24.04.5, about 1.8 GiB RAM/40 GiB disk, DNS and HTTP Nginx on port 80; Docker/Compose are absent and TLS handshake on 443 fails. No server files or services changed."
-last_verified_code_commit: "12af084fa94eb00b0ef04fbd378c8b5f26bc1654"
+current_substep: "Code 07bd48131d516a3fb046169812f4fda1b637d0eb adds MAX API v2 Russian root trust scoped to the Go MAX client and an opt-in live /me smoke. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → tests/vet/build PASS; `go test ./internal/maxsdk -run '^TestLiveMAXMe$' -count=1 -v` → PASS for the real bot with no token output; `docker build --pull=false -f services/gateway/Dockerfile.gateway -t max-fleet-gateway:verified services/gateway` → PASS; `git diff --check` and staged secret scan → PASS. Strict SSH read-only inspection found Ubuntu 24.04.5, ~1.8 GiB RAM/40 GiB disk, ISPmanager and active Nginx/Apache; Docker absent, assigned hostname HTTP works and HTTPS has no listener. No VPS service/config changed."
+last_verified_code_commit: "07bd48131d516a3fb046169812f4fda1b637d0eb"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "INT-03 остаётся WIP: проверить Go process restart и поведение активной команды при недоступности Python/DB/S3; уже пройденные backup, readiness outage/recovery и live dialog повторно не запускать без причины. Затем развернуть на доступном VPS: установить Docker/Compose, настроить HTTPS для доступного hostname, проверить реальный MAX token/API и подключить webhook/mini-app. До HTTPS и реального MAX full_stack_accepted=false. QA NOT RUN по решению пользователя."
-human_required: []
+next_step: "INT-03 остаётся WIP: проверить только ещё не выполненные restart Go container во время активного return и сбой Python/DB/S3 с восстановлением; уже пройденные response-loss, backup, readiness/outage и live dialog не повторять. После этого продолжить INT-04 на VPS: установить Docker/Compose, сохранить ISPmanager и его службы, bind приложения только на loopback, выпустить доверенный HTTPS для hostname, проверить существующие MAX subscriptions и обновить только URL этого проекта. Затем нужен приватный bootstrap первого админа и тестовый seed (H-03) до прохождения реального пользовательского сценария. QA NOT RUN по решению пользователя; full_stack_accepted=false до реального webhook/mini-app smoke и оставшихся integration gates."
+human_required: ["H-03: приватно задать MAX user ID первого администратора и синтетические seed-данные перед доступом реальных пользователей"]
 ```
 
 ## Реестр задач
