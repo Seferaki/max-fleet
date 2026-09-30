@@ -34,7 +34,7 @@ function Verify-Gateway {
         Assert-Exit 'go test'
         & $goPath vet ./...
         Assert-Exit 'go vet'
-        & $goPath build ./cmd/gateway ./cmd/data-mock
+        & $goPath build ./cmd/gateway ./cmd/data-mock ./cmd/max-setup
         Assert-Exit 'go build'
     } finally { Pop-Location }
 }

@@ -60,6 +60,15 @@ Pop-Location
 Remove-Item Env:\MAX_BOT_TOKEN_FILE, Env:\MAX_FLEET_LIVE_MAX_SUBSCRIPTIONS -ErrorAction SilentlyContinue
 ```
 
+- Для регистрации webhook после успешного HTTPS preflight используйте `/usr/local/bin/max-setup` внутри gateway-контейнера full stack. В удалённом `.env` заранее должны быть заданы `MAX_UPDATE_MODE=webhook` и `PUBLIC_BASE_URL=https://<домен>`; файлы `max_bot_token` и `max_webhook_secret` должны быть доступны Compose. Команда требует эти смонтированные token/secret-файлы и явный флаг `MAX_FLEET_CONFIGURE_MAX_WEBHOOK=1`. Она проверяет публичный HTTPS `/health/ready`, отказывается менять любую уже существующую подписку, регистрирует только `message_created`, `message_callback`, `bot_started`, затем перечитывает и сверяет результат. Пример после подготовки MAX overlay:
+
+```powershell
+docker compose --env-file .env -f deploy/compose.full.yaml -f deploy/compose.full.max.yaml -p max-fleet-prod up -d --build --wait
+docker compose --env-file .env -f deploy/compose.full.yaml -f deploy/compose.full.max.yaml -p max-fleet-prod exec -e MAX_FLEET_CONFIGURE_MAX_WEBHOOK=1 gateway /usr/local/bin/max-setup
+```
+
+Не запускайте этот setup до успешной TLS-проверки или если в MAX уже есть подписка: CLI безопасно откажется от изменения. Он не меняет URL Mini App; этот адрес настраивается отдельно в MAX для бизнеса.
+
 - Polling marker переносит границу прочитанных событий; сохранить пачку в inbox до продвижения marker. При рестарте продолжить от сохранённого значения; один poller на token. [GET updates](https://dev.max.ru/docs-api/methods/GET/updates).
 - Кнопка карты использует `https://max.ru/<MAX_BOT_NAME>?startapp=<return_id>` для текущего возврата. После регистрации mini-app человек локально указывает имя одобренного бота без `@`; ID возврата в ссылке не даёт доступа без подписанного initData. Открытие deep link внутри настоящего MAX проверяется на INT-04. [Диплинки mini-app](https://dev.max.ru/docs/webapps/introduction).
 - Mini-app подключается к боту через HTTPS URL, например PUBLIC_BASE_URL/map. Агент подготавливает URL и показывает человеку, какое поле настроить, если UI аккаунта недоступен. [Подключение mini-app](https://dev.max.ru/docs/webapps/introduction).

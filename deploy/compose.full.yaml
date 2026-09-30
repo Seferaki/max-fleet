@@ -20,6 +20,7 @@ services:
       MAX_UPDATE_MODE: ${MAX_UPDATE_MODE:-webhook}
       MAX_INTEGRATION_KEY: ${MAX_INTEGRATION_KEY:-demo-bot}
       MAX_WEBHOOK_SECRET_FILE: /run/secrets/max_webhook_secret
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
       DATA_API_BASE_URL: http://data-api:8000/internal/v1
       DATA_API_TOKEN_FILE: /run/secrets/data_api_token
       WORKER_API_TOKEN_FILE: /run/secrets/worker_api_token

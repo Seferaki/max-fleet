@@ -27,7 +27,7 @@ verify_gateway() {
     fi
     go test ./...
     go vet ./...
-    go build ./cmd/gateway ./cmd/data-mock
+    go build ./cmd/gateway ./cmd/data-mock ./cmd/max-setup
 }
 
 verify_web() {
