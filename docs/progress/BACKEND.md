@@ -11,13 +11,13 @@ session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
 heartbeat_utc: "2026-09-30T00:38:06Z"
 current_task: INT-03
-current_substep: "Code d5b6e7aeea6fb83ccc5809082af20efb9e500b51 passed full Go gates and live same-key completion replay. Data API restart, Compose down/up without -v, backup/restore after migration 0002 (21 tables/2020 rows/96 S3 hashes/0 broken links), and PostgreSQL/S3 outage-readiness checks passed; outage returned readiness 503, recovery 200, and live Go dialog passed afterward. MAX 429, notification restart recovery and inbox lease/idempotency targeted tests PASS. Local MAX token file is present; a fresh safe /me retry still failed at network/transport, no HTTP response."
-last_verified_code_commit: "d5b6e7aeea6fb83ccc5809082af20efb9e500b51"
+current_substep: "Code d5b6e7aeea6fb83ccc5809082af20efb9e500b51 passed full Go gates and live same-key completion replay. Recovery checks passed: backup/restore after migration 0002, separate PostgreSQL/S3 readiness outage and recovery, then live Go dialog. Code 8d7a9e6a2b5e440b266ae841cef27fa9900a5323 adds the missing Nginx route from public /max/webhook to Go; web container build/test/typecheck and unauthenticated route smoke passed. Local MAX token file exists; /me still fails at network/transport without HTTP response."
+last_verified_code_commit: "8d7a9e6a2b5e440b266ae841cef27fa9900a5323"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "Проверить восстановление после перезапуска Go-контейнера посреди незавершённого return и отказ Python/DB/S3 во время активной операции; текущий тест зависимостей проверяет readiness, но не атомарность команды во время простоя. 4/8 recovery пересоздаёт Go worker только в тестовом процессе. Затем INT-04 требует доступного MAX API и публичного HTTPS endpoint; локальный MAX token file существует, но /me не прошёл из-за network/transport error. QA NOT RUN; full_stack_accepted=false."
+next_step: "INT-03 остаётся WIP: проверить Go process restart и поведение активной команды при недоступности Python/DB/S3; уже пройденные backup, readiness outage/recovery и live dialog повторно не запускать без причины. Затем настроить MAX subscription и mini-app при восстановлении доступа к MAX API и после предоставления публичного HTTPS endpoint H-02. QA NOT RUN; full_stack_accepted=false."
 human_required: [H-02]
 ```
 
@@ -62,6 +62,7 @@ human_required: [H-02]
 - После восстановления выполнена сквозная проверка: из `services/gateway` заданы только пути к приватным synthetic Data API token-файлам и `MAX_FLEET_LIVE_DIALOG=1`; `& ..\..\.local\go-dist\go\bin\go.exe test ./internal/dialog -run '^TestLivePythonReturnDialog$' -count=1 -v` → PASS. Значения файлов не выводились.
 - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/enter-max-token.ps1 -Check` → `True`; helper `.local/max-me/main.go` через pinned MAX Go SDK `GetMyInfo` → `MAX /me failed: network/transport error`. HTTP response не получен; helper не печатает token/body. Повторно просить секрет не нужно.
 - Документальный recovery checkpoint `dbac4da9074fdad69cf034d61ed754cf70552e9e` отправлен обычным `git push origin HEAD:refs/heads/codex/integration`; `git ls-remote origin refs/heads/codex/integration` подтвердил тот же SHA. На момент проверки удалённый lock оставался `ACTIVE`, owner A, session `01046daa-671d-40fb-bc02-45c1263a9705`.
+- Code commit `8d7a9e6a2b5e440b266ae841cef27fa9900a5323` добавляет в `web/nginx.conf` exact proxy для `POST /max/webhook` → Go gateway, безопасную передачу `X-Max-Bot-Api-Secret`, без access log, лимит тела 256 KiB и таймауты 25 s; `docs/OPERATIONS.md` теперь использует тот же реальный путь. `docker compose ... config --quiet` → PASS; `up -d --no-deps --build --wait --wait-timeout 360 web` → PASS, npm test 6/6, typecheck и Vite build PASS; unauthenticated POST через web `http://127.0.0.1:8084/max/webhook` → 401 от Go handler (путь не 404). Реальная подписка MAX не выполнялась: `/me` недоступен по сети.
 - Эти тесты проверяют readiness/recovery, но не транзакцию, оборванную посреди команды. Ещё не проверены реальный restart Go-контейнера между событиями возврата и Python/PostgreSQL/S3 outage во время активной операции. См. воспроизводимые команды в [OPERATIONS](../OPERATIONS.md).
 
 ## Готовность организационных входов
