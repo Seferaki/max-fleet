@@ -11,11 +11,11 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T03:02:51Z"
+heartbeat_utc: "2026-09-30T03:04:53Z"
 current_task: INT-03
-current_substep: "MAX_FLEET_LIVE_MAX=1 go test ./internal/maxsdk -run '^TestLiveMAXMe$' -count=1 -v выполнен с MAX_BOT_TOKEN_FILE из приватного хранилища. Go maxsdk.New использовал встроенный корневой сертификат Минцифры; GET /me вернул IsBot=true. Имя, username, токен и тело ответа не выводились. Полный gateway verify прошёл. Read-only GET к локальной demo Python Data API подтвердил 10 vehicles, 4 employees и rules present; SQL не использовался."
+current_substep: "Code 2cb77d9c4c4baeb87b28a88531ddaa8e48eedaf4 (MAX /me probe output privacy) и status/README/plan commit 59e6ebbba18e0c845fe4a3ccb7db4236566b59c2 опубликованы обычным push в codex/integration и main; git ls-remote подтвердил обе ветки на 59e6ebb. Реальный Go GET /me вернул IsBot=true без вывода токена/ID; полный gateway verify PASS. Read-only Data API query подтвердил локальный synthetic demo: 10 vehicles, 4 employees, rules present; SQL не использовался."
 last_verified_code_commit: "2cb77d9c4c4baeb87b28a88531ddaa8e48eedaf4"
-last_pushed_checkpoint: "b0b55e86b547023653741528c2568926a3cb6d1b"
+last_pushed_checkpoint: "59e6ebbba18e0c845fe4a3ccb7db4236566b59c2"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
@@ -26,7 +26,7 @@ human_required: ["H-03: приватно передать MAX user ID перво
 
 ### INT-04 / MVP checkpoint 2026-09-30
 
-- **Обновление MAX API:** `services/gateway/internal/maxsdk/client_test.go` проверен с локальным `MAX_BOT_TOKEN_FILE`: `MAX_FLEET_LIVE_MAX=1 go test ./internal/maxsdk -run '^TestLiveMAXMe$' -count=1 -v` → PASS (`GET /me`, `IsBot=true`). Клиент `maxsdk.New` использует встроенный корневой сертификат Минцифры; лог печатает только факт проверки, без имени/username, токена или тела ответа. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go tests, vet и build PASS. Code commit `2cb77d9c4c4baeb87b28a88531ddaa8e48eedaf4`; опубликование ожидается после проверки владельца очереди и staged diff.
+- **Обновление MAX API:** `services/gateway/internal/maxsdk/client_test.go` проверен с локальным `MAX_BOT_TOKEN_FILE`: `MAX_FLEET_LIVE_MAX=1 go test ./internal/maxsdk -run '^TestLiveMAXMe$' -count=1 -v` → PASS (`GET /me`, `IsBot=true`). Клиент `maxsdk.New` использует встроенный корневой сертификат Минцифры; лог печатает только факт проверки, без имени/username, токена или тела ответа. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → Go tests, vet и build PASS. Code commit `2cb77d9c4c4baeb87b28a88531ddaa8e48eedaf4` и status/README commit `59e6ebbba18e0c845fe4a3ccb7db4236566b59c2` обычным push отправлены в `codex/integration` и `main`; `git ls-remote` подтвердил обе ветки на `59e6ebb`.
 - Read-only Data API probe изнутри контейнера `max-fleet-docwait-data-api-1` → contract `1.13`, Python Data API `mode=real`, 10 vehicles, 4 employees, current rules present. Прочитаны `/meta`, `/vehicles`, `/admin/employees` и `/rules/current`; service token взят из `/run/secrets/data_api_token` и не выведен. Подтверждены именно demo-данные; production `max-fleet-prod` сохраняет `SEED_SYNTHETIC=0`.
 - Это исправляет диагноз старого `.local/max-me` helper, который обходил `maxsdk.New` и поэтому не доверял встроенному корню MAX. Bot API credentials действительны; live webhook и Mini App всё ещё не подключены из-за отсутствия внешнего HTTPS. TLS retry назначен после `2026-09-30T05:39:42Z`; MAX mobile/web acceptance не проводилась, QA — NOT RUN.
 
