@@ -8,13 +8,13 @@ track: data-integration-audit
 owner: A
 branch: codex/integration
 current_task: INT-03
-current_substep: "Go INT-03 code d5b6e7aeea6fb83ccc5809082af20efb9e500b51 replays completed return.complete with the same operation idempotency key against live Python/PostgreSQL/S3; trip version stayed stable. Actual container restart/down/restore remains next"
+current_substep: "Published Go INT-03 code d5b6e7aeea6fb83ccc5809082af20efb9e500b51 plus status checkpoint a4e2bab9b950e7cc114eb6a12c048fdbb60ecc9f; remote confirmed. Replay return.complete preserved completed Trip version against live Python/PostgreSQL/S3. Actual container restart/down/restore remains next"
 last_verified_code_commit: "d5b6e7aeea6fb83ccc5809082af20efb9e500b51"
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 migration_head: "0002"
 data_ready_for_integration: true
 checkpoint_state: WIP
-next_step: "Code `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` проверил replay return.complete с тем же ключом на live Python/PostgreSQL/S3; полный Go test/vet/build также прошёл. Этот статус содержит результат; обычный push ожидает проверки владельца очереди и remote HEAD. Следом проверить реальный data-api/Compose restart и down/restore с сохранением состояния PostgreSQL и S3. QA NOT RUN, Linux host-secret permissions не проверены"
+next_step: "Code `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` проверил replay return.complete с тем же ключом на live Python/PostgreSQL/S3; полный Go test/vet/build также прошёл. Status checkpoint `a4e2bab9b950e7cc114eb6a12c048fdbb60ecc9f` опубликован, remote подтверждён. Следом проверить реальный data-api/container restart и Compose down/up без удаления volumes, сверить PostgreSQL/S3 persistence. QA NOT RUN, Linux host-secret permissions не проверены"
 human_required: []
 ```
 
