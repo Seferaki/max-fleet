@@ -11,16 +11,16 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T07:24:12Z"
+heartbeat_utc: "2026-09-30T07:28:39Z"
 current_task: INT-04
-current_substep: "Добавлен воспроизводимый Nginx/ACME deployment helper (code 955a7a4), который маршрутизирует только production web:8081, отдельно от demo:8082. Bash syntax/help проверены на VDS; публикация checkpoint следующая. TLS и MAX webhook пока не включены."
+current_substep: "TLS deploy helper (code 955a7a4) проверил upstream и ACME route, но Let's Encrypt отклонил сертификат shared registered-domain limit до 2026-09-30T08:59:22Z. Частный production override подготовлен, Compose config valid; gateway остаётся disabled, TLS и webhook не включены."
 last_verified_code_commit: "9e1f05878b356f7d0470df9c72fe01aaf2231ac5"
-last_pushed_checkpoint: "65c43618261ac15bfb36e3fe2697a5cf1b39fb6e"
+last_pushed_checkpoint: "b7bbab7dbd9e4401df5c9f709b2a62491974d596"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "После публикации code/status checkpoint обновить чистый VDS checkout fast-forward до main, затем выполнить `bash scripts/deploy-vds-nginx.sh --hostname efimok051.fvds.ru --web-port 8081`. Проверить публичный HTTPS readiness=static_ready; если Certbot или route fail, сохранить текущую конфигурацию и исправить причину. Затем безопасно перенести уже имеющийся локальный MAX token в private VDS secrets, включить production overlay с MAX_UPDATE_MODE=webhook/PUBLIC_BASE_URL, выполнить guarded max-setup и проверить подписку. Mini App URL/mobile acceptance ещё потребуют проверки в MAX account/device; QA NOT RUN. Автоматические сроки хранения и расписание backup не реализованы; full_stack_accepted=false."
+next_step: "Повторить `bash scripts/deploy-vds-nginx.sh --hostname efimok051.fvds.ru --web-port 8081` после 2026-09-30T08:59:22Z. До retry ничего не переключать на HTTP: bootstrap Nginx оставляет корень 404 и только ACME challenge. VDS checkout уже на опубликованном main b7bbab7. Локальный override /etc/max-fleet/prod-overrides.env создан с правами 0600; secret source `/root/.local/share/max-fleet/secrets/max_bot_token` уже существует в закрытом каталоге (0444 file inside 0700 dir), production Compose overlay config --quiet PASS, но контейнеры не перезапускались. После TLS проверить публичный readiness, затем сделать read-only MAX subscriptions, применить overlay, guarded max-setup и verify. Mini App URL/mobile acceptance ещё требуют проверки в MAX account/device; QA NOT RUN. Автоматические сроки хранения и расписание backup не реализованы; full_stack_accepted=false."
 human_required: ["H-03: для реального пилота приватно передать MAX user ID первого администратора, список сотрудников/машин, процедуру ключей и место/координаты", "H-04: до реального пилота проверить и утвердить подготовленные сроки/доступы/backup от имени оператора; настроить автоматическое удаление и расписание резервирования"]
 ```
 
@@ -28,8 +28,15 @@ human_required: ["H-03: для реального пилота приватно 
 
 - Code commit `955a7a42afc73fedb0d9aa21d5e7b3190c3ee435`: добавлены `deploy/nginx/max-fleet-vds.conf.template` и `scripts/deploy-vds-nginx.sh`. Helper проверяет React `static_ready` на loopback, DNS, ACME webroot, получает TLS сертификат, устанавливает proxy на выбранный loopback web port; ошибки Nginx config/reload/readiness откатываются к backup. Default порт — production `8081`; demo `8082` наружу не направляется. `OPERATIONS.md`/план обновлены.
 - `bash -n scripts/deploy-vds-nginx.sh` и `bash ... --help` → PASS на Ubuntu VDS через одноразовый файл в `/tmp`, файл после проверки удалён. Локальный Windows `bash.exe` не имел WSL distro; он не считается проверкой. `py .local/check_docs.py` → `errors=[]`; `git diff --check` → PASS; staged scan → 4 files, matches 0; после commit tracked scan → 355 files, matches 0.
-- VDS config ещё не применена: Nginx всё ещё отдаёт HTTP 404, HTTPS сертификата нет; gateway остаётся `MAX_UPDATE_MODE=disabled`. Скрипт только проверен по синтаксису, не проходил реальный cert issuance. Не утверждать готовность webhook/mini-app.
-- Далее: обычным push опубликовать code/status в `codex/integration` и fast-forward `main`; на чистом VDS checkout перейти на опубликованную main, выполнить deployment helper для `efimok051.fvds.ru:8081`, проверить публичный HTTPS. Только после успешного readiness переносить локальный токен в приватный каталог сервера и включать webhook.
+- Production HTTPS config ещё не установлена: Nginx оставлен в ACME-only bootstrap, корень публично возвращает 404; сертификата нет, gateway остаётся `MAX_UPDATE_MODE=disabled`. Не утверждать готовность webhook/mini-app.
+- Далее: после общего rate-limit retry повторить deployment helper для `efimok051.fvds.ru:8081`, проверить публичный HTTPS. MAX token file уже присутствует на VDS в приватном каталоге; применить production overlay и регистрировать webhook только после успешного TLS readiness.
+
+### INT-04 / VDS deploy attempt 2026-09-30
+
+- VDS checkout `/opt/max-fleet` обновлён безопасным fast-forward до опубликованной `main` `b7bbab7dbd9e4401df5c9f709b2a62491974d596`; до обновления `git status --porcelain` был пуст. Первый `git fetch origin` обновил только codex/integration tracking ref, поэтому main refetched явно; reset/force не использовались.
+- `bash scripts/deploy-vds-nginx.sh --hostname efimok051.fvds.ru --web-port 8081`: production upstream `static_ready`, `nginx -t` PASS, ACME webroot probe PASS. Certbot остановил issuance из-за общего Let's Encrypt лимита зарегистрированного домена `fvds.ru`; повтор разрешён после `2026-09-30T08:59:22Z`. Nginx оставлен в безопасном HTTP bootstrap (ACME path и 404 для остального); HTTPS readiness и MAX webhook не готовы.
+- В `/etc/max-fleet/prod-overrides.env` вне репозитория подготовлен production Compose override (`APP_ENV=production`, `SEED_SYNTHETIC=0`, `MAX_UPDATE_MODE=webhook`, `PUBLIC_BASE_URL`, secrets directory и loopback ports). Файл mode 0600. MAX token file уже был в `/root/.local/share/max-fleet/secrets/max_bot_token` (mode 0444 внутри каталога mode 0700); содержимое не читалось/не выводилось. `docker compose --env-file .env --env-file /etc/max-fleet/prod-overrides.env -f deploy/compose.full.yaml -f deploy/compose.full.max.yaml -p max-fleet-prod config --quiet` → PASS. Контейнеры не перезапускались, overlay не применялся, MAX API через этот remote token не вызывался.
+- Next: после разрешённого retry повторить script, проверить externally valid TLS `/health/ready`; затем с тем же override ограниченно обновить gateway/web, read-only subscriptions и только после этого guarded `max-setup`. Не включать `MAX_UPDATE_MODE=webhook` до TLS readiness. QA, Mini App URL/Bridge и mobile/web acceptance остаются непроверенными.
 
 ### INT-04 / policy и data checkpoint 2026-09-30
 
