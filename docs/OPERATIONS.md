@@ -44,6 +44,7 @@ HUMAN_REQUIRED: H-01
 ## 3. MAX, webhook и mini-app
 
 - Использовать официальный [Go SDK](https://dev.max.ru/docs/chatbots/bots-coding/go), pin release/commit и проверить API base URL по текущей документации. Токен передаётся заголовком Authorization, не URL.
+- С 19.07.2026 API MAX использует `platform-api2.max.ru` и требует Russian Trusted Root CA. SDK уже направляет запросы на API v2; Go-клиент добавляет закреплённый по SHA-1 корневой сертификат только в собственный trust pool, не меняя системное хранилище. Источники: [изменения API MAX](https://dev.max.ru/docs-api/changelog-api), [корневой сертификат](http://reestr-pki.ru/cdp/rootca_ssl_rsa2022.crt); SHA-1 `8FF915CCAB7BC16F8C5C8099D53E0E115B3AEC2F`.
 - Для production — webhook; polling только для разработки. Они не работают одновременно. [Режимы получения событий](https://dev.max.ru/docs/chatbots/bots-coding/prepare).
 - Webhook требует HTTPS с доверенным сертификатом. Зарегистрировать `PUBLIC_BASE_URL/max/webhook` и secret, проверять `X-Max-Bot-Api-Secret`. Nginx web проксирует этот путь в Go gateway без записи заголовков/тела в access log; MAX ожидает HTTP 200 в течение 30 секунд, gateway ограничивает durable intake быстрым сохранением inbox. Неуспешная durable запись → 503. [Контракт webhook](https://dev.max.ru/docs-api/methods/POST/subscriptions).
 - Перед сменой режима прочитать текущие subscriptions. Не удалять подписки неизвестного назначения. Идемпотентно привести только конфигурацию этого проекта к выбранному режиму.
