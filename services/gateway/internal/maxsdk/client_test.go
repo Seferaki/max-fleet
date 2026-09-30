@@ -75,5 +75,5 @@ func TestLiveMAXMe(t *testing.T) {
 	if !bot.IsBot {
 		t.Fatal("GET /me returned an account that is not a bot")
 	}
-	t.Logf("MAX /me PASS: bot=%q username=%q", bot.FirstName, bot.Username)
+	t.Log("MAX /me PASS: bot account verified")
 }
