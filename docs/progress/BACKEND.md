@@ -11,15 +11,16 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T01:41:57Z"
+heartbeat_utc: "2026-09-30T01:43:44Z"
 current_task: INT-03
-current_substep: "ac126abdef8f25508d69f31b8221b35d7fa04789 updates README/.env.example for the hackathon submission brief and checks the 33-file synthetic photo set. Through the Python Data API, the active local full stack returned 10 vehicles, 4 employees and current rules at contract 1.13. `docker compose --env-file .env.example -f deploy/compose.full.yaml -p max-fleet-doc-check config --quiet` → PASS; README link/media validation → 11 local links and 33 valid JPEGs; `git diff --cached --check` and `py scripts/check-secrets.py --staged` → PASS. Code commit created; status commit and push pending."
+current_substep: "Documentation code commit ac126abdef8f25508d69f31b8221b35d7fa04789 and status commit 918b9e5bb6d2cc5ae0c6fa0f667b65af56cbb1af were pushed normally after remote lock confirmed ACTIVE A/session 01046daa-671d-40fb-bc02-45c1263a9705 and tracked/staged secret scans passed; `git ls-remote origin refs/heads/codex/integration` confirmed 918b9e5bb6d2cc5ae0c6fa0f667b65af56cbb1af. README/config/media and synthetic DB checks are recorded above."
 last_verified_code_commit: "ac126abdef8f25508d69f31b8221b35d7fa04789"
+last_pushed_checkpoint: "918b9e5bb6d2cc5ae0c6fa0f667b65af56cbb1af"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "Закоммитить этот status checkpoint и обычным push опубликовать ac126ab + progress, предварительно подтвердив ACTIVE owner A/session 01046daa-671d-40fb-bc02-45c1263a9705 и проверив staged secrets. Затем закрыть только непроверенные INT-03 restart/outage gates; не повторять уже пройденные response-loss/backup/restore. Перейти к INT-04: Docker/Compose на VDS без изменения ISPmanager, loopback-only app, доверенный HTTPS, сверка и обновление только подписки MAX Fleet. Для живого пользовательского сценария нужен приватный bootstrap MAX admin ID и реальные данные автопарка/retention decision. QA NOT RUN по решению пользователя; full_stack_accepted=false."
+next_step: "INT-03 остаётся WIP: выполнить только непроверенные Go container restart во время активного return и Python/DB/S3 downtime recovery либо явно оставить это gate WIP при переходе к MVP deploy; response-loss/backup/restore не повторять. Затем INT-04 на VDS: установить Docker/Compose без изменения ISPmanager, запустить app только на loopback, выпустить доверенный HTTPS, сверить и обновить только подписку MAX Fleet. После публикации интеграционных артефактов fast-forward/merge codex/integration в main по запросу владельца. Для live-сценария требуется приватный bootstrap MAX admin ID, сведения об автопарке и решение о retention. QA NOT RUN по решению пользователя; full_stack_accepted=false."
 human_required: ["H-03: приватно задать MAX user ID первого администратора и синтетические seed-данные перед доступом реальных пользователей"]
 ```
 
