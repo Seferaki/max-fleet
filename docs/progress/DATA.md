@@ -8,13 +8,13 @@ track: data-integration-audit
 owner: A
 branch: codex/integration
 current_task: INT-03
-current_substep: "After published replay checkpoint a4e2bab9b950e7cc114eb6a12c048fdbb60ecc9f, actual data-api restart and full Compose down/up without -v passed on synthetic project; Postgres/S3 named volumes survived, all services healthy, live Go dialog passed. Backup/restore remains next"
+current_substep: "Backup/restore on migration head 0002 passed from synthetic max-fleet-int-recovery to unique disposable target: 21 tables/2020 rows/96 object hashes/0 broken photo links; source writers restarted, readiness 200 and live Go dialog PASS. MAX 429 and worker lease/retry targeted Go tests PASS"
 last_verified_code_commit: "d5b6e7aeea6fb83ccc5809082af20efb9e500b51"
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 migration_head: "0002"
 data_ready_for_integration: true
 checkpoint_state: WIP
-next_step: "Актуальный data-api restart и Compose down/up без -v проверены: оба named volume пережили пересоздание контейнеров, все сервисы healthy, live Go dialog PASS. Следом проверить backup/restore на новых отдельных synthetic source/target проектах после migration 0002. Не использовать существующий проект max-fleet-restore из DE скрипта. QA NOT RUN, Linux host-secret permissions не проверены"
+next_step: "Backup/restore после migration 0002 проверены на отдельном target: 21 таблица/2020 строк/96 объектов/0 битых ссылок, Alembic head 0002. Синтетическая копия сохранена вне репозитория в C:\\MAXFleet\\backup-int03-20260930-0014. Далее — Go process restart mid-return и Python/DB/S3 downtime во время активной операции; эти проверки относятся к INT, не DE. QA NOT RUN, Linux host-secret permissions не проверены"
 human_required: []
 ```
 
@@ -32,7 +32,7 @@ human_required: []
 
 ## Последний checkpoint
 
-Реализован внутренний API v1.13 (36 маршрутов) в `services/data/`. Проверено локально (Windows 11, Docker Desktop, PostgreSQL 17.6). Последняя Go-проверка `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` повторила завершённый `return.complete` с тем же idempotency key против Python/PostgreSQL/S3; сохранённый Return вернулся, версия completed Trip не изменилась. Затем фактически перезапущен data-api и пересоздан полный disposable Compose без удаления volumes: PostgreSQL/S3 named volumes сохранились, сервисы healthy, readiness 200, live Go dialog прошёл повторно. Полный Go test/vet/build прошёл. Backup/restore после перехода на migration head 0002 ещё не проверен.
+Реализован внутренний API v1.13 (36 маршрутов) в `services/data/`. Проверено локально (Windows 11, Docker Desktop, PostgreSQL 17.6). Go code `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` повторил завершённый `return.complete` с тем же idempotency key; сохранённый Return вернулся, Trip остался completed с прежней версией. Фактический data-api restart и full Compose down/up без удаления volumes сохранили PostgreSQL/S3 данные; readiness 200, live Go dialog прошёл после каждого рестарта. Backup/restore после migration head 0002 проверен на отдельном disposable target: `21` таблица, `2 020` строк, `96` S3 объектов с совпавшими SHA-256, `0` битых фото-ссылок, Alembic `0002_contract_v1_13 (head)`. Writers исходного проекта запущены обратно; readiness 200, live Go dialog PASS. Полный Go test/vet/build и targeted MAX 429, notification retry/restart, inbox lease/idempotency checks PASS. Backup `C:\MAXFleet\backup-int03-20260930-0014` синтетический, приватный, вне репозитория; DE-owned original restore script не изменён. QA, real MAX, Linux host-secret permissions, Go process restart mid-return и service failure during active command не проверялись.
 
 - `TEST_DATABASE_URL=<отдельный disposable PostgreSQL 17.6> uv run pytest -q` — 43 passed (реальный PostgreSQL, S3 — in-memory адаптер в тестах);
 - `uv run ruff check app tests migrations` и `uv run mypy app` — без ошибок;
@@ -41,7 +41,7 @@ human_required: []
 - Integration code `09a11b3689740bd5fce26a10d4f417587db6472e`: Python `IssueResolve` теперь принимает только `status` для `in_progress`; терминальные решения по-прежнему требуют непустой комментарий и подтверждение. `ruff check app/api/schemas.py tests/test_admin_queues.py`, `mypy app`, полный `pytest -q` на отдельном PostgreSQL 17.6 — PASS, 43 теста; регрессия проверяет отказ старого payload, 403 сотруднику и сохранение `assigned_to`/`resolved_by`.
 - runtime-роль БД не может менять схему; анонимный запрос к S3 → 403.
 
-Контрактные вопросы сопоставлены с OpenAPI v1.13, Go client/mock и Python. Data API готов для интеграции: Go v1.13 integration test `84ad9b51d732787a8e6057577ed7048f209a4015` прошёл против PostgreSQL/S3 и опубликован вместе с status checkpoint `1766bccdb9ec4f8ec46c79c95b4b2d668670a57e`. Сотрудник подал замечание через Go post-return dialog и получил 403 на admin action; Go admin dialog назначил `assigned_to` и разрешил его с `resolved_by`. INT-03 recovery code `e6888015088d4e4feff391efaf3af17d3d7e4452` опубликован в checkpoint `6b8f033255fd8229020987883d09e71fd3d70370`: Go worker восстанавливает 4/8 photo progress из Python, replay ссылается на ту же inbox row и не обрабатывается повторно. Response-loss code `94ff2fb74500b14aa4598d019e06a4cd8862363a` опубликован в checkpoint `1a51d5ad59ea87357e13345fcaf5d36524bf4658`: Python commit дошёл до Go, ответ 200 потерян, повтор неизменного запроса вернул сохранённый результат. Это синтетический actor/MAX transport; реальный MAX, Bridge, Linux host-secret permissions, сервисные отказы, backup/restore и QA не проверялись.
+Контрактные вопросы сопоставлены с OpenAPI v1.13, Go client/mock и Python. Data API готов для интеграции: Go v1.13 integration test `84ad9b51d732787a8e6057577ed7048f209a4015` прошёл против PostgreSQL/S3 и опубликован вместе с status checkpoint `1766bccdb9ec4f8ec46c79c95b4b2d668670a57e`. Сотрудник подал замечание через Go post-return dialog и получил 403 на admin action; Go admin dialog назначил `assigned_to` и разрешил его с `resolved_by`. INT-03 recovery code `e6888015088d4e4feff391efaf3af17d3d7e4452` опубликован в checkpoint `6b8f033255fd8229020987883d09e71fd3d70370`: Go worker восстанавливает 4/8 photo progress из Python, replay ссылается на ту же inbox row и не обрабатывается повторно. Response-loss code `94ff2fb74500b14aa4598d019e06a4cd8862363a` опубликован в checkpoint `1a51d5ad59ea87357e13345fcaf5d36524bf4658`: Python commit дошёл до Go, ответ 200 потерян, повтор неизменного запроса вернул сохранённый результат. Это синтетический actor/MAX transport; реальный MAX, Bridge, Linux host-secret permissions, Python/DB/S3 downtime во время активной операции, Go process restart mid-return и QA не проверялись; backup/restore после migration 0002 проверен в текущем INT-03 checkpoint.
 
 Найдено при нагрузке: в контейнере с read-only ФС Starlette не мог буферизовать multipart > 1 MiB во временный файл (400 на фото 5 MiB) — добавлен tmpfs `/tmp` 128 MiB для data-api.
 
@@ -70,7 +70,7 @@ human_required: []
 
 ## Результаты нагрузки и восстановления
 
-Стенд исходного DE-08 измерения: Windows 11, Docker Desktop 29.4 (4 vCPU, 12 GiB для VM), PostgreSQL 17.6, SeaweedFS S3, data-api — 1 процесс uvicorn, pool 5+5. Contract SHA `aa56f0e`, schema head `0001`; эти performance/backup цифры не повторялись после интеграционного v1.13 и миграции `0002`.
+Стенд исходного DE-08 измерения: Windows 11, Docker Desktop 29.4 (4 vCPU, 12 GiB для VM), PostgreSQL 17.6, SeaweedFS S3, data-api — 1 процесс uvicorn, pool 5+5. Contract SHA `aa56f0e`, schema head `0001`; эти performance цифры не повторялись после интеграционного v1.13/миграции `0002`; отдельная INT-03 проверка backup/restore после `0002` описана выше.
 
 | Проверка | Результат |
 |---|---|
