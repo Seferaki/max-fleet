@@ -11,18 +11,28 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T03:45:07Z"
+heartbeat_utc: "2026-09-30T07:15:35Z"
 current_task: INT-04
-current_substep: "README commit 65ba806 документирует PUBLIC_BASE_URL. Public health по fvds.ru даёт 404, H-02 требует hostname/proxy mapping. Code 9e1f058 и полный verify PASS; synthetic demo содержит 10 машин/4 сотрудников/rules. Webhook не регистрировался."
+current_substep: "Подготовлен policy pack и профиль синтетических данных (code a6000e9); в read-only demo API подтверждены 10 машин, 4 пользователя и правила. Найден правильный VDS hostname efimok051.fvds.ru, но Nginx пока возвращает 404 и TLS отсутствует; webhook не регистрировался."
 last_verified_code_commit: "9e1f05878b356f7d0470df9c72fe01aaf2231ac5"
-last_pushed_checkpoint: "e87bbf5ca093e2f418a194847ed9d15a31635774"
+last_pushed_checkpoint: "db3eb22e7fae5e8e00f3fa4c3aa3855fea1c256e"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "Уточнить/направить публичный hostname на VDS и обеспечить route /health/ready=static_ready, затем после 2026-09-30T05:39:42Z повторить TLS. Если HTTPS readiness PASS и MAX subscriptions всё ещё пусты, запустить guarded max-setup. До этого продолжать только независимые INT-03 recovery задачи на disposable synthetic volumes. После подключения проверить MAX mobile/web; QA NOT RUN. H-03/H-04 нужны до реального пилота; full_stack_accepted=false."
-human_required: ["H-02: указать hostname MAX Fleet, направленный на VDS, либо настроить DNS A/AAAA и прокси; сейчас fvds.ru/health/ready возвращает 404", "H-03: приватно передать MAX user ID первого администратора, реальные список сотрудников/машин, место и координаты компании", "H-04: утвердить retention, круг доступа и правила backup до пилота"]
+next_step: "Настроить Nginx и доверенный TLS на efimok051.fvds.ru с upstream только на production web 127.0.0.1:8081 (не demo 8082), проверить публичный /health/ready=static_ready. Затем проверить наличие live MAX secrets без вывода; при наличии зарегистрировать webhook только guarded max-setup, после чего сделать mobile/web проверку или зафиксировать её как HUMAN_REQUIRED. QA остаётся NOT RUN. Автоматические сроки хранения и расписание backup не реализованы; full_stack_accepted=false."
+human_required: ["H-03: для реального пилота приватно передать MAX user ID первого администратора, список сотрудников/машин, процедуру ключей и место/координаты", "H-04: до реального пилота проверить и утвердить подготовленные сроки/доступы/backup от имени оператора; настроить автоматическое удаление и расписание резервирования"]
 ```
+
+### INT-04 / policy и data checkpoint 2026-09-30
+
+- Code commit `a6000e9540abb5c04c8254654faade04870531ff`: подготовлены правила эксплуатации автомобилей, проект сроков хранения/доступа, порядок backup/recovery, incident response и профиль синтетического набора. README, план и OPERATIONS связывают документы; текущие ограничения и предложения не помечены как готовая production-функция.
+- `py .local/check_docs.py` → PASS, `errors=[]`; `python -m json.tool services/data/fixtures/synthetic-seed.json` → PASS; отдельная проверка fixture → `demo_only=true`, 10 уникальных машин, 4 уникальных тестовых пользователя; 33 AI-фото для ручной загрузки.
+- Read-only запрос из контейнера локального synthetic stack `max-fleet-docwait-data-api-1` → readiness HTTP 200, contract 1.13, 10/10 машин `available`, 4 тестовых пользователя, правила доступны. Service token читался только внутри контейнера и не выводился. БД и S3 не изменялись.
+- `git diff --cached --check` и staged secret scan → PASS; после коммита `py scripts/check-secrets.py --tracked` → 353 Git-файла, совпадений нет. QA не запускалась.
+- По просьбе владельца проверен соседний чат и read-only SSH VDS. `efimok051.fvds.ru` разрешается в `185.146.157.147`; production web слушает loopback `127.0.0.1:8081`, demo web — отдельно `127.0.0.1:8082`. `/etc/nginx/conf.d/max-fleet.conf` обслуживает только ACME challenge и возвращает 404 для остального; сертификата нет. Внешний HTTP readiness → 404, HTTPS handshake не проходит. Server checkout `7d45414`; контейнеры healthy. Remote конфигурация пока не менялась.
+- Policy pack является проектом для будущего оператора. Предложены сроки фото 90 дней, поездки/аудита 12 месяцев, логов/backup до 30 дней; автоматический purge и backup schedule не проверены и не реализованы. Это не юридическое уведомление и не основание загружать реальные данные.
+- Дальше: опубликовать policy checkpoint, затем сделать воспроизводимый Nginx HTTPS route только к production web, повторно проверить публичный readiness и перейти к guarded MAX webhook setup. H-03/H-04 остаются только перед реальным пилотом; H-02 hostname найден, техническая настройка выполняется агентом.
 
 ### INT-04 / MVP checkpoint 2026-09-30
 
