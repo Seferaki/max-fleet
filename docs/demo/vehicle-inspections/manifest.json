@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "generated_on": "2026-09-30",
+  "specification": {
+    "path": "../../../PRODUCT_SPEC.md",
+    "section": "9",
+    "photos_per_inspection": 8,
+    "views": [
+      "front",
+      "rear",
+      "left_side",
+      "right_side",
+      "front_cabin",
+      "rear_cabin",
+      "trunk",
+      "dashboard"
+    ]
+  },
+  "vehicles": [
+    {
+      "vehicle_id": "10000000-0000-4000-8000-000000000001",
+      "demo_id": "DEMO-001",
+      "model": "Учебный седан 1",
+      "visual_identity": "dark navy compact four-door sedan",
+      "before": {
+        "odometer_km": 12000,
+        "fuel_percent": 100,
+        "new_issue": false,
+        "photos": {
+          "front": "DEMO-001/before/01-front.jpg",
+          "rear": "DEMO-001/before/02-rear.jpg",
+          "left_side": "DEMO-001/before/03-left-side.jpg",
+          "right_side": "DEMO-001/before/04-right-side.jpg",
+          "front_cabin": "DEMO-001/before/05-front-cabin.jpg",
+          "rear_cabin": "DEMO-001/before/06-rear-cabin.jpg",
+          "trunk": "DEMO-001/before/07-trunk.jpg",
+          "dashboard": "DEMO-001/before/08-dashboard.jpg"
+        }
+      },
+      "after": {
+        "odometer_km": 12048,
+        "fuel_percent": 75,
+        "new_issue": false,
+        "photos": {
+          "front": "DEMO-001/after/01-front.jpg",
+          "rear": "DEMO-001/after/02-rear.jpg",
+          "left_side": "DEMO-001/after/03-left-side.jpg",
+          "right_side": "DEMO-001/after/04-right-side.jpg",
+          "front_cabin": "DEMO-001/after/05-front-cabin.jpg",
+          "rear_cabin": "DEMO-001/after/06-rear-cabin.jpg",
+          "trunk": "DEMO-001/after/07-trunk.jpg",
+          "dashboard": "DEMO-001/after/08-dashboard.jpg"
+        }
+      }
+    },
+    {
+      "vehicle_id": "10000000-0000-4000-8000-000000000003",
+      "demo_id": "DEMO-003",
+      "model": "Учебный хэтчбек 1",
+      "visual_identity": "bright red compact five-door hatchback",
+      "before": {
+        "odometer_km": 13000,
+        "fuel_percent": 50,
+        "new_issue": false,
+        "photos": {
+          "front": "DEMO-003/before/01-front.jpg",
+          "rear": "DEMO-003/before/02-rear.jpg",
+          "left_side": "DEMO-003/before/03-left-side.jpg",
+          "right_side": "DEMO-003/before/04-right-side.jpg",
+          "front_cabin": "DEMO-003/before/05-front-cabin.jpg",
+          "rear_cabin": "DEMO-003/before/06-rear-cabin.jpg",
+          "trunk": "DEMO-003/before/07-trunk.jpg",
+          "dashboard": "DEMO-003/before/08-dashboard.jpg"
+        }
+      },
+      "after": {
+        "odometer_km": 13042,
+        "fuel_percent": 25,
+        "new_issue": true,
+        "issue_category": "post_return",
+        "issue_description": "Неглубокая светлая царапина на правой задней части кузова.",
+        "photos": {
+          "front": "DEMO-003/after/01-front.jpg",
+          "rear": "DEMO-003/after/02-rear.jpg",
+          "left_side": "DEMO-003/after/03-left-side.jpg",
+          "right_side": "DEMO-003/after/04-right-side.jpg",
+          "front_cabin": "DEMO-003/after/05-front-cabin.jpg",
+          "rear_cabin": "DEMO-003/after/06-rear-cabin.jpg",
+          "trunk": "DEMO-003/after/07-trunk.jpg",
+          "dashboard": "DEMO-003/after/08-dashboard.jpg"
+        },
+        "supplemental_issue_photos": [
+          "DEMO-003/issue/issue-closeup.jpg"
+        ]
+      }
+    }
+  ]
+}
