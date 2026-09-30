@@ -11,11 +11,11 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T07:45:25Z"
+heartbeat_utc: "2026-09-30T07:48:38Z"
 current_task: INT-04
 current_substep: "Синтетический VDS smoke сохранён и read-only проверен: completed trip, 8+8 фото, manual_map, 10 машин доступны. MAX GET /subscriptions count=0. TLS helper проверил upstream/ACME, но Let's Encrypt ограничил выпуск до 2026-09-30T08:59:22Z; production gateway остаётся disabled."
 last_verified_code_commit: "955a7a42afc73fedb0d9aa21d5e7b3190c3ee435"
-last_pushed_checkpoint: "1b1405551f27c65ac720277e726c2b5002f4a698"
+last_pushed_checkpoint: "f8c517ce628ef8768cea947f29f1dc5522c87f39"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
@@ -31,8 +31,9 @@ human_required: ["H-03: для реального пилота приватно 
 - Read-only проверка реального MAX перед настройкой: Go SDK `TestLiveMAXSubscriptions` был собран для Linux и выполнен на VDS с локальным MAX token file; `MAX /subscriptions PASS: count=0`. Токен не копировался в локальные материалы и не выводился. Изменений в аккаунте MAX этот GET-запрос не делал.
 - README сверён визуально с приложенным руководством сдачи (22 страницы, раздел «Формат сдачи», стр. 9–10): описаны назначение, основной сценарий, архитектура, Compose startup, конфигурация/порты/зависимости, внешние системы, данные/порядок проверки, ожидаемый smoke, ограничения и stop/restart. Честно указано, что рабочая публичная ссылка на бота и внешний HTTPS пока отсутствуют; internal OpenAPI не выдаётся как публичный API.
 - Проверки документации после правок: `py .local/check_docs.py` → PASS (`errors=[]`, 27 Markdown, 69 локальных ссылок); `git diff --check` → PASS. `README.md` и `docs/demo/SYNTHETIC_DATASET.md` дополнены фактическим состоянием базы. QA не выполнялась.
-- Документальный commit `83ff3f2fc4b2548d250509b0c09c901eb13be932` сохраняет изменения README и синтетического профиля базы. `py .local/check_docs.py` → PASS; `git diff --check` → PASS; `py scripts/check-secrets.py --staged` перед commit → PASS, 2 Git-файла, 0 совпадений.
-- Далее: сохранить этот прогресс отдельным checkpoint commit; перед обычным push снова fetch, сверить ACTIVE lock (A, session `01046daa-671d-40fb-bc02-45c1263a9705`) и просканировать staged diff. После `2026-09-30T08:59:22Z` повторить TLS helper, не включая HTTP для пользовательских маршрутов.
+- Документальный commit `83ff3f2fc4b2548d250509b0c09c901eb13be932` (README и synthetic dataset) опубликован; status checkpoint `f8c517ce628ef8768cea947f29f1dc5522c87f39` также опубликован обычными push в `codex/integration` и `main`, `git ls-remote` подтвердил равные SHA. Перед push owner/session совпали с ACTIVE A, staged diff отсутствовал, tracked secret scan: 355 файлов, 0 совпадений.
+- VDS checkout `/opt/max-fleet` fast-forward обновлён с `b7bbab7` до `f8c517ce628ef8768cea947f29f1dc5522c87f39`; рабочее дерево было чистым, runtime-контейнеры не перезапускались и production env не применялся.
+- Далее: после `2026-09-30T08:59:22Z` повторить TLS helper; перед каждым push снова fetch, сверить ACTIVE lock (A, session `01046daa-671d-40fb-bc02-45c1263a9705`) и staged diff/секреты. До HTTPS readiness не включать пользовательские HTTP маршруты.
 
 ### INT-04 / VDS TLS automation 2026-09-30
 
