@@ -11,16 +11,16 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T02:13:50Z"
+heartbeat_utc: "2026-09-30T02:15:05Z"
 current_task: INT-04
-current_substep: "Code/documentation 5ae6855237fe6663f58b0acf43c7375cd7e0c073 is locally verified; status/checkpoint and normal push are pending. Fresh synthetic Compose project passed up --wait, all services healthy, API/web readiness 200; authenticated Data API returned contract 1.13, 10 vehicles, 4 seed employees and rules. Optional uv smoke was unavailable. VPS stack remains disabled for MAX and TLS awaits Certbot rate-limit retry after 2026-09-30T02:14:33Z."
+current_substep: "Code 5ae6855237fe6663f58b0acf43c7375cd7e0c073 and status 6807b6a8571d09fef42be66ae397d3a5c5eb170c pushed normally after remote lock was confirmed ACTIVE A/session 01046daa-671d-40fb-bc02-45c1263a9705 and tracked secret scan passed; `git ls-remote origin refs/heads/codex/integration` confirmed 6807b6a8571d09fef42be66ae397d3a5c5eb170c. Fresh synthetic Compose/API checks recorded below. Certbot rate-limit retry time has passed; retry next."
 last_verified_code_commit: "5ae6855237fe6663f58b0acf43c7375cd7e0c073"
-last_pushed_checkpoint: "918b9e5bb6d2cc5ae0c6fa0f667b65af56cbb1af"
+last_pushed_checkpoint: "6807b6a8571d09fef42be66ae397d3a5c5eb170c"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "Сначала опубликовать 5ae6855237fe6663f58b0acf43c7375cd7e0c073 и статус обычным push; подтвердить удалённый SHA. Затем повторить Certbot после 2026-09-30T02:14:33Z, настроить HTTPS только в отдельном Nginx vhost и проверить внешний TLS/health. MAX оставить выключенным до H-03/H-04; не включать synthetic seed на production. Далее сверить origin/main, слить его в codex/integration, проверить конфликты и обычным push обновить main. INT-03 container-restart/active-command recovery остаётся WIP; QA NOT RUN по решению пользователя; full_stack_accepted=false."
+next_step: "Certbot retry после 2026-09-30T02:14:33Z; при успехе настроить HTTPS только в отдельном Nginx vhost и проверить внешний TLS/health. MAX оставить выключенным до H-03/H-04; не включать synthetic seed на production. Далее сверить origin/main, слить его в codex/integration, проверить конфликты и обычным push обновить main. INT-03 container-restart/active-command recovery остаётся WIP; QA NOT RUN по решению пользователя; full_stack_accepted=false."
 human_required: ["H-03: приватно передать MAX user ID первого администратора, реальные список сотрудников/машин, место и координаты компании; H-04: утвердить retention, круг доступа и правила backup до пилота"]
 ```
 
