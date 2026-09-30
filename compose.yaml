@@ -1,0 +1,4 @@
+# Local full stack; component paths remain relative to deploy/.
+name: max-fleet-demo
+include:
+  - path: deploy/compose.full.yaml
