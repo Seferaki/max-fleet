@@ -2,31 +2,37 @@
 
 Единственный текущий статус backend. BE-12 и обязательный UI-01 закрыты только в Go/mock; backend gate true, full stack false. INT-02 опубликована и закрыта как синтетический integration gate: code `84ad9b51d732787a8e6057577ed7048f209a4015`, status checkpoint `1766bccdb9ec4f8ec46c79c95b4b2d668670a57e`. Проверены Go inbox/dialog → Python v1.13/PostgreSQL/S3, 15-минутный hold, 8+8 фото, manual_map, история, admin issue ACL и resolution; Go test/vet/build PASS. В INT-03 recovery substep `e6888015088d4e4feff391efaf3af17d3d7e4452` опубликован вместе с checkpoint `6b8f033255fd8229020987883d09e71fd3d70370`. Response-loss code `94ff2fb74500b14aa4598d019e06a4cd8862363a` опубликован в checkpoint `1a51d5ad59ea87357e13345fcaf5d36524bf4658`: после фактического Python commit тест отбросил 200 и возвратил synthetic 503; Go повторил тот же X-Request-ID/Idempotency-Key/body, Python отдал сохранённый результат, поездка завершилась один раз. Новый код `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` проверяет повтор завершённого `return.complete` с тем же ключом и стабильность версии Trip; статусный checkpoint `a4e2bab9b950e7cc114eb6a12c048fdbb60ecc9f` опубликован. QA пропускается по решению пользователя и не считается PASS. Исходная `codex/data` сохранена на SHA `9eb2211b29e48fce8a6afc410bc986fa98a4988e`; интеграционные исправления делаются в `codex/integration`.
 
-Предыдущая integration-основа `0521febb178465779f77b76189d256a67bdad150` включает `main`; полный `scripts/verify.ps1 -Direction all` прошёл после merge. Проверенный VDS TLS helper — `955a7a42afc73fedb0d9aa21d5e7b3190c3ee435`. 30.09.2026 на адресе `https://185-146-157-147.sslip.io` успешно выпущен Let's Encrypt сертификат до 29.12.2026; строгая внешняя TLS-проверка, `nginx -t` и публичный `/health/ready` (HTTP 200, `static_ready`) прошли, `certbot.timer` включён. Исходный домен `efimok051.fvds.ru` остаётся под rate limit до `08:59:22Z`; временный alias указывает на тот же VDS. Production Compose сохраняет `SEED_SYNTHETIC=0`; отдельная `max-fleet-demo` привязана только к loopback и имеет независимые volumes. Синтетический smoke через Python Data API завершил поездку с 8+8 фото и `manual_map`; read-only чтение подтвердило 10/10 доступных машин, 4 тестовых сотрудника, 1 завершённую поездку, finalized after-inspection и 8 занятых слотов в обоих осмотрах. SQL напрямую не использовался. QA намеренно не запускалась и остаётся NOT RUN. MAX `/me` подтверждал bot account; предшествующий read-only `GET /subscriptions` вернул count=0. Реальный webhook ещё не настроен: production gateway возвращён в `MAX_UPDATE_MODE=disabled` после запуска, потребовавшего обязательные COMPANY_MAP_* и COMPANY_TIMEZONE. Код commit `d2e4fe8ae7d462ace2050d805dd20e5661a223a1` исправляет передачу `COMPANY_TIMEZONE` через full Compose; Docker verify прошёл. MAX webhook POST не подтверждён, Mini App URL и mobile acceptance остаются HUMAN_REQUIRED.
+Актуальное состояние сдачи: code `d2e4fe8ae7d462ace2050d805dd20e5661a223a1` (передача COMPANY_TIMEZONE) ранее прошёл Docker verify; checkpoint `1707632961333c2bbb8e2974d3a154a9cc3c2686` опубликован в main и развёрнут на VDS. Доверенный Let's Encrypt TLS работает на https://185-146-157-147.sslip.io до 29.12.2026; строгая внешняя проверка /health/ready вернула static_ready. Production gateway healthy; guarded max-setup зарегистрировал webhook и повторно проверил одну подписку с ожидаемыми URL и типами событий. Реальный диалог MAX, Bridge, фото-CDN и mobile acceptance ещё не проверены. Production SEED_SYNTHETIC=0; отдельная loopback demo-БД содержит 10 машин, 4 сотрудника и одну завершённую поездку с 8+8 фото/manual_map. QA — NOT RUN. Коммит `d8827672edb0720fdbe2b9add4ff9d7d63ebdb7f` оформляет README по формату сдачи и добавляет корневой compose.yaml; по прямому указанию пользователя новые тесты и сборки не запускались. Это документирование сдачи, full_stack_accepted остаётся false.
 
 ```yaml
 status_schema: 1
 track: backend
-lock_state: ACTIVE
+lock_state: HANDOFF
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T08:33:03Z"
+heartbeat_utc: "2026-09-30T08:55:57Z"
 current_task: INT-04
-current_substep: "Let's Encrypt TLS на 185-146-157-147.sslip.io внешне проверен; /health/ready 200. Gateway в production оставлен MAX_UPDATE_MODE=disabled после выявления обязательных COMPANY_MAP_LAT/LON и COMPANY_TIMEZONE. Проверенный code commit d2e4fe8 добавил прокидывание timezone в full Compose; verify docker PASS. Следующий шаг: публикация code/status checkpoint, развёртывание на VDS и guarded webhook setup."
+current_substep: "Сдача MVP: README и root compose.yaml в d882767; новые проверки NOT RUN по указанию пользователя. TLS/webhook настроены ранее. Финальный checkpoint публикуется в main; очередь HANDOFF."
 last_verified_code_commit: "d2e4fe8ae7d462ace2050d805dd20e5661a223a1"
-last_pushed_checkpoint: "223ec616cbf4cc25f7d1401c6138ded8ed8bd7d9"
+last_pushed_checkpoint: "1707632961333c2bbb8e2974d3a154a9cc3c2686"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
 next_step: >-
-  До push повторно fetch origin и подтвердить ACTIVE owner A/session 01046daa-671d-40fb-bc02-45c1263a9705; проверить staged secrets. Опубликовать code d2e4fe8 и этот status checkpoint обычным push в codex/integration, затем fast-forward main. На VDS обновить checkout до опубликованного SHA, проверить full MAX Compose config, выставить приватный mode=webhook с PUBLIC_BASE_URL=https://185-146-157-147.sslip.io, COMPANY_MAP_LAT=55.751244, COMPANY_MAP_LON=37.618423 и COMPANY_TIMEZONE=Europe/Moscow; пересобрать/recreate только gateway. После health проверок запустить guarded `/usr/local/bin/max-setup` с MAX_FLEET_CONFIGURE_MAX_WEBHOOK=1; подтвердить GET /subscriptions count=1. Затем показать владельцу точные Mini App URL и шаги в MAX для бизнеса. Проверить фактический callback, фотографии и мобильную manual map только с участием пользователя; QA остаётся NOT RUN. Автоматическое retention и расписание backup не реализованы; full_stack_accepted=false.
+  Передать пользователю постоянную GitHub-ссылку и полный SHA финального коммита, опубликованного в main. После дедлайна сдаваемую версию не заменять. Остаются действия владельца: сохранить Mini App URL https://185-146-157-147.sslip.io/ в MAX для бизнеса, приватно зарегистрировать реальный тестовый MAX ID, проверить старт/фото/manual_map с устройства и точные CDN hosts. Новые тесты/сборки при оформлении сдачи не выполнялись; root compose include не проверен запуском. QA NOT RUN, full_stack_accepted=false. Общий сервер с webhook оставлен работающим; локального MAX consumer нет.
 human_required:
-  - "H-01: после подтверждения webhook владелец должен в MAX для бизнеса открыть https://business.max.ru → Чат-боты → MAX Fleet → ⋮ → Настройки, сохранить Mini App URL https://185-146-157-147.sslip.io/ и кнопку запуска, затем один раз открыть карту на MAX mobile. Браузер агента не авторизован."
+  - "H-01: webhook уже подтверждён; владелец должен в MAX для бизнеса открыть https://business.max.ru → Чат-боты → MAX Fleet → ⋮ → Настройки, сохранить Mini App URL https://185-146-157-147.sslip.io/ и кнопку запуска, затем один раз открыть карту на MAX mobile. Браузер агента не авторизован."
   - "H-03: для реального пилота приватно передать MAX user ID первого администратора, список сотрудников/машин, процедуру ключей и место/координаты."
   - "H-04: до реального пилота проверить и утвердить подготовленные сроки/доступы/backup от имени оператора; настроить автоматическое удаление и расписание резервирования."
 ```
+
+### Финальная фиксация для сдачи 2026-09-30
+
+- `d8827672edb0720fdbe2b9add4ff9d7d63ebdb7f`: README содержит назначение, MAX-ссылку, архитектуру, Docker-команду, окружение/порты/зависимости, внешние сервисы, данные, seed, пошаговую проверку, ожидаемые результаты, ограничения и остановку/повторный запуск. Корневой `compose.yaml` включает существующий полный стек. Новые тесты и сборки — NOT RUN по прямому указанию пользователя; замер сборки до 5 минут не заявляется.
+- Ранее в этой сессии на VDS: full/MAX Compose `config --quiet` и `up -d --build --wait --wait-timeout 240 gateway` завершились успешно; gateway/API healthy. `exec -T -e MAX_FLEET_CONFIGURE_MAX_WEBHOOK=1 gateway /usr/local/bin/max-setup` вернул `MAX webhook subscription configured and verified`: helper сверил ровно одну подписку, URL и message_created/message_callback/bot_started. Строгий внешний HTTPS запрос вернул `static_ready`. Это server-side результат; реальная работа пользователя в MAX не принята.
+- Очередь передаётся в HANDOFF. Секреты не включены в изменения. Сдаваемый SHA определяется финальным опубликованным коммитом; сервер оставлен работающим. Запуск Mini App и регистрация MAX пользователя требуют владельца аккаунта.
 
 ### INT-04 / публичный TLS и production config 2026-09-30
 
