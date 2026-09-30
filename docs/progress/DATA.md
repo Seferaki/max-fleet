@@ -8,13 +8,13 @@ track: data-integration-audit
 owner: A
 branch: codex/integration
 current_task: INT-03
-current_substep: "Published Go INT-03 code d5b6e7aeea6fb83ccc5809082af20efb9e500b51 plus status checkpoint a4e2bab9b950e7cc114eb6a12c048fdbb60ecc9f; remote confirmed. Replay return.complete preserved completed Trip version against live Python/PostgreSQL/S3. Actual container restart/down/restore remains next"
+current_substep: "After published replay checkpoint a4e2bab9b950e7cc114eb6a12c048fdbb60ecc9f, actual data-api restart and full Compose down/up without -v passed on synthetic project; Postgres/S3 named volumes survived, all services healthy, live Go dialog passed. Backup/restore remains next"
 last_verified_code_commit: "d5b6e7aeea6fb83ccc5809082af20efb9e500b51"
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 migration_head: "0002"
 data_ready_for_integration: true
 checkpoint_state: WIP
-next_step: "Code `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` проверил replay return.complete с тем же ключом на live Python/PostgreSQL/S3; полный Go test/vet/build также прошёл. Status checkpoint `a4e2bab9b950e7cc114eb6a12c048fdbb60ecc9f` опубликован, remote подтверждён. Следом проверить реальный data-api/container restart и Compose down/up без удаления volumes, сверить PostgreSQL/S3 persistence. QA NOT RUN, Linux host-secret permissions не проверены"
+next_step: "Актуальный data-api restart и Compose down/up без -v проверены: оба named volume пережили пересоздание контейнеров, все сервисы healthy, live Go dialog PASS. Следом проверить backup/restore на новых отдельных synthetic source/target проектах после migration 0002. Не использовать существующий проект max-fleet-restore из DE скрипта. QA NOT RUN, Linux host-secret permissions не проверены"
 human_required: []
 ```
 
@@ -32,7 +32,7 @@ human_required: []
 
 ## Последний checkpoint
 
-Реализован внутренний API v1.13 (36 маршрутов) в `services/data/`. Проверено локально (Windows 11, Docker Desktop, PostgreSQL 17.6). Последняя интеграционная проверка: Go code `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` повторил завершённый `return.complete` с тем же idempotency key против Python/PostgreSQL/S3; сохранённый Return вернулся, версия completed Trip не изменилась. Live test и полный Go test/vet/build прошли; actual service restart/down/restore ещё не перепроверены на этом code SHA.
+Реализован внутренний API v1.13 (36 маршрутов) в `services/data/`. Проверено локально (Windows 11, Docker Desktop, PostgreSQL 17.6). Последняя Go-проверка `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` повторила завершённый `return.complete` с тем же idempotency key против Python/PostgreSQL/S3; сохранённый Return вернулся, версия completed Trip не изменилась. Затем фактически перезапущен data-api и пересоздан полный disposable Compose без удаления volumes: PostgreSQL/S3 named volumes сохранились, сервисы healthy, readiness 200, live Go dialog прошёл повторно. Полный Go test/vet/build прошёл. Backup/restore после перехода на migration head 0002 ещё не проверен.
 
 - `TEST_DATABASE_URL=<отдельный disposable PostgreSQL 17.6> uv run pytest -q` — 43 passed (реальный PostgreSQL, S3 — in-memory адаптер в тестах);
 - `uv run ruff check app tests migrations` и `uv run mypy app` — без ошибок;
