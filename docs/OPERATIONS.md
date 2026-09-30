@@ -36,7 +36,7 @@ HUMAN_REQUIRED: H-01
 2. В разделе чат-ботов создаёт бота с подготовленными агентом названием, описанием и подходящим логотипом. Пример описания: «Служебный автопарк: оформление поездок, осмотры автомобиля, возврат и сообщения ответственному».
 3. Дожидается модерации. Агент записывает внешний блокер, но продолжает изолированную разработку.
 4. После одобрения токен копируется из настроек в локальный secret-файл; порядок описан в [управлении ботом](https://dev.max.ru/docs/chatbots/bots-create/manage).
-5. Агент проверяет /me через настроенный SDK и выводит только успех и несекретную идентификацию нужного бота. Обновление токена выполняется в том же интерфейсе владельца, затем агент проверяет новый secret.
+5. Агент проверяет `/me` через настроенный Go SDK и выводит только факт успешной проверки, не имя/username или сведения из ответа. Обновление токена выполняется в том же интерфейсе владельца, затем агент проверяет новый secret.
 6. Первый admin и тестовые пользователи открывают личный диалог, чтобы бот мог получать их действия и отправлять предусмотренные уведомления. ID администратора вводится в приватный bootstrap; аккаунт GitHub не определяет роль MAX.
 
 Не использовать инструкции Telegram/BotFather и не считать публично найденный token пригодным. При ограниченном доступе хакатона уточнить у организаторов предоставленный способ подключения; не придумывать обход регистрации.
@@ -48,6 +48,18 @@ HUMAN_REQUIRED: H-01
 - Для production — webhook; polling только для разработки. Они не работают одновременно. [Режимы получения событий](https://dev.max.ru/docs/chatbots/bots-coding/prepare).
 - Webhook требует HTTPS с доверенным сертификатом. Зарегистрировать `PUBLIC_BASE_URL/max/webhook` и secret, проверять `X-Max-Bot-Api-Secret`. Nginx web проксирует этот путь в Go gateway без записи заголовков/тела в access log; MAX ожидает HTTP 200 в течение 30 секунд, gateway ограничивает durable intake быстрым сохранением inbox. Неуспешная durable запись → 503. [Контракт webhook](https://dev.max.ru/docs-api/methods/POST/subscriptions).
 - Перед сменой режима прочитать текущие subscriptions. Не удалять подписки неизвестного назначения. Идемпотентно привести только конфигурацию этого проекта к выбранному режиму.
+- Безопасная read-only проверка списка подписок выполняется opt-in Go тестом; он печатает только количество и не печатает URL, типы событий или токен. Официальный [GET /subscriptions](https://dev.max.ru/docs-api/methods/GET/subscriptions) требует заголовок `Authorization` и использует MAX API с корневым сертификатом Минцифры:
+
+```powershell
+$env:MAX_FLEET_SECRETS_DIR = 'C:\MAXFleet\secrets'
+$env:MAX_BOT_TOKEN_FILE = Join-Path $env:MAX_FLEET_SECRETS_DIR 'max_bot_token'
+$env:MAX_FLEET_LIVE_MAX_SUBSCRIPTIONS = '1'
+Push-Location services/gateway
+& '..\..\.local\go-dist\go\bin\go.exe' test ./internal/maxsdk -run '^TestLiveMAXSubscriptions$' -count=1 -v
+Pop-Location
+Remove-Item Env:\MAX_BOT_TOKEN_FILE, Env:\MAX_FLEET_LIVE_MAX_SUBSCRIPTIONS -ErrorAction SilentlyContinue
+```
+
 - Polling marker переносит границу прочитанных событий; сохранить пачку в inbox до продвижения marker. При рестарте продолжить от сохранённого значения; один poller на token. [GET updates](https://dev.max.ru/docs-api/methods/GET/updates).
 - Кнопка карты использует `https://max.ru/<MAX_BOT_NAME>?startapp=<return_id>` для текущего возврата. После регистрации mini-app человек локально указывает имя одобренного бота без `@`; ID возврата в ссылке не даёт доступа без подписанного initData. Открытие deep link внутри настоящего MAX проверяется на INT-04. [Диплинки mini-app](https://dev.max.ru/docs/webapps/introduction).
 - Mini-app подключается к боту через HTTPS URL, например PUBLIC_BASE_URL/map. Агент подготавливает URL и показывает человеку, какое поле настроить, если UI аккаунта недоступен. [Подключение mini-app](https://dev.max.ru/docs/webapps/introduction).

@@ -365,7 +365,7 @@ Durable inbox, single-actor claim, leases/expiry, integration marker, transactio
 
 Агент проверяет /me без печати токена, конфигурирует выбранную подписку webhook и URL mini-app, разрешённые update_types и secret, сверяет возвращённый success. Человек только подтверждает настройки своего аккаунта и открывает бота на устройствах при необходимости. Проверить реальное фото, callback, request_geo_location, ручную карту без GPS, подпись/даты initData и возврат в чат. Один работающий consumer на токен; другой ноутбук не запускает тот же dev poller. Готово: AC-27 на mobile и web MAX; результаты/версии клиентов записаны. Недоступный MAX — статус BLOCKED этой задачи, продукт не объявляется полностью готовым.
 
-Checkpoint 30.09.2026: безопасный `GET /me` через текущий Go MAX-клиент `maxsdk.New` прошёл и подтвердил bot account. Этот результат закрывает только проверку credentials: публичный HTTPS всё ещё ожидает повторного выпуска после Let's Encrypt rate limit; webhook, Mini App/Bridge и AC-27 на MAX mobile/web не проверены. Актуальные команды и ограничения ведутся в `docs/progress/BACKEND.md`.
+Checkpoint 30.09.2026: безопасный `GET /me` через текущий Go MAX-клиент `maxsdk.New` прошёл и подтвердил bot account; read-only `GET /subscriptions` вернул 0, существующих webhook subscriptions нет. Эти результаты закрывают только проверку credentials и preflight: публичный HTTPS всё ещё ожидает повторного выпуска после Let's Encrypt rate limit; webhook, Mini App/Bridge и AC-27 на MAX mobile/web не проверены. Актуальные команды и ограничения ведутся в `docs/progress/BACKEND.md`.
 
 ### INT-05 — финальная QA-регрессия и исправления
 
