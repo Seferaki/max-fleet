@@ -98,6 +98,34 @@ uv run --project services/data python services/data/scripts/smoke.py
 
 Smoke использует локальные service-token файлы, не печатает их и проходит через Python API, PostgreSQL и S3: оформление, challenge, правила, 8 фотографий до, начало поездки, 8 фотографий после, ручную точку карты и завершение возврата. Ожидаемый результат — завершённая поездка, доступный автомобиль, сохранённый предыдущий осмотр и уведомления. Smoke изменяет тестовую БД; запускайте его только на синтетическом стенде. Он не является проверкой MAX webhook или MAX Mini App.
 
+### Остановка, повторный запуск и обновление
+
+Остановить сервисы, оставив контейнеры, сеть и данные на месте:
+
+```powershell
+docker compose --env-file .env -f deploy/compose.full.yaml -p max-fleet-demo stop
+```
+
+Повторно запустить остановленный стенд:
+
+```powershell
+docker compose --env-file .env -f deploy/compose.full.yaml -p max-fleet-demo start
+```
+
+После обновления исходного кода пересобрать образы и дождаться healthchecks:
+
+```powershell
+docker compose --env-file .env -f deploy/compose.full.yaml -p max-fleet-demo up -d --build --wait
+```
+
+Удалить контейнеры и сеть, сохранив named volumes с PostgreSQL и S3:
+
+```powershell
+docker compose --env-file .env -f deploy/compose.full.yaml -p max-fleet-demo down
+```
+
+Не добавляйте `-v`, если нужно сохранить синтетическую БД и фотографии. Для повторного запуска используйте то же имя Compose project и тот же файл `.env`.
+
 ## Состояние реализации и ограничения
 
 На 30.09.2026 merge backend и `main` опубликован в `main`; синтетический Go → Python → PostgreSQL/S3 путь развёрнут на VDS. Production Compose работает с `SEED_SYNTHETIC=0`; отдельный `max-fleet-demo` содержит синтетические данные и привязан только к loopback. Readiness API и web обоих Compose проектов вернул 200. Проверка настоящего MAX `GET /me` через Go-клиент с локальным корневым сертификатом Минцифры прошла; секрет и сведения об аккаунте не выводились. Это подтверждает доступность API для бота, но не работу пользовательского сценария: внешний HTTPS, webhook и Mini App не настроены, ссылка на работающего бота пока отсутствует. Сертификат Let's Encrypt ранее был ограничен общим rate limit до `2026-09-30 05:39:42 UTC`; TLS ещё нужно повторно проверить после этого срока. `QA` намеренно пропущен по решению владельца и имеет статус **NOT RUN**, а не PASS.
