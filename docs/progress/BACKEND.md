@@ -11,11 +11,11 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T03:41:13Z"
+heartbeat_utc: "2026-09-30T03:42:52Z"
 current_task: INT-04
 current_substep: "scripts/verify.ps1 -Direction all PASS; read-only demo API подтверждает 1.13/10 машин/4 сотрудника/rules. Публичные http://fvds.ru/health/ready и https://fvds.ru/health/ready вернули 404, так что MAX Fleet пока недоступен по этому hostname. Нужен правильный public hostname/proxy mapping; webhook не регистрировался."
 last_verified_code_commit: "9e1f05878b356f7d0470df9c72fe01aaf2231ac5"
-last_pushed_checkpoint: "79e9c86b0ec9e163fa092c7943474ac345e79b1f"
+last_pushed_checkpoint: "ed61c577105910a9622bb652c95f04b5f5ffb96d"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
