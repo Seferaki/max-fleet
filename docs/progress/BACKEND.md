@@ -9,7 +9,7 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T00:12:22Z"
+heartbeat_utc: "2026-09-30T00:13:55Z"
 current_task: INT-03
 current_substep: "Actual data-api restart and full Compose down/up without -v passed on synthetic max-fleet-int-recovery: named PostgreSQL/S3 volumes survived, all services healthy, API readiness 200, live Go dialog passed after each restart. Documentation/status checkpoint pending."
 last_verified_code_commit: "d5b6e7aeea6fb83ccc5809082af20efb9e500b51"
