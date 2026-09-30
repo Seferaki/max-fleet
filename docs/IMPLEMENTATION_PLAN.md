@@ -357,7 +357,7 @@ Durable inbox, single-actor claim, leases/expiry, integration marker, transactio
 
 Зависимости: INT-02.
 
-Параллельная выдача, двойной complete, restart на 4/8 фото и в return, Python/DB/S3 down, lost response after commit, MAX 429, lease expiry, restore backup. Проверить время и объёмы очереди после восстановления. Готово: AC-03/12/20/24, NFR целостности и измеренные нагрузочные цели; непрохождение фиксируется и исправляется до release.
+Параллельная выдача, двойной complete (включая replay с тем же ключом после потерянного ответа), восстановление Go worker на 4/8 фото, отдельный реальный restart API/Compose во время return, Python/DB/S3 down, lost response after commit, MAX 429, lease expiry и backup restore. Пересоздание worker-структур внутри тестового процесса не засчитывается как перезапуск контейнера. Проверить время и объёмы очереди после восстановления. Готово: AC-03/12/20/24, NFR целостности и измеренные нагрузочные цели; непрохождение фиксируется и исправляется до release.
 
 ### INT-04 — подключить реальный MAX и HTTPS
 

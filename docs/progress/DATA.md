@@ -8,13 +8,13 @@ track: data-integration-audit
 owner: A
 branch: codex/integration
 current_task: INT-03
-current_substep: "Response-loss test 94ff2fb74500b14aa4598d019e06a4cd8862363a published in checkpoint 1a51d5ad59ea87357e13345fcaf5d36524bf4658. Next: replay return.complete with same operation idempotency key and assert stable completed state before service restart/down/restore"
-last_verified_code_commit: "94ff2fb74500b14aa4598d019e06a4cd8862363a"
+current_substep: "Go INT-03 code d5b6e7aeea6fb83ccc5809082af20efb9e500b51 replays completed return.complete with the same operation idempotency key against live Python/PostgreSQL/S3; trip version stayed stable. Actual container restart/down/restore remains next"
+last_verified_code_commit: "d5b6e7aeea6fb83ccc5809082af20efb9e500b51"
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 migration_head: "0002"
 data_ready_for_integration: true
 checkpoint_state: WIP
-next_step: "Проверить повтор return.complete с тем же operation idempotency key; затем service restart/down/concurrency/restore. Code `94ff2fb74500b14aa4598d019e06a4cd8862363a` + checkpoint `1a51d5ad59ea87357e13345fcaf5d36524bf4658` опубликованы. QA NOT RUN, Linux host-secret permissions не проверены"
+next_step: "Code `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` проверил replay return.complete с тем же ключом на live Python/PostgreSQL/S3; полный Go test/vet/build также прошёл. Этот статус содержит результат; обычный push ожидает проверки владельца очереди и remote HEAD. Следом проверить реальный data-api/Compose restart и down/restore с сохранением состояния PostgreSQL и S3. QA NOT RUN, Linux host-secret permissions не проверены"
 human_required: []
 ```
 
@@ -32,7 +32,7 @@ human_required: []
 
 ## Последний checkpoint
 
-Реализован внутренний API v1.13 (36 маршрутов) в `services/data/`. Проверено локально (Windows 11, Docker Desktop, PostgreSQL 17.6):
+Реализован внутренний API v1.13 (36 маршрутов) в `services/data/`. Проверено локально (Windows 11, Docker Desktop, PostgreSQL 17.6). Последняя интеграционная проверка: Go code `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` повторил завершённый `return.complete` с тем же idempotency key против Python/PostgreSQL/S3; сохранённый Return вернулся, версия completed Trip не изменилась. Live test и полный Go test/vet/build прошли; actual service restart/down/restore ещё не перепроверены на этом code SHA.
 
 - `TEST_DATABASE_URL=<отдельный disposable PostgreSQL 17.6> uv run pytest -q` — 43 passed (реальный PostgreSQL, S3 — in-memory адаптер в тестах);
 - `uv run ruff check app tests migrations` и `uv run mypy app` — без ошибок;
