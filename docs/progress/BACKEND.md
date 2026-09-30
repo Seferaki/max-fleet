@@ -11,11 +11,11 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T07:58:43Z"
+heartbeat_utc: "2026-09-30T08:02:55Z"
 current_task: INT-04
-current_substep: "Synthetic demo trip и MAX read-only preflight проверены. GET /me безопасно вернул bot username; MAX_BOT_NAME добавлен в private VDS override, Compose config PASS без рестарта. HTTPS retry разрешён после 08:59:22Z. Mini App URL останется владельцу после TLS readiness."
+current_substep: "Synthetic demo trip и MAX read-only preflight проверены. GET /me безопасно вернул bot username; MAX_BOT_NAME добавлен в private VDS override, Compose config PASS без рестарта. Публичный HTTPS preflight в 08:02Z всё ещё не проходит TLS handshake; retry разрешён после 08:59:22Z. Mini App URL останется владельцу после TLS readiness."
 last_verified_code_commit: "955a7a42afc73fedb0d9aa21d5e7b3190c3ee435"
-last_pushed_checkpoint: "4b77d683d567d5ba6667ed1c7e505e1bf5f7d8f4"
+last_pushed_checkpoint: "90413bf2d085db9f3794a2ea1bbae229de54d783"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
@@ -46,8 +46,9 @@ human_required: ["H-01: после подтверждения агентом п�
 
 - Временный statically built Go probe использовал тот же `maxsdk.New` и локальный VDS token file. На VDS он выполнил только `GET /me`, подтвердил `is_bot=true` и непустой username. Выведен только публичный username; token не печатался, не копировался и не попадал в Git. Временный исходник и бинарник удалены.
 - Непубличный `/etc/max-fleet/prod-overrides.env` дополнен `MAX_BOT_NAME` из этого ответа; подтверждено `mode=0600`, значение не выводилось. Повторный `docker compose --env-file .env --env-file /etc/max-fleet/prod-overrides.env -f deploy/compose.full.yaml -f deploy/compose.full.max.yaml -p max-fleet-prod config --quiet` → PASS. Production контейнеры не перезапускались, MAX subscriptions не изменялись.
+- Строгий public TLS preflight `curl.exe --fail --silent --show-error --max-time 12 -o NUL -w 'https_status=%{http_code}' https://efimok051.fvds.ru/health/ready` в 08:02 UTC → schannel handshake error, HTTP status 000; сертификат пока отсутствует. TLS verify не отключался, аккаунт/сервер не менялись.
 - Docs commit `a703fdac8812c02d584ebef85571a64484208c61` исправляет инструкции о source username и Mini App root URL. `py .local/check_docs.py` → PASS (`errors=[]`); `git diff --check` и staged secret scan → PASS, 3 файла / 0 matches.
-- Далее: сохранить отдельный progress checkpoint, обычным push опубликовать оба commits, затем продолжить TLS после rate-limit cooldown. Не включать gateway/webhook до публичного TLS.
+- Далее: повторить TLS helper после rate-limit cooldown и только при успехе перейти к webhook. Не включать gateway/webhook до публичного TLS.
 
 ### INT-04 / VDS TLS automation 2026-09-30
 
