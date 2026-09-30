@@ -41,6 +41,15 @@ verify_web() {
 verify_docker() {
     cd "$repo_root"
     docker compose -f deploy/compose.backend.yaml config --no-interpolate --quiet
+    max_overlay_config=$(docker compose -f deploy/compose.full.yaml -f deploy/compose.full.max.yaml config --no-interpolate --format json)
+    printf '%s' "$max_overlay_config" | grep -F '"MAX_BOT_TOKEN_FILE=/run/secrets/max_bot_token"' >/dev/null || {
+        echo 'MAX Compose overlay must point MAX_BOT_TOKEN_FILE at its mounted Docker secret.' >&2
+        return 1
+    }
+    printf '%s' "$max_overlay_config" | grep -F '"COMPANY_TIMEZONE=${COMPANY_TIMEZONE:-Europe/Moscow}"' >/dev/null || {
+        echo 'Full Compose must pass COMPANY_TIMEZONE into the gateway.' >&2
+        return 1
+    }
     if ! docker info >/dev/null 2>&1; then
         echo 'Docker Engine недоступен. Контейнерные сборки не проверены.' >&2
         return 1

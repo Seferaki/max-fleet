@@ -26,6 +26,7 @@ services:
       WORKER_API_TOKEN_FILE: /run/secrets/worker_api_token
       MAX_BOT_NAME: ${MAX_BOT_NAME:-}
       MAX_PHOTO_HOSTS: ${MAX_PHOTO_HOSTS:-}
+      COMPANY_TIMEZONE: ${COMPANY_TIMEZONE:-Europe/Moscow}
       COMPANY_MAP_LAT: ${COMPANY_MAP_LAT:-}
       COMPANY_MAP_LON: ${COMPANY_MAP_LON:-}
     secrets: [max_webhook_secret, data_api_token, worker_api_token]

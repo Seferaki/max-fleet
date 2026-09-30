@@ -58,6 +58,16 @@ function Verify-Docker {
     try {
         docker compose -f deploy/compose.backend.yaml config --no-interpolate --quiet
         Assert-Exit 'Docker Compose config'
+
+        $maxOverlayJson = docker compose -f deploy/compose.full.yaml -f deploy/compose.full.max.yaml config --no-interpolate --format json
+        Assert-Exit 'Docker Compose MAX overlay config'
+        $maxOverlay = ($maxOverlayJson -join "`n") | ConvertFrom-Json
+        if ($maxOverlay.services.gateway.environment -notcontains 'MAX_BOT_TOKEN_FILE=/run/secrets/max_bot_token') {
+            throw 'MAX Compose overlay must point MAX_BOT_TOKEN_FILE at its mounted Docker secret.'
+        }
+        if ($maxOverlay.services.gateway.environment -notcontains 'COMPANY_TIMEZONE=${COMPANY_TIMEZONE:-Europe/Moscow}') {
+            throw 'Full Compose must pass COMPANY_TIMEZONE into the gateway.'
+        }
     } finally { Pop-Location }
 
     docker info --format '{{.ServerVersion}}' 2>$null | Out-Null
