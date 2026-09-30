@@ -11,17 +11,17 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T07:48:38Z"
+heartbeat_utc: "2026-09-30T07:53:55Z"
 current_task: INT-04
-current_substep: "Синтетический VDS smoke сохранён и read-only проверен: completed trip, 8+8 фото, manual_map, 10 машин доступны. MAX GET /subscriptions count=0. TLS helper проверил upstream/ACME, но Let's Encrypt ограничил выпуск до 2026-09-30T08:59:22Z; production gateway остаётся disabled."
+current_substep: "Synthetic demo trip и MAX read-only preflight проверены. HTTPS retry разрешён после 08:59:22Z. MAX Mini App URL требует владельца кабинета после TLS readiness: в текущем браузере сессии нет, пароль/код не вводил; точные шаги HUMAN_REQUIRED записаны в OPERATIONS."
 last_verified_code_commit: "955a7a42afc73fedb0d9aa21d5e7b3190c3ee435"
-last_pushed_checkpoint: "f8c517ce628ef8768cea947f29f1dc5522c87f39"
+last_pushed_checkpoint: "26bce6c8c67c68305a27ed73391f23ef7c232a4e"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "После 2026-09-30T08:59:22Z повторить `bash scripts/deploy-vds-nginx.sh --hostname efimok051.fvds.ru --web-port 8081`. До успешного HTTPS с валидной цепочкой и публичного /health/ready не переключать production gateway на webhook. Последний известный VDS checkout — опубликованный main b7bbab7; обновить fast-forward до свежего опубликованного main после checkpoint. В `/etc/max-fleet/prod-overrides.env` вне репозитория лежит проверенная конфигурация mode 0600; токен только в закрытом файле `/root/.local/share/max-fleet/secrets/max_bot_token`, его содержимое не читать/не выводить. Production Compose overlay config --quiet прошёл, но контейнеры не перезапускались. MAX subscriptions read-only проверены: count=0. После TLS обновить web/gateway изолированным production Compose, проверить readiness и выполнить guarded `/usr/local/bin/max-setup` с MAX_FLEET_CONFIGURE_MAX_WEBHOOK=1, затем проверить подписку и webhook delivery без реальных персональных данных. Отдельно закрыть проверку Mini App URL/Bridge и устройства; QA намеренно NOT RUN. Автоматические сроки хранения и расписание backup не реализованы; full_stack_accepted=false."
-human_required: ["H-03: для реального пилота приватно передать MAX user ID первого администратора, список сотрудников/машин, процедуру ключей и место/координаты", "H-04: до реального пилота проверить и утвердить подготовленные сроки/доступы/backup от имени оператора; настроить автоматическое удаление и расписание резервирования"]
+next_step: "После 2026-09-30T08:59:22Z повторить `bash scripts/deploy-vds-nginx.sh --hostname efimok051.fvds.ru --web-port 8081`. До HTTPS с валидной цепочкой и публичного /health/ready не переключать production gateway на webhook. Последний серверный checkout f8c517c чист; последующие commits кода не меняли, TLS helper 955a7a4 присутствует. В `/etc/max-fleet/prod-overrides.env` вне Git лежит проверенная конфигурация mode 0600; token только в закрытом VDS-файле, содержимое не читать/не выводить. Overlay config --quiet PASS, production контейнеры не перезапускались. MAX GET /subscriptions count=0. После TLS обновить web/gateway изолированным production Compose, проверить readiness, запустить guarded `/usr/local/bin/max-setup` с `MAX_FLEET_CONFIGURE_MAX_WEBHOOK=1`, затем проверить subscription и webhook delivery без реальных персональных данных. После публичного readiness отправить владельцу точное HUMAN_REQUIRED на сохранение Mini App URL в MAX partner UI и разовый мобильный запуск карты; документация подготовлена. QA намеренно NOT RUN. Автоматические сроки хранения и расписание backup не реализованы; full_stack_accepted=false."
+human_required: ["H-01: после подтверждения агентом публичного HTTPS readiness владелец должен в MAX для бизнеса у бота MAX Fleet сохранить Mini App URL https://efimok051.fvds.ru/ и один раз открыть ручную карту в MAX mobile; вход в аккаунт в браузере агента отсутствует", "H-03: для реального пилота приватно передать MAX user ID первого администратора, список сотрудников/машин, процедуру ключей и место/координаты", "H-04: до реального пилота проверить и утвердить подготовленные сроки/доступы/backup от имени оператора; настроить автоматическое удаление и расписание резервирования"]
 ```
 
 ### INT-04 / заполнение синтетической demo-БД и формат README 2026-09-30
@@ -34,6 +34,13 @@ human_required: ["H-03: для реального пилота приватно 
 - Документальный commit `83ff3f2fc4b2548d250509b0c09c901eb13be932` (README и synthetic dataset) опубликован; status checkpoint `f8c517ce628ef8768cea947f29f1dc5522c87f39` также опубликован обычными push в `codex/integration` и `main`, `git ls-remote` подтвердил равные SHA. Перед push owner/session совпали с ACTIVE A, staged diff отсутствовал, tracked secret scan: 355 файлов, 0 совпадений.
 - VDS checkout `/opt/max-fleet` fast-forward обновлён с `b7bbab7` до `f8c517ce628ef8768cea947f29f1dc5522c87f39`; рабочее дерево было чистым, runtime-контейнеры не перезапускались и production env не применялся.
 - Далее: после `2026-09-30T08:59:22Z` повторить TLS helper; перед каждым push снова fetch, сверить ACTIVE lock (A, session `01046daa-671d-40fb-bc02-45c1263a9705`) и staged diff/секреты. До HTTPS readiness не включать пользовательские HTTP маршруты.
+
+### INT-04 / human gate привязки Mini App 2026-09-30
+
+- Официальная [инструкция MAX Mini Apps](https://dev.max.ru/help/miniapps) требует связать мини-приложение с чат-ботом в MAX для бизнеса: раздел «Чат-боты» → бот → `⋮` → настройки → URL Mini App → кнопка запуска. Публичного Data API для этой привязки не предусмотрено.
+- `https://business.max.ru` открыт в отдельной вкладке; доступна только публичная landing page с кнопкой входа, а вошедшей сессии аккаунта нет. Вход, коды и пароли не вводились. После HTTPS readiness нужен минимальный шаг владельца; точная инструкция добавлена в `docs/OPERATIONS.md` и README. Адрес приложения: `https://efimok051.fvds.ru/`.
+- Commit `1d9dd542208b3ddb9196e87e2ce11a75bb8e2958` обновляет README, план INT-04 и `HUMAN_REQUIRED` в OPERATIONS. `py .local/check_docs.py` → PASS (27 Markdown, 69 локальных ссылок, `errors=[]`); `git diff --check` → PASS; `py scripts/check-secrets.py --staged` → PASS, 3 файла, 0 совпадений.
+- Далее: сначала получить валидный TLS и подтвердить публичный readiness, затем webhook setup. Только после readiness попросить владельца сохранить URL в кабинете и выполнить один mobile launch; не задавать пароль/код агента.
 
 ### INT-04 / VDS TLS automation 2026-09-30
 
