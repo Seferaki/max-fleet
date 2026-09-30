@@ -65,7 +65,7 @@ Compose поднимает Go gateway, React web, Python API и worker, Alembic 
 | `DATA_API_PORT` | Loopback-порт Python API на хосте | `18000` |
 | `MAP_TILE_URL`, `MAP_ATTRIBUTION` | Тайлы карты и подпись источника | OpenStreetMap; значение и attribution показываются пользователю |
 | `COMPANY_MAP_LAT`, `COMPANY_MAP_LON` | Необязательный центр карты | Пустые значения допустимы |
-| `MAX_BOT_NAME`, `MAX_PHOTO_HOSTS` | Имя бота и разрешённые хосты медиа | Пустые в синтетическом режиме; задать для live-подключения |
+| `MAX_BOT_NAME`, `MAX_PHOTO_HOSTS` | Username бота для deep link и разрешённые хосты медиа | Username проверяется через MAX `/me` и хранится в приватной конфигурации; список media hosts заполняется после проверки доменов |
 | `S3_BUCKET`, `S3_REGION` | Настройки хранилища | Внутренний bucket `max-fleet-photos`, регион `us-east-1` |
 | `MAX_FLEET_SECRETS_DIR` | Путь к приватным файлам секретов, задаётся в оболочке | `C:\MAXFleet\secrets` (ASCII-путь для Docker Desktop при профиле Windows с кириллицей) |
 
