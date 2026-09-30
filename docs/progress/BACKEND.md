@@ -11,13 +11,13 @@ session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
 heartbeat_utc: "2026-09-30T00:13:55Z"
 current_task: INT-03
-current_substep: "Actual data-api restart and full Compose down/up without -v passed on synthetic max-fleet-int-recovery: named PostgreSQL/S3 volumes survived, all services healthy, API readiness 200, live Go dialog passed after each restart. Documentation/status checkpoint pending."
+current_substep: "Code d5b6e7aeea6fb83ccc5809082af20efb9e500b51 passed full Go gates and live same-key completion replay. Actual data-api restart and full Compose down/up without -v passed on max-fleet-int-recovery: named PostgreSQL/S3 volumes survived, services healthy, readiness 200, live Go dialog passed after each restart. Recovery status was pushed at c9a3b44ad92e44177a819911b679b713ae0a1ff5 and remote verified."
 last_verified_code_commit: "d5b6e7aeea6fb83ccc5809082af20efb9e500b51"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "Зафиксировать и опубликовать этот recovery checkpoint. Затем проверить backup/restore на отдельном synthetic source/target project (без удаления volumes чужого проекта), актуальную очередь/lease и недостающие MAX transport отказные сценарии. 4/8 Go recovery пока пересоздаёт структуры только в процессе теста; полный restart Go в середине return и backup restore после migration 0002 остаются WIP. QA NOT RUN; реальный MAX требует H-01; full_stack_accepted=false."
+next_step: "Проверить backup/restore на отдельном synthetic source/target project, не затрагивая чужие volumes; затем оставить актуальную очередь/lease и MAX transport отказные сценарии как следующие INT-03 проверки. 4/8 Go recovery пока пересоздаёт структуры только в процессе теста; полный restart Go в середине return и backup restore после migration 0002 остаются WIP. QA NOT RUN; реальный MAX требует H-01; full_stack_accepted=false."
 human_required: [H-01]
 ```
 
