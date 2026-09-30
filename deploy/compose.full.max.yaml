@@ -1,0 +1,10 @@
+# Live MAX credentials overlay. Keep the base full Compose synthetic by default.
+services:
+  gateway:
+    environment:
+      MAX_BOT_TOKEN_FILE: /run/secrets/max_bot_token
+    secrets: [max_bot_token]
+
+secrets:
+  max_bot_token:
+    file: ${MAX_FLEET_SECRETS_DIR:?Set MAX_FLEET_SECRETS_DIR to the private secrets directory}/max_bot_token

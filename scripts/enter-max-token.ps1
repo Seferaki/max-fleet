@@ -10,7 +10,21 @@ if (@($selectedModes).Count -ne 1) {
     throw 'Укажите ровно один режим: -Prepare, -Enter или -Check.'
 }
 
-$secretDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'MAXFleet\secrets'
+$secretDirectoryOverride = $env:MAX_FLEET_SECRETS_DIR
+if ([string]::IsNullOrWhiteSpace($secretDirectoryOverride)) {
+    $secretDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'MAXFleet\secrets'
+} else {
+    if (-not [System.IO.Path]::IsPathRooted($secretDirectoryOverride)) {
+        throw 'MAX_FLEET_SECRETS_DIR должен быть абсолютным путём вне репозитория.'
+    }
+    $secretDirectory = [System.IO.Path]::GetFullPath($secretDirectoryOverride)
+    $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+    $repositoryPrefix = $repositoryRoot + [System.IO.Path]::DirectorySeparatorChar
+    if ($secretDirectory.Equals($repositoryRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $secretDirectory.StartsWith($repositoryPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'MAX_FLEET_SECRETS_DIR должен указывать за пределы репозитория.'
+    }
+}
 $tokenPath = Join-Path $secretDirectory 'max_bot_token'
 $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 

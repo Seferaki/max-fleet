@@ -93,7 +93,7 @@ $env:MAX_FLEET_WORKER_API_TOKEN_FILE = Join-Path $env:MAX_FLEET_SECRETS_DIR 'wor
 docker compose -f deploy/compose.backend.yaml up --build -d --wait
 ```
 
-Переменные путей и secret-файлы должны оставаться локальными; значения файлов не копируются в `.env`, Git или чат. Если Docker Desktop не может читать директорию с пользовательским ACL, `scripts/prepare-compose-token.ps1` создаёт защищённые копии рядом с каталогом секретов и печатает только путь. Токен MAX владелец вводит отдельно локальной командой `scripts/enter-max-token.ps1 -Enter`; `-Check` показывает только наличие. На Unix `scripts/bootstrap.sh` создаёт каталог secret-файлов с правами `700`; только `data_api_token` и `worker_api_token` получают режим `444`, остальные секреты остаются `600`. Это нужно потому, что file-backed Compose secrets монтируются как bind mounts ([Docker Compose docs](https://docs.docker.com/compose/how-tos/use-secrets/)), а Go-контейнеры работают под UID `10001`; приватный родительский каталог не позволяет другим пользователям хоста открыть эти файлы. CI придерживается того же режима на временном runner с каталогом `700` и печатает безопасный startup log mock-сервиса при неудачном запуске. Реальные DATABASE_URL и seed оформляются позже вместе с Python; значения не копируются в чат.
+Переменные путей и secret-файлы должны оставаться локальными; значения файлов не копируются в `.env`, Git или чат. Если Docker Desktop не может читать директорию с пользовательским ACL, `scripts/prepare-compose-token.ps1` создаёт защищённые копии рядом с каталогом секретов и печатает только путь. Токен MAX владелец вводит отдельно локальной командой `scripts/enter-max-token.ps1 -Enter`; `-Check` показывает только наличие, а скрипт использует `MAX_FLEET_SECRETS_DIR`, если он задан, иначе `%LOCALAPPDATA%\MAXFleet\secrets`. На Unix `scripts/bootstrap.sh` создаёт каталог secret-файлов с правами `700`; все смонтированные Compose secrets получают режим `444`, чтобы Go и Python контейнеры с UID `10001` могли их прочитать. Это нужно потому, что file-backed Compose secrets монтируются как bind mounts ([Docker Compose docs](https://docs.docker.com/compose/how-tos/use-secrets/)). Закрытый родительский каталог не позволяет другим пользователям хоста открыть файлы. Файл `max_bot_token` появляется только после безопасной передачи токена владельцем и хранится в этом же каталоге. CI использует временный каталог с правами `700` и не печатает значения секретов. Реальные DATABASE_URL и seed оформляются позже вместе с Python; значения не копируются в чат.
 
 Проверки: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` либо `sh scripts/verify.sh all`. Направления: `contract`, `gateway`, `web`, `docker`. Отсутствующий инструмент/Engine даёт ошибку, а не зелёный результат. Для pre-commit проверки выбранных файлов: `py scripts/check-secrets.py --staged`; CI сканирует tracked-файлы без печати содержимого.
 
@@ -134,6 +134,22 @@ docker compose -f deploy/compose.full.yaml -p max-fleet-full up -d --build --wai
 ```
 
 Карта доступна на `http://127.0.0.1:8081`. Если порт занят, задайте `WEB_PORT` (и `DATA_API_PORT` для loopback debug API). Postgres/S3 не публикуются. Без MAX bot token gateway принимает только synthetic входящие события без ответов; `/health/ready` сообщает `503 dialog flows incomplete`, а Compose проверяет `/health/live`. Этот synthetic запуск не подтверждает готовность реального MAX.
+
+### Полный stack с настоящим MAX
+
+Для настоящего MAX оставьте полный стек и подключите отдельный overlay с файлом токена бота. Базовый Compose останется пригоден для синтетических проверок и не подключает токен. Введите его локально скрытой командой `scripts/enter-max-token.ps1 -Enter`; заранее задайте `MAX_FLEET_SECRETS_DIR`, чтобы скрипт и Compose использовали один закрытый каталог. Не копируйте токен в `.env`, Git или чат. На Linux каталог создаётся `scripts/bootstrap.sh`; файлы получают права чтения, нужные UID `10001` контейнеров, а сам каталог закрыт для других пользователей правами `0700`.
+
+```powershell
+$env:MAX_FLEET_SECRETS_DIR = 'C:\MAXFleet\secrets'
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/enter-max-token.ps1 -Enter
+$env:APP_ENV = 'production'
+$env:MAX_UPDATE_MODE = 'webhook'
+$env:SEED_SYNTHETIC = '0'
+docker compose -f deploy/compose.full.yaml -f deploy/compose.full.max.yaml -p max-fleet up -d --build --wait
+```
+
+`compose.full.max.yaml` только монтирует `max_bot_token` для Go. Публичный HTTPS proxy отдельно направляет `/max/webhook` и карту на loopback-порт web; webhook регистрируется только после выдачи доверенного TLS-сертификата домену. Синтетическая готовность или HTTP без TLS не доказывают подключение настоящего MAX.
 
 Smoke полного Data API через живые PostgreSQL и S3: задайте `MAX_FLEET_SECRETS_DIR`, `DATA_API_URL=http://127.0.0.1:18000`, затем выполните из корня:
 
