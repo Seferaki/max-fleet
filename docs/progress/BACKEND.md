@@ -9,16 +9,16 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T00:22:33Z"
+heartbeat_utc: "2026-09-30T00:32:19Z"
 current_task: INT-03
-current_substep: "Code d5b6e7aeea6fb83ccc5809082af20efb9e500b51 passed full Go gates and live same-key completion replay. Actual data-api restart and Compose down/up without -v preserved volumes and live Go dialog passed. Backup/restore after migration 0002 verified 21 tables/2020 rows/96 S3 object hashes/0 broken photo links; source writers restarted, readiness 200, live test PASS. MAX 429, notification restart recovery and inbox lease/idempotency targeted tests PASS. Status checkpoint pending."
+current_substep: "Code d5b6e7aeea6fb83ccc5809082af20efb9e500b51 passed full Go gates and live same-key completion replay. Data API restart, Compose down/up without -v, backup/restore after migration 0002 (21 tables/2020 rows/96 S3 hashes/0 broken links), and PostgreSQL/S3 outage-readiness checks passed; outage returned readiness 503, recovery 200, and live Go dialog passed afterward. MAX 429, notification restart recovery and inbox lease/idempotency targeted tests PASS."
 last_verified_code_commit: "d5b6e7aeea6fb83ccc5809082af20efb9e500b51"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "Опубликовать этот INT-03 recovery checkpoint. Дальше проверить полный Go process restart посреди незавершённого return и Python/DB/S3 downtime во время активной операции; затем сверить непокрытые race gates. 4/8 recovery пока пересоздаёт Go worker только в тестовом процессе, не контейнере. QA NOT RUN; реальный MAX требует H-01; full_stack_accepted=false."
-human_required: [H-01]
+next_step: "Проверить восстановление после перезапуска Go-контейнера посреди незавершённого return и отказ Python/DB/S3 во время активной операции; текущий тест зависимостей проверяет readiness, но не атомарность команды во время простоя. 4/8 recovery пересоздаёт Go worker только в тестовом процессе. Затем INT-04 требует доступного MAX API и публичного HTTPS endpoint; локальный MAX token file существует, но /me не прошёл из-за network/transport error. QA NOT RUN; full_stack_accepted=false."
+human_required: [H-02]
 ```
 
 ## Реестр задач
@@ -43,7 +43,7 @@ human_required: [H-01]
 | BE-12 | DONE (Go/mock gate) | Code 1d175d7120c6c7021e68800b22e824d4871b8a9b, contract caa134ddffcc0edd501851ae82f12020c992e75a, published checkpoint 085768d39f3c22d64a06e2e763c1ba4686f0d884; local Go/contract checks and Actions #292 successful, all five jobs. | backend_ready_for_integration=true; INT-01 начата после takeover, QA пропущена по решению владельца и не PASS. |
 | INT-01 | DONE (synthetic configuration) | Compose `fe43bebeaaa80f79b2bfa626114cf77a6fc4437b`; `docker compose -f deploy/compose.full.yaml -p max-fleet-int-full config --quiet` PASS; `up -d --build --wait --wait-timeout 360` PASS. PostgreSQL, S3, Python API, Go live, web healthy; migration job exit 0, worker running. Data `/health/ready`, web ready/live и internal gateway→data-api health — 200. Go live test in Compose network/UID 10001 checked Python `Meta=real v1.13`, employee/admin ACL, rules/state, checkout create/replay/cancel. Gateway `/health/ready` returns 503 `dialog flows incomplete`; MAX/UI product readiness is not claimed. Go image receives no DB/S3 credentials. | INT-02; QA and real MAX are separate gates. |
 | INT-02 | DONE (synthetic integration gate) | Published code `84ad9b51d732787a8e6057577ed7048f209a4015`; published status `1766bccdb9ec4f8ec46c79c95b4b2d668670a57e`. Remote `codex/integration` confirmed at status SHA. `go test ./...`, `go vet ./...`, `go build ./cmd/gateway ./cmd/data-mock`, live Go inbox/dialog → Python v1.13/PostgreSQL/S3 PASS. Проверены 15-minute hold, 8+8, return/manual_map replay/history/S3 recovery, issue ACL и admin assignment/resolution. | Gate ограничен синтетическим MAX transport/Go handler; MAX Bridge/production не проверены. QA NOT RUN, gateway readiness partial. INT-03. |
-| INT-03 | IN_PROGRESS | Code `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` + published replay checkpoint `a4e2bab9b950e7cc114eb6a12c048fdbb60ecc9f`: same-key completed `return.complete` preserved Trip version. Actual data-api restart and Compose down/up without `-v` preserved named Postgres/S3 volumes; readiness 200 and live Go dialog PASS after restart. Backup/restore after migration 0002: 21 tables, 2,020 rows, 96 S3 object SHA-256 matches, 0 broken photo links; restored Alembic head `0002_contract_v1_13`. Source API/worker restarted after backup and live dialog PASS. Target project used unique disposable name and was cleaned up; private backup is outside repository. MAX 429 classification, notification rate-limit retry/restart, inbox lease fencing and same-key command retry targeted Go tests PASS. QA NOT RUN. | Full Go process restart mid-return and simulated Python/PostgreSQL/S3 downtime during an active command remain WIP, along with remaining integration race checks. Current 4/8 recovery rebuilds Go worker structs only inside the test process. |
+| INT-03 | IN_PROGRESS | Code `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` + published replay checkpoint `a4e2bab9b950e7cc114eb6a12c048fdbb60ecc9f`: same-key completed `return.complete` preserved Trip version. Actual data-api restart and Compose down/up without `-v` preserved named volumes. Backup/restore after migration 0002: 21 tables, 2,020 rows, 96 S3 object SHA-256 matches, 0 broken photo links; Alembic head `0002_contract_v1_13`. PostgreSQL/S3 stopped separately: `/health/ready` 503; after recovery: 200 and live Go dialog PASS. Target project was disposable; private backup outside repository. MAX 429, notification retry/restart, inbox lease fencing and same-key retry targeted tests PASS. QA NOT RUN. | Still WIP: Go container restart mid-return and Python/PostgreSQL/S3 failure during an active command. Current 4/8 recovery rebuilds Go worker structs only inside the test process; outage test covered readiness/recovery, not command atomicity during the outage. |
 | INT-04 | TODO | — | См. план |
 | INT-05 | TODO | — | См. план |
 | INT-06 | TODO | — | См. план |
@@ -55,12 +55,19 @@ human_required: [H-01]
 - MAX callbacks/actor/photo сгенерированы тестом; map handler вызывается через httptest, реальный MAX/Bridge, внешняя HTTPS доставка и браузерный MAX UI не проверялись. `/health/ready` остаётся 503 `dialog flows incomplete`; QA — NOT RUN. Не считать это подтверждением пилотной готовности.
 - Интеграционный код `d5b6e7aeea6fb83ccc5809082af20efb9e500b51`, replay checkpoint `a4e2bab9b950e7cc114eb6a12c048fdbb60ecc9f` и service-recovery checkpoint `c9a3b44ad92e44177a819911b679b713ae0a1ff5` опубликованы. После restart `data-api` readiness сначала была 503 до Compose healthcheck, затем 200; live `TestLivePythonReturnDialog` PASS. Полный Compose `down` без `-v` сохранил Postgres/S3 volumes; повторный `up --build --wait` поднял все сервисы, readiness 200 и live dialog PASS. Изолированный backup/restore source `max-fleet-int-recovery` → уникальный disposable target завершился: 21 таблица, 2 020 строк, 96 объектов с совпавшими SHA-256, 0 broken photo links, Alembic head `0002_contract_v1_13`; source writer restart/readiness/live dialog после копии PASS. Удалялись только контейнеры/volumes нового restore target; backup оставлен вне репозитория в `C:\MAXFleet\backup-int03-20260930-0014`. Go `test ./...`, vet/build прошли; targeted MAX 429, outbox restart retry, inbox lease fencing и idempotency retry tests PASS. Следующий шаг — реальный restart Go process в середине return и отказ Python/DB/S3 на активной операции; WIP, не приёмка продукта.
 
+## INT-03 — восстановление и отказы (IN_PROGRESS)
+
+- Проверяемый Go code commit — `d5b6e7aeea6fb83ccc5809082af20efb9e500b51`; status commit `4de054801045a8d76026e05500a3fcabe826a9f6` локально создан, но на момент записи не опубликован из-за недоступности GitHub: TCP 443 timeout. Нового Go-кода в этом подшаге нет.
+- На изолированном `max-fleet-int-recovery` выполнены `docker compose -p max-fleet-int-recovery -f deploy/compose.full.yaml stop postgres`, запрос `curl.exe -sS -o NUL -w '%{http_code}' http://127.0.0.1:18003/health/ready` → 503, затем `up -d --wait --wait-timeout 180` → readiness 200. То же выполнено для `s3`; стек снова healthy.
+- После восстановления выполнена сквозная проверка: из `services/gateway` заданы только пути к приватным synthetic Data API token-файлам и `MAX_FLEET_LIVE_DIALOG=1`; `& ..\..\.local\go-dist\go\bin\go.exe test ./internal/dialog -run '^TestLivePythonReturnDialog$' -count=1 -v` → PASS. Значения файлов не выводились.
+- Эти тесты проверяют readiness/recovery, но не транзакцию, оборванную посреди команды. Ещё не проверены реальный restart Go-контейнера между событиями возврата и Python/PostgreSQL/S3 outage во время активной операции. См. воспроизводимые команды в [OPERATIONS](../OPERATIONS.md).
+
 ## Готовность организационных входов
 
 | ID | Статус | Что требуется |
 |---|---|---|
-| H-01 | HUMAN_REQUIRED | Создать/отправить на модерацию бот MAX; затем локально ввести токен через `scripts/enter-max-token.ps1 -Enter`. Токен сейчас отсутствует. |
-| H-02 | LOCAL_READY | Docker CLI/Compose/Engine доступны локально; HTTPS сервер/домен и права доступа нужны к INT-04 |
+| H-01 | TOKEN_PRESENT, /me UNVERIFIED | Локальный token file присутствует; безопасная проверка `/me` завершилась network/transport error, не ответом MAX. Значение не выводилось и повторно запрашивать его не нужно; повторить проверку при восстановлении сети. |
+| H-02 | HUMAN_REQUIRED для INT-04 | Нужен существующий публичный HTTPS сервер/домен с доступом к настройке DNS и первому запуску Docker либо выбор/оплата хостинга. Локальный Docker Engine работает, но публичный endpoint ещё не предоставлен. |
 | H-03 | UNKNOWN | Реальные машины, правила, ключи, admin ID приватно; создан только `demo_only` seed |
 | H-04 | UNKNOWN | Политика реального пилота: фото/доступ/срок хранения/владелец backup |
 

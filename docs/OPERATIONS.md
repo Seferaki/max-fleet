@@ -192,6 +192,20 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:18003/health/ready
 
 `down` здесь намеренно запускается без `-v`: named volumes `pg_data`/`s3_data` должны остаться. Затем повторите live Go dialog test из блока выше. Это проверяет рестарт сервиса и сохранность volumes, но не заменяет backup/restore или restart Go-процесса посреди незавершённого возврата.
 
+Отдельно можно проверить readiness при отказе зависимости на том же disposable проекте. Ожидается 503 при остановленной базе или S3, затем 200 после восстановления. Это проверка обнаружения недоступности и восстановления, а не доказательство атомарности команды, прерванной посреди операции:
+
+```powershell
+$compose = @('-p', 'max-fleet-int-recovery', '-f', 'deploy/compose.full.yaml')
+docker compose @compose stop postgres
+curl.exe -sS -o NUL -w '%{http_code}\n' http://127.0.0.1:18003/health/ready # 503
+docker compose @compose up -d --wait --wait-timeout 180
+curl.exe -sS -o NUL -w '%{http_code}\n' http://127.0.0.1:18003/health/ready # 200
+docker compose @compose stop s3
+curl.exe -sS -o NUL -w '%{http_code}\n' http://127.0.0.1:18003/health/ready # 503
+docker compose @compose up -d --wait --wait-timeout 180
+curl.exe -sS -o NUL -w '%{http_code}\n' http://127.0.0.1:18003/health/ready # 200
+```
+
 Осторожно с `services/data/scripts/backup-restore.sh`: в текущем виде он использует фиксированные Compose project names `max-fleet-data` и `max-fleet-restore`, а в конце удаляет target volumes через `down -v`. Перед запуском проверьте, что target содержит только disposable данные; не используйте существующий проект с нужными данными. В INT-03 backup/restore v1.13 выполнялся с уникальным временным target project, оригинальный DE-скрипт не менялся.
 
 Используйте только синтетический seed/учётные записи. Если тест прервался и оставил поездку, создайте новый Compose project с отдельными свободными `WEB_PORT` и `DATA_API_PORT` (например, имя `max-fleet-int-recovery`, порты `8084` и `18003`); он получит собственные volumes и чистый seed, а прежнее состояние останется нетронутым. Секреты приложения MAX для этого smoke не нужны. Без MAX token `/health/ready` остаётся `503 dialog flows incomplete`.

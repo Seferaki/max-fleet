@@ -8,13 +8,13 @@ track: data-integration-audit
 owner: A
 branch: codex/integration
 current_task: INT-03
-current_substep: "Backup/restore on migration head 0002 passed from synthetic max-fleet-int-recovery to unique disposable target: 21 tables/2020 rows/96 object hashes/0 broken photo links; source writers restarted, readiness 200 and live Go dialog PASS. MAX 429 and worker lease/retry targeted Go tests PASS"
+current_substep: "Backup/restore on migration head 0002 passed from synthetic max-fleet-int-recovery to unique disposable target: 21 tables/2020 rows/96 object hashes/0 broken photo links; source writers restarted. PostgreSQL and S3 outage-readiness checks returned 503 while stopped and 200 after recovery; live Go dialog PASS after recovery. MAX 429 and worker lease/retry targeted Go tests PASS"
 last_verified_code_commit: "d5b6e7aeea6fb83ccc5809082af20efb9e500b51"
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 migration_head: "0002"
 data_ready_for_integration: true
 checkpoint_state: WIP
-next_step: "Backup/restore после migration 0002 проверены на отдельном target: 21 таблица/2020 строк/96 объектов/0 битых ссылок, Alembic head 0002. Синтетическая копия сохранена вне репозитория в C:\\MAXFleet\\backup-int03-20260930-0014. Далее — Go process restart mid-return и Python/DB/S3 downtime во время активной операции; эти проверки относятся к INT, не DE. QA NOT RUN, Linux host-secret permissions не проверены"
+next_step: "Backup/restore после migration 0002 проверены на отдельном target: 21 таблица/2020 строк/96 объектов/0 битых ссылок, Alembic head 0002. Синтетическая копия сохранена вне репозитория в C:\\MAXFleet\\backup-int03-20260930-0014. При отдельной остановке PostgreSQL и S3 readiness была 503, после восстановления 200, live Go dialog PASS. Go process restart mid-return и отказ во время активной бизнес-команды остаются INT-проверками; это не незавершённая работа DE. QA NOT RUN, Linux host-secret permissions не проверены"
 human_required: []
 ```
 
@@ -32,7 +32,7 @@ human_required: []
 
 ## Последний checkpoint
 
-Реализован внутренний API v1.13 (36 маршрутов) в `services/data/`. Проверено локально (Windows 11, Docker Desktop, PostgreSQL 17.6). Go code `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` повторил завершённый `return.complete` с тем же idempotency key; сохранённый Return вернулся, Trip остался completed с прежней версией. Фактический data-api restart и full Compose down/up без удаления volumes сохранили PostgreSQL/S3 данные; readiness 200, live Go dialog прошёл после каждого рестарта. Backup/restore после migration head 0002 проверен на отдельном disposable target: `21` таблица, `2 020` строк, `96` S3 объектов с совпавшими SHA-256, `0` битых фото-ссылок, Alembic `0002_contract_v1_13 (head)`. Writers исходного проекта запущены обратно; readiness 200, live Go dialog PASS. Полный Go test/vet/build и targeted MAX 429, notification retry/restart, inbox lease/idempotency checks PASS. Backup `C:\MAXFleet\backup-int03-20260930-0014` синтетический, приватный, вне репозитория; DE-owned original restore script не изменён. QA, real MAX, Linux host-secret permissions, Go process restart mid-return и service failure during active command не проверялись.
+Реализован внутренний API v1.13 (36 маршрутов) в `services/data/`. Проверено локально (Windows 11, Docker Desktop, PostgreSQL 17.6). Go code `d5b6e7aeea6fb83ccc5809082af20efb9e500b51` повторил завершённый `return.complete` с тем же idempotency key; сохранённый Return вернулся, Trip остался completed с прежней версией. Фактический data-api restart и full Compose down/up без удаления volumes сохранили PostgreSQL/S3 данные; readiness 200, live Go dialog прошёл после каждого рестарта. Backup/restore после migration head 0002 проверен на отдельном disposable target: `21` таблица, `2 020` строк, `96` S3 объектов с совпавшими SHA-256, `0` битых фото-ссылок, Alembic `0002_contract_v1_13 (head)`. После отдельной остановки PostgreSQL и S3 `/health/ready` возвращал 503; после восстановления стека readiness был 200, а live Go dialog прошёл. Полный Go test/vet/build и targeted MAX 429, notification retry/restart, inbox lease/idempotency checks PASS. Backup `C:\MAXFleet\backup-int03-20260930-0014` синтетический, приватный, вне репозитория; DE-owned original restore script не изменён. QA, real MAX, Linux host-secret permissions, Go process restart mid-return и service failure during active business command не проверялись.
 
 - `TEST_DATABASE_URL=<отдельный disposable PostgreSQL 17.6> uv run pytest -q` — 43 passed (реальный PostgreSQL, S3 — in-memory адаптер в тестах);
 - `uv run ruff check app tests migrations` и `uv run mypy app` — без ошибок;
