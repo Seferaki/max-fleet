@@ -11,18 +11,25 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T07:15:35Z"
+heartbeat_utc: "2026-09-30T07:24:12Z"
 current_task: INT-04
-current_substep: "Подготовлен policy pack и профиль синтетических данных (code a6000e9); в read-only demo API подтверждены 10 машин, 4 пользователя и правила. Найден правильный VDS hostname efimok051.fvds.ru, но Nginx пока возвращает 404 и TLS отсутствует; webhook не регистрировался."
+current_substep: "Добавлен воспроизводимый Nginx/ACME deployment helper (code 955a7a4), который маршрутизирует только production web:8081, отдельно от demo:8082. Bash syntax/help проверены на VDS; публикация checkpoint следующая. TLS и MAX webhook пока не включены."
 last_verified_code_commit: "9e1f05878b356f7d0470df9c72fe01aaf2231ac5"
-last_pushed_checkpoint: "db3eb22e7fae5e8e00f3fa4c3aa3855fea1c256e"
+last_pushed_checkpoint: "65c43618261ac15bfb36e3fe2697a5cf1b39fb6e"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
 full_stack_accepted: false
-next_step: "Настроить Nginx и доверенный TLS на efimok051.fvds.ru с upstream только на production web 127.0.0.1:8081 (не demo 8082), проверить публичный /health/ready=static_ready. Затем проверить наличие live MAX secrets без вывода; при наличии зарегистрировать webhook только guarded max-setup, после чего сделать mobile/web проверку или зафиксировать её как HUMAN_REQUIRED. QA остаётся NOT RUN. Автоматические сроки хранения и расписание backup не реализованы; full_stack_accepted=false."
+next_step: "После публикации code/status checkpoint обновить чистый VDS checkout fast-forward до main, затем выполнить `bash scripts/deploy-vds-nginx.sh --hostname efimok051.fvds.ru --web-port 8081`. Проверить публичный HTTPS readiness=static_ready; если Certbot или route fail, сохранить текущую конфигурацию и исправить причину. Затем безопасно перенести уже имеющийся локальный MAX token в private VDS secrets, включить production overlay с MAX_UPDATE_MODE=webhook/PUBLIC_BASE_URL, выполнить guarded max-setup и проверить подписку. Mini App URL/mobile acceptance ещё потребуют проверки в MAX account/device; QA NOT RUN. Автоматические сроки хранения и расписание backup не реализованы; full_stack_accepted=false."
 human_required: ["H-03: для реального пилота приватно передать MAX user ID первого администратора, список сотрудников/машин, процедуру ключей и место/координаты", "H-04: до реального пилота проверить и утвердить подготовленные сроки/доступы/backup от имени оператора; настроить автоматическое удаление и расписание резервирования"]
 ```
+
+### INT-04 / VDS TLS automation 2026-09-30
+
+- Code commit `955a7a42afc73fedb0d9aa21d5e7b3190c3ee435`: добавлены `deploy/nginx/max-fleet-vds.conf.template` и `scripts/deploy-vds-nginx.sh`. Helper проверяет React `static_ready` на loopback, DNS, ACME webroot, получает TLS сертификат, устанавливает proxy на выбранный loopback web port; ошибки Nginx config/reload/readiness откатываются к backup. Default порт — production `8081`; demo `8082` наружу не направляется. `OPERATIONS.md`/план обновлены.
+- `bash -n scripts/deploy-vds-nginx.sh` и `bash ... --help` → PASS на Ubuntu VDS через одноразовый файл в `/tmp`, файл после проверки удалён. Локальный Windows `bash.exe` не имел WSL distro; он не считается проверкой. `py .local/check_docs.py` → `errors=[]`; `git diff --check` → PASS; staged scan → 4 files, matches 0; после commit tracked scan → 355 files, matches 0.
+- VDS config ещё не применена: Nginx всё ещё отдаёт HTTP 404, HTTPS сертификата нет; gateway остаётся `MAX_UPDATE_MODE=disabled`. Скрипт только проверен по синтаксису, не проходил реальный cert issuance. Не утверждать готовность webhook/mini-app.
+- Далее: обычным push опубликовать code/status в `codex/integration` и fast-forward `main`; на чистом VDS checkout перейти на опубликованную main, выполнить deployment helper для `efimok051.fvds.ru:8081`, проверить публичный HTTPS. Только после успешного readiness переносить локальный токен в приватный каталог сервера и включать webhook.
 
 ### INT-04 / policy и data checkpoint 2026-09-30
 
