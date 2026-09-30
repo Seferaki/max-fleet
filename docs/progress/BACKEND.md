@@ -11,11 +11,11 @@ lock_state: ACTIVE
 owner: A
 session_id: "01046daa-671d-40fb-bc02-45c1263a9705"
 branch: codex/integration
-heartbeat_utc: "2026-09-30T03:42:52Z"
+heartbeat_utc: "2026-09-30T03:45:07Z"
 current_task: INT-04
-current_substep: "scripts/verify.ps1 -Direction all PASS; read-only demo API подтверждает 1.13/10 машин/4 сотрудника/rules. Публичные http://fvds.ru/health/ready и https://fvds.ru/health/ready вернули 404, так что MAX Fleet пока недоступен по этому hostname. Нужен правильный public hostname/proxy mapping; webhook не регистрировался."
+current_substep: "README commit 65ba806 документирует PUBLIC_BASE_URL. Public health по fvds.ru даёт 404, H-02 требует hostname/proxy mapping. Code 9e1f058 и полный verify PASS; synthetic demo содержит 10 машин/4 сотрудников/rules. Webhook не регистрировался."
 last_verified_code_commit: "9e1f05878b356f7d0470df9c72fe01aaf2231ac5"
-last_pushed_checkpoint: "ed61c577105910a9622bb652c95f04b5f5ffb96d"
+last_pushed_checkpoint: "e87bbf5ca093e2f418a194847ed9d15a31635774"
 checkpoint_state: WIP
 contract_commit: "caa134ddffcc0edd501851ae82f12020c992e75a"
 backend_ready_for_integration: true
@@ -26,6 +26,7 @@ human_required: ["H-02: указать hostname MAX Fleet, направленн�
 
 ### INT-04 / MVP checkpoint 2026-09-30
 
+- README commit `65ba806` добавляет `PUBLIC_BASE_URL` в таблицу переменных: URL указан как значение для live только после DNS/TLS и public readiness.
 - Public route preflight: `Invoke-WebRequest` для `http://fvds.ru/health/ready` и `https://fvds.ru/health/ready` → HTTP 404 на обоих адресах; `http://fvds.ru/` отвечает страницей ddos-guard. Это подтверждает, что проверенный адрес не ведёт на MAX Fleet web и не может использоваться для webhook. Точную причину/host mapping нужно выяснить с владельцем домена; bearer subscription и webhook POST не выполнялись.
 - Повторная проверка после публикации code: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction all` → contract/OpenAPI, Go tests/vet/build, web typecheck + 6 tests + build и Docker gateway/data-mock/web image builds PASS. Host Node 22.13.1 дал engine-version warnings (web Docker build использует pinned Node 22.22.2 и прошёл). Через read-only Python Data API контейнера max-fleet-docwait-data-api-1 подтверждены synthetic demo contract 1.13, 10 vehicles, 4 employees, rules present; SQL не использовался, production seed не менялся. `docker run --rm --entrypoint /usr/local/bin/max-setup max-fleet-gateway:scaffold` без явного флага ожидаемо отказал; default guard PASS.
 - Code commit `9e1f05878b356f7d0470df9c72fe01aaf2231ac5` добавляет /usr/local/bin/max-setup в gateway image. Настройка доступна только при явном `MAX_FLEET_CONFIGURE_MAX_WEBHOOK=1` и `MAX_UPDATE_MODE=webhook`; проверяет HTTPS /health/ready, отказывается менять любую найденную подписку, после успешного POST сверяет URL/update_types повторным GET. Документированы runtime prerequisites и команда. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify.ps1 -Direction gateway` → все Go tests/vet/build PASS; base Compose и MAX overlay config → PASS; `docker build -f services/gateway/Dockerfile.gateway -t max-fleet-gateway:scaffold services/gateway` → PASS; `py scripts/check-secrets.py --staged` → 9 staged files, matches 0; `git diff --cached --check` → PASS. MAX POST не выполнялся, так как TLS ещё не восстановлен.
