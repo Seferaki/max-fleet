@@ -59,6 +59,7 @@ Compose поднимает Go gateway, React web, Python API и worker, Alembic 
 | `APP_ENV` | Режим приложения | `development`; обязателен для синтетического seed |
 | `SEED_SYNTHETIC` | Загрузить тестовые записи при миграции | `1`; запрещено в `production` |
 | `MAX_UPDATE_MODE` | Получение событий MAX | `disabled` для локального стенда; `webhook` для отдельного live-контура |
+| `PUBLIC_BASE_URL` | Публичный HTTPS-корень сайта для webhook и Mini App; должен вести на reverse proxy MAX Fleet | Пусто локально; `https://<домен>` для live после DNS/TLS и проверки `/health/ready` |
 | `MAX_INTEGRATION_KEY` | Ключ подключения MAX в данных | `demo-bot` для синтетических примеров |
 | `WEB_PORT` | Loopback-порт web на хосте | `8081` |
 | `DATA_API_PORT` | Loopback-порт Python API на хосте | `18000` |
